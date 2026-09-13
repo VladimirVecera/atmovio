@@ -1,12 +1,13 @@
 <p align="center">
-  <img src="docs/img/logo.svg" width="96" alt="SkyWatch logo"><br>
-  <b>SkyWatch</b><br>
-  <sub>NVR na Raspberry Pi 5 s AI hlídáním oblohy – instalace jedním příkazem, administrace pro normální lidi</sub>
+  <img src="docs/img/atmovio-logo-wide.png" width="420" alt="Atmovio"><br>
+  <sub>NVR na Raspberry Pi 5 s AI hlídáním oblohy – instalace jedním příkazem, administrace pro normální lidi</sub><br>
+  <sub><i>dříve SkyWatch (≤ 3.4)</i></sub>
 </p>
 
 <p align="center">
   <a href="README.md">🇬🇧 English</a> ·
   <a href="docs/cs/instalace.md">Instalace</a> ·
+  <a href="docs/cs/hardware.md">Hardware</a> ·
   <a href="docs/cs/kamery.md">Kamery</a> ·
   <a href="docs/cs/ai.md">AI obloha</a> ·
   <a href="docs/cs/webhook.md">Webhook</a> ·
@@ -15,7 +16,7 @@
   <a href="docs/cs/faq.md">Časté dotazy</a>
 </p>
 
-SkyWatch udělá z **Raspberry Pi 5** s USB diskem domácí záznamník IP kamer (o nahrávání se stará
+Atmovio udělá z **Raspberry Pi 5** s USB diskem domácí záznamník IP kamer (o nahrávání se stará
 **[Frigate](https://frigate.video)**) a přidává něco, co Frigate neumí: dívá se kamerami na **oblohu**
 a dá vědět, když se děje něco hezkého nebo nebezpečného – červánky, shelf cloud, mammatus, duha, halo,
 blesky, mlha…
@@ -36,10 +37,20 @@ a instalátor se ptá jen na to, co opravdu potřebuje.
 | **Provoz bez stresu** | Zdraví disku (SMART) srozumitelně, hlídač úložiště, který udrží systém při životě i bez HDD, logy s hledáním, aktualizace jedním souborem s automatickým návratem při chybě. |
 | **Napojení** | Read-only **REST API** s API klíči (Home Assistant, dashboardy, skripty) a dokumentovaný odchozí webhook. |
 
-## Rychlý start
+## Hardware
 
-Potřebuješ: Raspberry Pi 5 (4 GB+), Raspberry Pi OS Lite 64-bit (Debian 12/13) na SSD nebo SD kartě,
-volitelně USB 3 disk na záznamy, kabelový Ethernet a jednu nebo více RTSP kamer.
+| | |
+|---|---|
+| **Deska** | **Raspberry Pi 5**, minimálně 4 GB, doporučeno 8 GB. Testované a podporované je jen Pi 5 (instalátor vyžaduje 64bit ARM a na jiném modelu varuje). Pi 4 není podporováno – nahrávání by šlo, ale náhledy a snímky pro AI jdou přes CPU. |
+| **Systém** | Raspberry Pi OS Lite 64-bit (Debian 12/13) na SSD (doporučeno) nebo SD kartě. |
+| **Záznamy** | USB 3 pevný disk (ext4; instalátor ho bezpečně naformátuje, systémový disk nikdy). Velikost: datový tok všech kamer v Mbit/s × 10,8 ≈ GB/den – např. dvě kamery po 4 Mbit/s ≈ 86 GB/den, 600 GB/týden. Volitelné: bez disku běží Atmovio v živém náhledu. |
+| **Zdroj a chlazení** | oficiální 27W zdroj (disk napájený z USB) a aktivní chladič. |
+| **Síť** | kabelový Ethernet; vzdálené kamery přes WireGuard. |
+| **Kamery** | libovolná IP kamera s RTSP H.264/H.265, nejlépe ONVIF; 4–6 kamer na jedno Pi 5 je v pohodě. |
+
+Podrobnosti, tabulka velikostí disku a otestovaná sestava: [docs/cs/hardware.md](docs/cs/hardware.md).
+
+## Rychlý start
 
 ```sh
 # na svém počítači
@@ -50,11 +61,11 @@ sudo bash install.sh
 
 Instalátor se zeptá na heslo správce (min. 12 znaků), retenci, časové pásmo, volitelně SMTP a který disk
 použít na záznamy (existující ext4 se použije bez mazání, formátování vyžaduje napsat `SMAZAT`). Nainstaluje
-Docker, Frigate 0.17, Portainer, Cockpit a SkyWatch. Pak otevři `http://<IP-RPI>` a projdi 4 kroky na
+Docker, Frigate 0.17, Portainer, Cockpit a Atmovio. Pak otevři `http://<IP-RPI>` a projdi 4 kroky na
 Přehledu: kamery → disk → upozornění → klíč k AI.
 
 Aktualizace: web sám hlásí, když vyšla nová verze, a nainstaluje ji na jedno kliknutí (Nastavení → Systém → Aktualizace);
-nebo `scp update-skywatch.sh pi@<IP-RPI>: && ssh pi@<IP-RPI> sudo bash update-skywatch.sh`.
+nebo `scp update-atmovio.sh pi@<IP-RPI>: && ssh pi@<IP-RPI> sudo bash update-atmovio.sh`.
 V obou případech se zálohuje, ověří a při chybě vrátí.
 
 Podrobně: [docs/cs/instalace.md](docs/cs/instalace.md).
@@ -63,34 +74,41 @@ Podrobně: [docs/cs/instalace.md](docs/cs/instalace.md).
 
 | Služba | Adresa | K čemu |
 |---|---|---|
-| SkyWatch | `http://IP` | administrace, kterou opravdu používáš |
+| Atmovio | `http://IP` | administrace, kterou opravdu používáš |
 | Frigate | `https://IP:8971` | přehrávač záznamů, export (uživatel `admin`, stejné heslo) |
 | Cockpit | `https://IP:9090` | systém: síť, disky, aktualizace |
 | Portainer | `https://IP:9443` | kontejnery (běžně nepotřebuješ) |
 
-SkyWatch běží záměrně na obyčejném HTTP – provozuj ho v domácí síti nebo přes VPN routeru. **Port 80 nikdy
+Atmovio běží záměrně na obyčejném HTTP – provozuj ho v domácí síti nebo přes VPN routeru. **Port 80 nikdy
 nevystavuj do internetu.** Pro sledování odjinud použij [webhook](docs/cs/webhook.md) (posílá na tvůj web) nebo VPN.
 
 ## Jak funguje AI část
 
-1. Od svítání do soumraku (nastavitelné: občanský / nautický / astronomický soumrak nebo pevné minuty) SkyWatch vezme z každé kamery jeden snímek v plném rozlišení každých *N* minut (kolem východu a západu častěji).
+1. Od svítání do soumraku (nastavitelné: občanský / nautický / astronomický soumrak nebo pevné minuty) Atmovio vezme z každé kamery jeden snímek v plném rozlišení každých *N* minut (kolem východu a západu častěji).
 2. Tmavé snímky a snímky, které se od minula nezměnily, se přeskočí bez dotazu na AI.
 3. Model dostane katalog jevů a vrátí skóre a co vidí. Detekce na nebo nad prahem spustí upozornění – jednou za *epizodu* (40 minut červánků = jedno upozornění, ne deset).
 4. Upozornění jde e-mailem a/nebo na webhook i se snímkem. Volitelně se automaticky vystřihne video.
 5. Vše je vidět v **Historii**, na stránkách kamer a na Přehledu; denní statistiky se drží nezávisle na úklidu historie.
 
-Bezplatný tarif Google Gemini stačí na pár kamer (stovky dotazů denně). Viz [docs/cs/ai.md](docs/cs/ai.md).
+**Na Pi neběží žádná neuronová síť.** Atmovio pošle jeden JPEG hostovanému vision modelu s pevnou otázkou
+(„jak zajímavá je obloha 0–10 a které z těchto jevů vidíš?“) a zpracuje odpověď v JSON. Podporovaní poskytovatelé:
+**Google Gemini** (bezplatný tarif, výchozí – Flash-Lite se vybere sám, stovky dotazů denně), **Groq** a **OpenRouter**
+(bezplatné modely, OpenAI-kompatibilní), **OpenAI** a **Anthropic** (placené, nejpřesnější) a **Ollama** přímo na Pi
+(zdarma a offline, ale pomalé a méně přesné). Z Pi odcházejí jen jednotlivé snímky; záznamy nikdy.
+Katalog má 21 jevů (červánky, shelf cloud, mammatus, beránky, bouřkový mrak, blesk, duha, halo, krepuskulární paprsky,
+lentikulární, mlha, tromba, wall cloud, roll cloud, asperitas, kroupové jádro, přeháňka, virga, déšť, sněžení, jiné) – vybereš,
+na které chceš upozornit, a práh. Podrobnosti, kvóty a ladění: [docs/cs/ai.md](docs/cs/ai.md).
 
 ## Struktura repozitáře
 
 ```
 install.sh              sestavený instalátor (needituj – generuje se)
-update-skywatch.sh      sestavený aktualizátor (generuje se)
+update-atmovio.sh      sestavený aktualizátor (generuje se)
 src/
   build.sh              sestaví oba skripty ze šablon + aplikace
   install.template.sh   zdroj instalátoru
   update.template.sh    zdroj aktualizátoru
-  skywatch/
+  atmovio/
     app.py              celá webová aplikace (FastAPI + Jinja šablony uvnitř)
     storage_guard.py    hlídač HDD / přepínání Frigate živě vs. nahrávání
     static/             CSS + JS (Pico CSS a Alpine.js se stáhnou při instalaci)
@@ -99,8 +117,8 @@ examples/webhook-php/   hotový PHP přijímač + stavová stránka pro webhook
 ```
 
 Vývoj: po každé změně v `src/` spusť `bash src/build.sh`; `bash src/build.sh --check` ověří, že sestavené
-skripty odpovídají zdrojům. `python3 -m py_compile src/skywatch/app.py` zkontroluje syntaxi; aplikaci jde
-spustit i lokálně: `SKYWATCH_DIR=/tmp/sw SKYWATCH_PORT=8099 SKYWATCH_ADMIN_PASSWORD=… python3 src/skywatch/app.py`
+skripty odpovídají zdrojům. `python3 -m py_compile src/atmovio/app.py` zkontroluje syntaxi; aplikaci jde
+spustit i lokálně: `ATMOVIO_DIR=/tmp/sw ATMOVIO_PORT=8099 ATMOVIO_ADMIN_PASSWORD=… python3 src/atmovio/app.py`
 (funkce závislé na Frigate se ukážou jako offline).
 
 ## Přispívání

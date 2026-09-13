@@ -7,8 +7,10 @@ config.json
 *.db
 *.db-*
 *.log*
+update-skywatch.sh
 *.bak*
 INSTALL-INFO.txt
 .portainer_pw
 _private/
 examples/webhook-php/data/
+_to_delete/

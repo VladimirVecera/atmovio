@@ -1,4 +1,4 @@
-/* SkyWatch – interakce (Alpine.js komponenty + pomocné funkce). */
+/* Atmovio – interakce (Alpine.js komponenty + pomocné funkce). */
 (function () {
   'use strict';
 
@@ -70,7 +70,7 @@
       };
     });
 
-    // Průběh aktualizace SkyWatch (/system/update): každé 3 s se ptá /system/update/status.
+    // Průběh aktualizace Atmovio (/system/update): každé 3 s se ptá /system/update/status.
     // Během restartu služby dotaz selže – to je normální fáze "restart"; hotovo = odpověď s jinou verzí.
     Alpine.data('updater', function (running, version, log) {
       return {

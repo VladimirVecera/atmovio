@@ -1,27 +1,10 @@
-#!/usr/bin/env bash
-# Aktualizuje SkyWatch; nová aplikace i závislosti se připraví před zastavením služby.
-set -euo pipefail
-umask 077
-SKY_DIR=/opt/nvr/skywatch
-[[ $EUID -eq 0 ]] || { echo "Spusť jako root: sudo bash update-skywatch.sh"; exit 1; }
-[[ -f "$SKY_DIR/config.json" && -f "$SKY_DIR/app.py" && -x "$SKY_DIR/venv/bin/python" ]] || {
-  echo "SkyWatch není kompletně nainstalován v $SKY_DIR."; exit 1;
-}
-exec 9>"$SKY_DIR/.update.lock"
-flock -n 9 || { echo "Jiná aktualizace již běží."; exit 1; }
-STAMP=$(date +%Y%m%d%H%M%S)-$$
-STAGE=$SKY_DIR/.update-$STAMP
-BACKUP=$SKY_DIR/backups/$STAMP
-NEW_VENV=$SKY_DIR/venv-$STAMP
-mkdir -p "$STAGE" "$BACKUP"
-cat > "$STAGE/app.py" <<'SKYWATCH_APP_EOF'
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-SkyWatch – webová administrace pro RPi 5 NVR (Frigate) + AI hlídání oblohy.
+Atmovio – webová administrace pro RPi 5 NVR (Frigate) + AI hlídání oblohy.
 
 Běží jako systemd služba na hostiteli (ne v Dockeru), aby mohla spravovat
-WireGuard, disky a Docker kontejnery. Konfigurace: /opt/nvr/skywatch/config.json
+WireGuard, disky a Docker kontejnery. Konfigurace: /opt/nvr/atmovio/config.json
 """
 import base64
 import concurrent.futures
@@ -68,16 +51,16 @@ from starlette.concurrency import run_in_threadpool
 from astral import LocationInfo
 from astral.sun import sun
 
-APP_DIR = Path(os.environ.get("SKYWATCH_DIR", "/opt/nvr/skywatch"))
+APP_DIR = Path(os.environ.get("ATMOVIO_DIR", "/opt/nvr/atmovio"))
 CONFIG_FILE = APP_DIR / "config.json"
-DB_FILE = APP_DIR / "skywatch.db"
-LOG_FILE = APP_DIR / "skywatch.log"
+DB_FILE = APP_DIR / "atmovio.db"
+LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "3.3"
-GITHUB_REPO = "VladimirVecera/skywatch"          # odkud se berou nové verze (GitHub Releases)
+APP_VERSION = "4.0"
+GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
-UPDATE_UNIT = "skywatch-update"                  # transientní systemd jednotka, ve které běží update-skywatch.sh
+UPDATE_UNIT = "atmovio-update"                  # transientní systemd jednotka, ve které běží update-atmovio.sh
 
 # Katalog jevů: id, název, popis pro AI. Uživatel si vybírá, na které chce upozornit.
 PHENOMENA = [
@@ -121,7 +104,7 @@ DEFAULT_CONFIG = {
     "restream_url": "rtsp://127.0.0.1:8554",
     "frigate_config_path": "/opt/nvr/frigate/config/config.yml",
     "recordings_path": "/mnt/nvr/frigate/recordings",
-    "snapshot_dir": "/mnt/nvr/skywatch/snapshots",
+    "snapshot_dir": "/mnt/nvr/atmovio/snapshots",
     "lat": 49.8,
     "lon": 15.5,
     "tz": "Europe/Prague",
@@ -234,9 +217,9 @@ def local_ip() -> str:
 
 
 def public_urls() -> dict:
-    """Adresy SkyWatch a přehrávače v LAN – pro odkazy v e-mailech a na webu."""
+    """Adresy Atmovio a přehrávače v LAN – pro odkazy v e-mailech a na webu."""
     ip = local_ip()
-    return {"skywatch": f"http://{ip}" if ip else "", "frigate": f"https://{ip}:8971" if ip else ""}
+    return {"atmovio": f"http://{ip}" if ip else "", "frigate": f"https://{ip}:8971" if ip else ""}
 
 
 def camera_labels(cfg) -> dict:
@@ -250,7 +233,7 @@ def cam_label(cfg, cam: str) -> str:
 
 _config_lock = threading.RLock()
 _frigate_lock = threading.RLock()
-_logger = logging.getLogger("skywatch")
+_logger = logging.getLogger("atmovio")
 
 
 def log(msg: str):
@@ -289,9 +272,9 @@ def load_config() -> dict:
         cfg["secret"] = secrets.token_hex(32)
         changed = True
     if not cfg["admin_password_hash"]:
-        pw = os.environ.get("SKYWATCH_ADMIN_PASSWORD", "")
+        pw = os.environ.get("ATMOVIO_ADMIN_PASSWORD", "")
         if len(pw) < 12:
-            raise RuntimeError("Pro první spuštění nastav SKYWATCH_ADMIN_PASSWORD (alespoň 12 znaků).")
+            raise RuntimeError("Pro první spuštění nastav ATMOVIO_ADMIN_PASSWORD (alespoň 12 znaků).")
         cfg["admin_password_hash"] = hash_pw(pw)
         changed = True
     # Starší konfigurace (verze 1) – převod na nové klíče.
@@ -718,7 +701,7 @@ def storage_status():
     if not (APP_DIR / "storage_guard.py").exists():
         return {"mode": "legacy", "reason": ""}
     try:
-        status_file = Path("/run/skywatch/storage-status.json")
+        status_file = Path("/run/atmovio/storage-status.json")
         if not status_file.exists():
             status_file = APP_DIR / "storage-status.json"  # starší verze hlídače (před updatem)
         status = json.loads(status_file.read_text())
@@ -1038,7 +1021,7 @@ def ai_evaluate(ai: dict, image_bytes: bytes) -> tuple[dict, str]:
     elif provider == "openai_compat":
         base = (ai.get("base_url") or "https://api.groq.com/openai/v1").rstrip("/")
         raw = _openai_style(base + "/chat/completions", key, model, prompt, b64,
-                            {"HTTP-Referer": "https://skywatch.local", "X-Title": "SkyWatch"})
+                            {"HTTP-Referer": "https://atmovio.local", "X-Title": "Atmovio"})
 
     elif provider == "ollama":
         r = requests.post(
@@ -1158,7 +1141,7 @@ def web_post(cfg, payload: dict, timeout=20) -> dict:
     # Token jde v Authorization i v X-Token – sdílené hostingy Authorization do PHP často nepředají.
     r = requests.post(w["url"], json=payload, timeout=timeout,
                       headers={"Authorization": f"Bearer {w['token']}", "X-Token": w["token"],
-                               "User-Agent": f"SkyWatch/{APP_VERSION}"})
+                               "User-Agent": f"Atmovio/{APP_VERSION}"})
     try:
         data = r.json()
     except ValueError:
@@ -1281,13 +1264,13 @@ def web_heartbeat(cfg, fs: dict, watcher_status: str, outages: dict) -> None:
     ai = cfg["ai"]
     urls = public_urls()
     try:
-        api = web_api_snapshot(cfg, fs, urls["skywatch"])
+        api = web_api_snapshot(cfg, fs, urls["atmovio"])
     except Exception as e:
         log(f"Web: data z API pro heartbeat se nepodařilo sestavit: {e}")
         api = None
     web_post(cfg, {
         "type": "heartbeat", "nvr": w.get("nvr_name") or "Raspberry Pi NVR", "version": APP_VERSION, "api": api,
-        "skywatch_url": urls["skywatch"], "frigate_url": urls["frigate"],
+        "atmovio_url": urls["atmovio"], "skywatch_url": urls["atmovio"], "frigate_url": urls["frigate"],  # skywatch_url = starý název pole (přijímače do 3.x)
         "status": {
             "frigate_online": "1" if fs["online"] else "0", "frigate_version": fs.get("version", ""),
             "storage_mode": storage_status()["mode"], "disk_pct": d.get("pct", 0), "disk_free": d.get("free_h", ""),
@@ -1361,7 +1344,7 @@ def image_brightness(img: bytes) -> float:
 
 # --------------------------------------------------------------------------- scheduler
 
-class SkyWatcher(threading.Thread):
+class AtmovioWatcher(threading.Thread):
     def __init__(self):
         super().__init__(daemon=True)
         self.last_check: dict[str, float] = {}
@@ -1381,7 +1364,7 @@ class SkyWatcher(threading.Thread):
         self._last_cleanup = 0.0
 
     def run(self):
-        log("SkyWatch smyčka spuštěna")
+        log("Atmovio smyčka spuštěna")
         while self.running:
             try:
                 self.tick()
@@ -1554,11 +1537,11 @@ class SkyWatcher(threading.Thread):
                 result["note"] = "odesílám…"
                 rid = self.record(result)
                 urls = public_urls()
-                link = f"{urls['skywatch']}/detection/{rid}" if urls["skywatch"] else ""
+                link = f"{urls['atmovio']}/detection/{rid}" if urls["atmovio"] else ""
                 try:
                     info = camera_info(cfg, cam)
                     title = cam_label(cfg, cam)
-                    subject = f"[SkyWatch] {title}: {labels} ({parsed['score']}/10)"
+                    subject = f"[Atmovio] {title}: {labels} ({parsed['score']}/10)"
                     body = (
                         f"Kamera: {title} ({info['ip'] or '?'}, {info['via']})\nČas: {now.strftime('%d.%m.%Y %H:%M')}\n"
                         f"Skóre: {parsed['score']}/10\nJev: {labels}\n\n{parsed['description']}\n\n"
@@ -1643,7 +1626,7 @@ class SkyWatcher(threading.Thread):
             else:
                 try:
                     deliver(cfg, "Nahrávání neběží – Frigate odmítl konfiguraci",
-                            f"Frigate běží v nouzovém režimu a nenahrává.\nChyba: {problem}\nOtevři SkyWatch → Systém → Opravit konfiguraci nahrávání.",
+                            f"Frigate běží v nouzovém režimu a nenahrává.\nChyba: {problem}\nOtevři Atmovio → Systém → Opravit konfiguraci nahrávání.",
                             kind="system")
                 except Exception as e:
                     log(f"Frigate: upozornění se nepodařilo odeslat: {e}")
@@ -1664,7 +1647,7 @@ class SkyWatcher(threading.Thread):
             log(f"VPN: kontrola tunelu selhala: {e}")
         if al.get("frigate", True):
             self.track_outage(cfg, "frigate", "Frigate (nahrávání)", fs["online"], now,
-                              "Frigate neběží nebo neodpovídá – kamery se nenahrávají. Zkontroluj SkyWatch → Systém.")
+                              "Frigate neběží nebo neodpovídá – kamery se nenahrávají. Zkontroluj Atmovio → Systém.")
         if al.get("storage", True):
             mode = storage_status()["mode"]
             self.track_outage(cfg, "storage", "Disk pro záznamy (HDD)", mode in ("recording", "legacy"), now,
@@ -1720,7 +1703,7 @@ class SkyWatcher(threading.Thread):
             return 0
         camera = key[4:] if key.startswith("cam:") else ""
         try:
-            deliver(cfg, f"[SkyWatch] {subject}", body, kind=kind, camera=camera)
+            deliver(cfg, f"[Atmovio] {subject}", body, kind=kind, camera=camera)
             return 1
         except Exception as e:
             log(f"Upozornění se nepodařilo odeslat: {e}")
@@ -1766,7 +1749,7 @@ def image_diff(a: bytes, b: bytes) -> float:
     return ImageStat.Stat(ImageChops.difference(ia, ib)).mean[0]
 
 
-watcher = SkyWatcher()
+watcher = AtmovioWatcher()
 
 
 # --------------------------------------------------------------------------- vyhledávání kamer
@@ -1983,7 +1966,7 @@ def discover_cameras(subnets: list, user: str, password: str) -> list:
 
 # --------------------------------------------------------------------------- web app – šablony
 
-# --------------------------------------------------------------------------- aktualizace SkyWatch z GitHub Releases
+# --------------------------------------------------------------------------- aktualizace Atmovio z GitHub Releases
 
 _update_lock = threading.Lock()
 _update_state: dict = {}
@@ -2023,7 +2006,7 @@ def check_for_update() -> dict:
     st = {"checked": dt.datetime.now().isoformat(timespec="seconds"), "error": ""}
     try:
         r = requests.get(f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest", timeout=15,
-                         headers={"Accept": "application/vnd.github+json", "User-Agent": f"SkyWatch/{APP_VERSION}"})
+                         headers={"Accept": "application/vnd.github+json", "User-Agent": f"Atmovio/{APP_VERSION}"})
         if r.status_code == 404:
             st.update({k: "" for k in keys})   # repozitář zatím nemá žádné vydání
         else:
@@ -2034,10 +2017,10 @@ def check_for_update() -> dict:
                 "latest": str(rel.get("tag_name") or "").lstrip("vV"), "tag": rel.get("tag_name") or "",
                 "name": rel.get("name") or "", "url": rel.get("html_url") or "", "published": (rel.get("published_at") or "")[:10],
                 "notes": (rel.get("body") or "").replace("\r", "")[:6000],
-                "script_url": assets.get("update-skywatch.sh") or "", "sums_url": assets.get("SHA256SUMS") or "",
+                "script_url": assets.get("update-atmovio.sh") or "", "sums_url": assets.get("SHA256SUMS") or "",
             })
         if st.get("latest") and version_tuple(st["latest"]) > version_tuple(APP_VERSION) and prev.get("latest") != st["latest"]:
-            log(f"K dispozici je nová verze SkyWatch {st['latest']} (běží {APP_VERSION}) – Nastavení → Systém → Aktualizace")
+            log(f"K dispozici je nová verze Atmovio {st['latest']} (běží {APP_VERSION}) – Nastavení → Systém → Aktualizace")
     except Exception as e:
         st.update({k: prev.get(k, "") for k in keys})
         st["error"] = f"{type(e).__name__}: {e}"[:300]
@@ -2059,33 +2042,33 @@ def update_log_tail(n: int = 80) -> str:
 
 
 def start_update() -> str:
-    """Stáhne update-skywatch.sh z vydání, ověří SHA-256 a spustí ho jako samostatnou systemd jednotku
-    (musí přežít zastavení skywatch.service, které aktualizátor sám provede). Vrací '' nebo text chyby."""
+    """Stáhne update-atmovio.sh z vydání, ověří SHA-256 a spustí ho jako samostatnou systemd jednotku
+    (musí přežít zastavení atmovio.service, které aktualizátor sám provede). Vrací '' nebo text chyby."""
     with _update_lock:
         st = update_state()
         if not st.get("available"):
             return "Žádná nová verze není k dispozici."
         if not st.get("script_url") or not st.get("sums_url"):
-            return "Vydání na GitHubu nemá přiložený update-skywatch.sh a SHA256SUMS – aktualizuj ručně přes SSH."
+            return "Vydání na GitHubu nemá přiložený update-atmovio.sh a SHA256SUMS – aktualizuj ručně přes SSH."
         if update_running():
             return "Aktualizace už běží."
         dl = APP_DIR / ".update-dl"
         shutil.rmtree(dl, ignore_errors=True)
         dl.mkdir(parents=True)
-        script = dl / "update-skywatch.sh"
+        script = dl / "update-atmovio.sh"
         try:
-            hdr = {"User-Agent": f"SkyWatch/{APP_VERSION}"}
+            hdr = {"User-Agent": f"Atmovio/{APP_VERSION}"}
             r = requests.get(st["script_url"], timeout=180, headers=hdr)
             r.raise_for_status()
             data = r.content
             r = requests.get(st["sums_url"], timeout=30, headers=hdr)
             r.raise_for_status()
             sums = {ln.split()[-1].lstrip("*"): ln.split()[0].lower() for ln in r.text.splitlines() if len(ln.split()) >= 2}
-            expected = sums.get("update-skywatch.sh", "")
+            expected = sums.get("update-atmovio.sh", "")
             if not expected or not secrets.compare_digest(expected, hashlib.sha256(data).hexdigest()):
                 return "Kontrolní součet staženého skriptu nesouhlasí – aktualizace zastavena."
-            if not data.startswith(b"#!/usr/bin/env bash") or b"SKY_DIR=/opt/nvr/skywatch" not in data[:2000]:
-                return "Stažený soubor nevypadá jako aktualizační skript SkyWatch."
+            if not data.startswith(b"#!/usr/bin/env bash") or b"SKY_DIR=/opt/nvr/atmovio" not in data[:2000]:
+                return "Stažený soubor nevypadá jako aktualizační skript Atmovio."
             script.write_bytes(data)
             script.chmod(0o700)
         except Exception as e:
@@ -2107,16 +2090,30 @@ def start_update() -> str:
 TEMPLATES = {}
 
 LOGO_SVG = """<svg class="logo" viewBox="0 0 64 64" width="34" height="34" aria-hidden="true">
-<defs><linearGradient id="lg-sun" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fcd34d"/><stop offset="1" stop-color="#f97316"/></linearGradient>
-<linearGradient id="lg-cloud" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#38bdf8"/><stop offset="1" stop-color="#1d4ed8"/></linearGradient>
-<clipPath id="lg-clip"><path d="M17.5 52h30a10 10 0 0 0 1.9-19.8A13.5 13.5 0 0 0 22 28.8 10.5 10.5 0 0 0 17.5 52z"/></clipPath></defs>
-<circle cx="45" cy="21.5" r="12" fill="url(#lg-sun)"/>
-<path d="M17.5 52h30a10 10 0 0 0 1.9-19.8A13.5 13.5 0 0 0 22 28.8 10.5 10.5 0 0 0 17.5 52z" fill="url(#lg-cloud)" stroke="#fff" stroke-width="2" paint-order="stroke" stroke-linejoin="round"/>
-<path d="M0 0h52L0 58z" fill="#bae6fd" opacity=".28" clip-path="url(#lg-clip)"/>
-<circle cx="33" cy="41.5" r="8" fill="#f0f9ff"/><circle cx="33" cy="41.5" r="5.5" fill="#0f172a"/><circle cx="33" cy="41.5" r="3" fill="#1e293b"/><circle cx="35" cy="39.4" r="1.6" fill="#fff"/>
+<defs>
+<linearGradient id="at-sky" x1="0" y1="0" x2="0.4" y2="1"><stop offset="0" stop-color="#0b2a6f"/><stop offset="0.55" stop-color="#1e63d6"/><stop offset="1" stop-color="#38bdf8"/></linearGradient>
+<linearGradient id="at-lens" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2f7de1"/><stop offset="1" stop-color="#0b2a6f"/></linearGradient>
+<linearGradient id="at-wave" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#7dd3fc"/><stop offset="1" stop-color="#2b7fe0"/></linearGradient>
+<clipPath id="at-clip"><circle cx="32" cy="32" r="30"/></clipPath>
+</defs>
+<circle cx="32" cy="32" r="30" fill="url(#at-sky)"/>
+<g clip-path="url(#at-clip)">
+<path d="M-2 40 C 14 22, 50 22, 66 40 L 66 70 L -2 70 Z" fill="#eaf5ff"/>
+<path d="M2 47a7 7 0 0 1 8-6 8 8 0 0 1 15-1 6 6 0 0 1 7 7H2z" fill="#bfe4ff"/>
+<path d="M36 46a6 6 0 0 1 8-5 8 8 0 0 1 14-1 6 6 0 0 1 8 6H36z" fill="#bfe4ff"/>
+<path d="M-2 52 C 18 44, 46 44, 66 56 L 66 70 L -2 70 Z" fill="url(#at-wave)"/>
+<path d="M-2 58 C 20 50, 44 52, 66 62 L 66 70 L -2 70 Z" fill="#1e63d6"/>
+</g>
+<path d="M46 12l1.2 3 3 1.2-3 1.2-1.2 3-1.2-3-3-1.2 3-1.2z" fill="#fff"/>
+<circle cx="52" cy="20" r="1.4" fill="#fff"/><circle cx="55.5" cy="26" r="1" fill="#fff"/>
+<circle cx="32" cy="34" r="11.5" fill="#0f172a"/>
+<circle cx="32" cy="34" r="9.5" fill="url(#at-lens)"/>
+<circle cx="32" cy="34" r="6" fill="#0b2a6f"/>
+<circle cx="32" cy="34" r="3.2" fill="#1e3a8a"/>
+<circle cx="28.5" cy="30.5" r="2.4" fill="#fff"/>
 </svg>"""
 
-BASE_CSS = ""  # vzhled je v static/skywatch.css (nad Pico CSS)
+BASE_CSS = ""  # vzhled je v static/atmovio.css (nad Pico CSS)
 
 NAV_PRIMARY = [("/", "Přehled", "⌂"), ("/live", "Kamery", "📷"), ("/storage", "Záznamy a disk", "💾"),
                ("/history", "Historie AI detekcí", "🖼"), ("/videos", "Videa ke stažení", "🎬")]
@@ -2130,16 +2127,16 @@ BOTTOM_NAV = ["/", "/live", "/history", "/videos"]
 TEMPLATES["base.html"] = """<!doctype html>
 <html lang="cs"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light dark"><meta name="theme-color" content="#0b1220">
-<title>SkyWatch – {{ title }}</title>
+<title>Atmovio – {{ title }}</title>
 <link rel="icon" href="data:image/svg+xml,{{ favicon }}">
 <link rel="stylesheet" href="{{ pico_css }}">
-<link rel="stylesheet" href="/static/skywatch.css?v={{ version }}">
-<script defer src="/static/skywatch.js?v={{ version }}"></script>
+<link rel="stylesheet" href="/static/atmovio.css?v={{ version }}">
+<script defer src="/static/atmovio.js?v={{ version }}"></script>
 <script defer src="{{ alpine_js }}"></script>
 </head><body>
 <div class="app" x-data='shell({settingsOpen: {{ "true" if settings_open else "false" }}, flashes: {{ flashes|tojson }}})'>
 <aside class="sidebar" :class="{open: menu}">
- <a class="brand" href="/">""" + LOGO_SVG + """<span>SkyWatch<small>NVR · hlídání oblohy</small></span></a>
+ <a class="brand" href="/">""" + LOGO_SVG + """<span>Atmovio<small>NVR · hlídání oblohy</small></span></a>
  <nav class="nav">
   {% for href,name,ic in nav_primary %}<a class="{% if active==href %}active{% endif %}" href="{{ href }}"><span class="ic">{{ ic }}</span>{{ name }}</a>{% endfor %}
   <button type="button" class="group" @click="settingsOpen=!settingsOpen"><span class="ic">🛠</span>Nastavení<span class="caret" :class="{open: settingsOpen}">▾</span></button>
@@ -2153,14 +2150,14 @@ TEMPLATES["base.html"] = """<!doctype html>
 </aside>
 <div class="scrim" :class="{open: menu}" @click="menu=false"></div>
 <div class="content">
-<header class="top"><button type="button" class="menu-btn" @click="menu=!menu" aria-label="Menu">☰</button><a class="brand" href="/">""" + LOGO_SVG + """<span>SkyWatch</span></a></header>
+<header class="top"><button type="button" class="menu-btn" @click="menu=!menu" aria-label="Menu">☰</button><a class="brand" href="/">""" + LOGO_SVG + """<span>Atmovio</span></a></header>
 <main class="page">
 {% if storage.mode not in ['recording', 'legacy'] %}<div class="flash warn"><span>⚠️</span><div><b>Režim bez záznamu.</b> {{ storage.reason }} <a href="/storage">Nastavit disk pro záznamy</a> · <a href="{{ frigate_ui }}" target="_blank">Živý náhled kamer ↗</a></div></div>{% endif %}
 {% if disk_warning[1] %}<div class="flash {{ disk_warning[0] }}"><span>💽</span><div><b>{% if disk_warning[0] == 'err' %}Disk selhává.{% else %}Disk hlásí vadné sektory – sleduji.{% endif %}</b> {{ disk_warning[1] }}. {% if disk_warning[0] == 'err' %}Zálohuj a disk vyměň.{% else %}Když počet zůstane stejný, není třeba nic dělat; když poroste, upozorním červeně.{% endif %} <a href="/system">Stav disků</a></div></div>{% endif %}
 {% if vpn_problem %}<div class="flash err"><span>⛔</span><div><b>VPN tunel zastaven pojistkou.</b> {{ vpn_problem }} <a href="/vpn">Síť a VPN</a></div></div>{% endif %}
 {% if frigate_problem %}<div class="flash err"><span>⛔</span><div><b>Nahrávání neběží – Frigate odmítl konfiguraci.</b> {{ frigate_problem }}
 <form method="post" action="/system/ctl" style="display:inline;margin-left:8px"><button class="btn small" name="action" value="fix_frigate">Opravit konfiguraci a restartovat nahrávání</button></form></div></div>{% endif %}
-{% if update_info and update_info.available and active in ['/', '/system'] and req_path != '/system/update' %}<div class="flash"><span>🆕</span><div><b>K dispozici je SkyWatch {{ update_info.latest }}</b> (běží {{ version }}). <a href="/system/update">Co je nového a aktualizace</a></div></div>{% endif %}
+{% if update_info and update_info.available and active in ['/', '/system'] and req_path != '/system/update' %}<div class="flash"><span>🆕</span><div><b>K dispozici je Atmovio {{ update_info.latest }}</b> (běží {{ version }}). <a href="/system/update">Co je nového a aktualizace</a></div></div>{% endif %}
 <div class="page-head"><div><h1>{{ title }}</h1>{% if subtitle %}<p class="sub">{{ subtitle }}</p>{% endif %}</div>{% block actions %}{% endblock %}</div>
 {% block content %}{% endblock %}
 </main>
@@ -2174,14 +2171,14 @@ TEMPLATES["base.html"] = """<!doctype html>
 <div id="busy" hidden><div class="busy-box"><span class="spin"></span><div><b id="busy-text">Zpracovávám…</b><div class="hint" id="busy-hint">Stránka se sama obnoví, až bude hotovo.</div></div></div></div>
 </body></html>"""
 
-TEMPLATES["login.html"] = """<!doctype html><html lang="cs"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>SkyWatch – přihlášení</title>
+TEMPLATES["login.html"] = """<!doctype html><html lang="cs"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Atmovio – přihlášení</title>
 <link rel="icon" href="data:image/svg+xml,{{ favicon }}">
-<link rel="stylesheet" href="{{ pico_css }}"><link rel="stylesheet" href="/static/skywatch.css?v={{ version }}">
+<link rel="stylesheet" href="{{ pico_css }}"><link rel="stylesheet" href="/static/atmovio.css?v={{ version }}">
 <style>body{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0b1220 radial-gradient(1200px 600px at 20% -10%,#1e3a5f 0%,transparent 60%)}
 .login{background:var(--pico-card-background-color);padding:1.8rem 1.7rem;border-radius:1.1rem;width:min(380px,92vw);border:1px solid var(--pico-card-border-color);box-shadow:0 20px 60px rgba(0,0,0,.45)}
 .login .brand{color:var(--pico-color);padding:0 0 .9rem;font-size:1.35rem;justify-content:center}.login .brand small{color:var(--pico-muted-color)}
 .e{color:var(--sw-err);margin:.4rem 0;font-weight:600}</style></head>
-<body><form class="login" method="post" action="/login"><div class="brand">""" + LOGO_SVG + """<span>SkyWatch<small>NVR · hlídání oblohy</small></span></div>
+<body><form class="login" method="post" action="/login"><div class="brand">""" + LOGO_SVG + """<span>Atmovio<small>NVR · hlídání oblohy</small></span></div>
 {% if error %}<div class="e">{{ error }}</div>{% endif %}
 <label>Heslo administrátora</label><input type="password" name="password" autofocus autocomplete="current-password"><button class="btn block" style="margin-top:.9rem">Přihlásit</button></form></body></html>"""
 
@@ -2233,7 +2230,7 @@ TEMPLATES["dashboard.html"] = """{% extends "base.html" %}{% block actions %}<di
 <div class="stats7" style="margin-top:.8rem"><table><thead><tr><th>Den</th><th>Dotazů</th><th>Zajímavé</th><th>Upozornění</th><th>Přeskočeno</th><th>Chyby</th></tr></thead><tbody>
 {% for d in stats7 %}<tr{% if loop.first %} class="today"{% endif %}><td>{{ d.label }} <span class="hint">{{ d.dow }}</span></td><td><b>{{ d.calls }}</b></td><td>{{ d.interesting }}</td><td>{% if d.notified %}<span class="badge ok">{{ d.notified }}</span>{% else %}0{% endif %}</td><td class="hint">{{ d.skipped }}</td><td>{% if d.errors %}<span class="badge err">{{ d.errors }}</span>{% else %}0{% endif %}</td></tr>{% endfor %}
 </tbody></table><div class="hint">Posledních 7 dní. Počty se ukládají zvlášť, takže mazání historie je nemění. „Přeskočeno“ = snímek se nezměnil, AI se neptalo.</div></div>
-{% else %}<p class="hint">Hlídání oblohy je vypnuté. <a href="/ai">Vlož klíč od Google (zdarma) a zapni ho</a> – SkyWatch pak sám hlásí červánky, bouřky, duhy a další jevy.</p>{% endif %}</div>
+{% else %}<p class="hint">Hlídání oblohy je vypnuté. <a href="/ai">Vlož klíč od Google (zdarma) a zapni ho</a> – Atmovio pak sám hlásí červánky, bouřky, duhy a další jevy.</p>{% endif %}</div>
 
 <div class="card"><div class="section-head"><h2>Raspberry Pi</h2><a class="btn small sec" href="/system">Systém</a></div>
 <div class="kpi">
@@ -2253,17 +2250,17 @@ TEMPLATES["dashboard.html"] = """{% extends "base.html" %}{% block actions %}<di
 
 <details class="card" id="guide" data-keep><summary>Nápověda – kam chodit a co kde najdu</summary>
 <div class="guide">
-<div><b>SkyWatch (tady)</b> je jediná administrace: kamery, disk, AI hlídání oblohy, upozornění, síť, systém. Když nic neměníš, nemusíš sem chodit. Když něco nefunguje, podívej se do <a href="/logs">Logů</a>.</div>
+<div><b>Atmovio (tady)</b> je jediná administrace: kamery, disk, AI hlídání oblohy, upozornění, síť, systém. Když nic neměníš, nemusíš sem chodit. Když něco nefunguje, podívej se do <a href="/logs">Logů</a>.</div>
 <div><b>Frigate</b> <a href="{{ frigate_ui }}" target="_blank" rel="noopener">{{ frigate_ui }} ↗</a> – přehrávání záznamů a <b>stažení videa od–do</b> (Review → Historie → Export). Uživatel <code>admin</code>, heslo stejné jako sem.</div>
-<div><b>Vlastní web (webhook)</b>{% if cfg.web.enabled and cfg.web.token %} <span class="badge ok">propojeno – {{ cfg.web.url|urlhost }}</span>{% else %} <span class="badge mut">nepropojeno – volitelné, nastav v <a href="/email">Upozornění</a></span>{% endif %} – SkyWatch umí posílat stav kamer a upozornění na libovolný web (ukázkový přijímač v PHP je v repozitáři). Web pak zprávy zobrazí nebo rozešle dál; RPi nemusí mít SMTP.</div>
+<div><b>Vlastní web (webhook)</b>{% if cfg.web.enabled and cfg.web.token %} <span class="badge ok">propojeno – {{ cfg.web.url|urlhost }}</span>{% else %} <span class="badge mut">nepropojeno – volitelné, nastav v <a href="/email">Upozornění</a></span>{% endif %} – Atmovio umí posílat stav kamer a upozornění na libovolný web (ukázkový přijímač v PHP je v repozitáři). Web pak zprávy zobrazí nebo rozešle dál; RPi nemusí mít SMTP.</div>
 <div><b>Cockpit</b> <a href="{{ cockpit_ui }}" target="_blank" rel="noopener">{{ cockpit_ui }} ↗</a> – servis systému (statická IP, aktualizace, disky). <b>Portainer</b> běžně nepotřebuješ.</div>
-<div>Aktualizace SkyWatch přes SSH: <code>sudo bash update-skywatch.sh</code>. Verze {{ version }}.</div>
+<div>Aktualizace Atmovio přes SSH: <code>sudo bash update-atmovio.sh</code>. Verze {{ version }}.</div>
 </div></details>
 {% endblock %}"""
 
 TEMPLATES["cameras.html"] = """{% extends "base.html" %}{% block content %}
 {% if not cams and not pre.main %}<div class="card" style="border-color:var(--ac)"><h2>Krok 1 · Najdi kamery v síti</h2>
-<p>Nejjednodušší cesta: klikni na tlačítko, zadej <b>uživatele a heslo kamery</b> (stejné, jakým se přihlašuješ do kamery) a SkyWatch kamery sám najde i s adresami videa. Pak jen potvrdíš název a klikneš <b>Přidat kameru</b>.</p>
+<p>Nejjednodušší cesta: klikni na tlačítko, zadej <b>uživatele a heslo kamery</b> (stejné, jakým se přihlašuješ do kamery) a Atmovio kamery sám najde i s adresami videa. Pak jen potvrdíš název a klikneš <b>Přidat kameru</b>.</p>
 <a class="btn" href="/discover">🔍 Vyhledat kamery v síti</a></div>{% endif %}
 <div class="card"><div class="section-head"><h2 style="margin:0">Nastavené kamery</h2><a class="btn small" href="/discover">🔍 Vyhledat kamery v síti</a></div>
 <div class="tw"><table><tr><th>Název</th><th>IP · cesta</th><th>Hlavní stream (záznam)</th><th>Substream (náhled)</th><th></th></tr>
@@ -2287,7 +2284,7 @@ TEMPLATES["cameras.html"] = """{% extends "base.html" %}{% block content %}
 <input type="text" name="sub" placeholder="rtsp://192.168.1.50:554/stream2" value="{{ pre.sub }}">
 <div class="hint">Adresy najdeš v návodu ke kameře nebo v jejím webovém rozhraní (hledej „RTSP“). Typické: Hikvision <code>/Streaming/Channels/101</code>, Dahua/Imou <code>/cam/realmonitor?channel=1&amp;subtype=0</code>, Reolink <code>/h264Preview_01_main</code>, Tapo <code>/stream1</code>.</div>
 <label class="check"><input type="checkbox" name="test" checked> Před uložením ověřit, že kamera odpovídá (cca 10 s)</label>
-{% if not pre.replace %}<label class="check"><input type="checkbox" name="skywatch" checked> Hlídat oblohu z této kamery pomocí AI</label>{% endif %}
+{% if not pre.replace %}<label class="check"><input type="checkbox" name="atmovio" checked> Hlídat oblohu z této kamery pomocí AI</label>{% endif %}
 <button class="btn">{% if pre.replace %}Uložit změny{% else %}Přidat kameru{% endif %}</button>
 <p class="hint">Kamera za VPN: použij její adresu ve vzdálené síti (např. <code>rtsp://10.10.10.4:554/…</code>) a raději nižší bitrate. Dostupnost ověříš v <a href="/vpn">Síť a VPN</a>.</p></form></details>
 {% endblock %}"""
@@ -2320,7 +2317,7 @@ Se zadaným přihlášením se z ONVIF vytáhnou RTSP adresy streamů a každá 
 <input type="hidden" name="main" value="{{ r.streams[0].uri }}">{% if r.streams|length > 1 %}<input type="hidden" name="sub" value="{{ r.streams[1].uri }}">{% endif %}<input type="hidden" name="test" value="on">
 <div style="flex:2"><label>Název kamery</label><input type="text" name="name" required value="{{ r.model or r.name or ('Kamera ' ~ r.ip) }}"></div>
 <input type="hidden" name="user" value="{{ user }}"><input type="hidden" name="password" value="{{ password }}">
-<div><label class="check" style="margin:0 0 8px"><input type="checkbox" name="skywatch" checked> hlídat oblohu (AI)</label></div>
+<div><label class="check" style="margin:0 0 8px"><input type="checkbox" name="atmovio" checked> hlídat oblohu (AI)</label></div>
 <div><button class="btn">➕ Přidat kameru</button> <button class="btn small sec" formaction="/cameras/prepare" formnovalidate>Upravit před přidáním</button></div>
 </form>
 <div class="hint">Hlavní stream {{ r.streams[0].res }}{% if r.streams|length > 1 %} + substream {{ r.streams[1].res }} pro náhled{% endif %}. Přidání ověří spojení (ffprobe) a restartuje Frigate.</div>
@@ -2341,7 +2338,7 @@ TEMPLATES["storage.html"] = """{% extends "base.html" %}{% block content %}
 {% if not ready %}
 <div class="card" style="border-color:var(--warn)"><h2>Disk pro záznamy není připojený</h2>
 {% if not disks %}<p>Nenašel jsem žádný externí disk. Zapoj HDD/SSD do <b>modrého USB 3.0 portu</b> Raspberry Pi a tuto stránku obnov. U 2,5" disků bez vlastního napájení použij originální 27W zdroj.</p>
-{% else %}<p>Našel jsem externí disk, ale ještě není připravený pro záznamy. Vyber ho níže – SkyWatch ho připojí (nebo naformátuje a připojí) a nahrávání se pak zapne samo.</p>{% endif %}</div>
+{% else %}<p>Našel jsem externí disk, ale ještě není připravený pro záznamy. Vyber ho níže – Atmovio ho připojí (nebo naformátuje a připojí) a nahrávání se pak zapne samo.</p>{% endif %}</div>
 {% endif %}
 <div class="card"><div class="section-head"><h2 style="margin:0">Disky</h2><a class="btn small sec" href="/storage">Obnovit</a></div>
 {% if not disks %}<p class="hint">Žádný externí disk nenalezen (systémový disk se nezobrazuje).</p>{% endif %}
@@ -2367,7 +2364,7 @@ TEMPLATES["storage.html"] = """{% extends "base.html" %}{% block content %}
 {% endif %}
 </div>
 {% endfor %}
-<p class="hint">Po připojení disku se nahrávání zapne samo do minuty (hlídač disku ho ověří třemi zápisy). Disk se nikdy neuspává. Když ho odpojíš, SkyWatch přejde na živý náhled bez záznamu a po připojení zpět nahrávání obnoví.</p></div>
+<p class="hint">Po připojení disku se nahrávání zapne samo do minuty (hlídač disku ho ověří třemi zápisy). Disk se nikdy neuspává. Když ho odpojíš, Atmovio přejde na živý náhled bez záznamu a po připojení zpět nahrávání obnoví.</p></div>
 <div class="grid">
 {% if ready %}<div class="card"><h2>Záznamy na disku</h2>
 <div class="big">{{ disk.used_h }} <span class="hint">z {{ disk.total_h }}</span></div>
@@ -2469,7 +2466,7 @@ TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block content %}
 </details>
 </div>
 <div class="card"><div class="section-head"><h2 style="margin:0">4 · Video automaticky</h2>{% if ai.auto_export.enabled and ai.auto_export.cameras %}<span class="badge ok">zapnuto · {{ ai.auto_export.cameras|length }} {{ 'kamera' if ai.auto_export.cameras|length == 1 else ('kamery' if ai.auto_export.cameras|length < 5 else 'kamer') }}</span>{% else %}<span class="badge mut">vypnuto</span>{% endif %}</div>
-<p>Když nejsi doma a přijde upozornění, SkyWatch může video kolem snímku vystřihnout sám – najdeš ho pak ve <a href="/videos">Videích</a> a nemusíš se bát, že se záznam mezitím smaže.</p>
+<p>Když nejsi doma a přijde upozornění, Atmovio může video kolem snímku vystřihnout sám – najdeš ho pak ve <a href="/videos">Videích</a> a nemusíš se bát, že se záznam mezitím smaže.</p>
 <label class="check"><input type="checkbox" name="ax_enabled" {% if ai.auto_export.enabled %}checked{% endif %}> Po každém odeslaném upozornění automaticky vytvořit video</label>
 <div class="row">
 <div><label>Minut před snímkem</label><input type="number" name="ax_before" min="0" max="60" value="{{ ai.auto_export.before_min }}"></div>
@@ -2498,10 +2495,10 @@ TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block content %}
 TEMPLATES["email.html"] = """{% extends "base.html" %}{% block content %}
 <div class="card"><div class="section-head"><h2 style="margin:0">Kam chodí upozornění: vlastní web (webhook)</h2>{% if web_ok %}<span class="badge ok">propojeno</span>{% elif web.enabled %}<span class="badge warn">chybí token</span>{% else %}<span class="badge mut">vypnuto</span>{% endif %}</div>
 <form method="post" action="/web">
-<p>SkyWatch může posílat upozornění (se snímkem) a každou minutu stav kamer na <b>libovolný web</b> – třeba tvůj vlastní, kde se pak dají prohlížet z internetu nebo rozesílat e-mailem. Formát zpráv je popsaný v dokumentaci (<code>docs/webhook.md</code>); ukázkový přijímač v PHP je ve složce <code>examples/webhook-php</code> repozitáře.</p>
+<p>Atmovio může posílat upozornění (se snímkem) a každou minutu stav kamer i všechna data REST API (detekce, videa, události) na <b>libovolný web</b> – třeba tvůj vlastní, kde se pak dají prohlížet z internetu nebo rozesílat e-mailem. Formát zpráv je popsaný v dokumentaci (<code>docs/webhook.md</code>); ukázkový přijímač v PHP je ve složce <code>examples/webhook-php</code> repozitáře.</p>
 {% if not web_ok %}<ol class="steps"><li>Na svůj web nahraj přijímač (nebo napiš vlastní podle dokumentace) a nastav v něm tajný token.</li><li>Sem vlož adresu přijímače a stejný token.</li><li>Klikni <b>Uložit a otestovat spojení</b> – přijde testovací upozornění.</li></ol>{% endif %}
-<label class="check"><input type="checkbox" name="enabled" {% if web.enabled %}checked{% endif %}> Posílat upozornění a stav kamer na web</label>
-<div class="row"><div><label>Adresa přijímače (webhook URL)</label><input type="text" name="url" value="{{ web.url }}" placeholder="https://muj-web.cz/skywatch/webhook.php"></div>
+<label class="check"><input type="checkbox" name="enabled" {% if web.enabled %}checked{% endif %}> Posílat upozornění, stav kamer a data API na web</label>
+<div class="row"><div><label>Adresa přijímače (webhook URL)</label><input type="text" name="url" value="{{ web.url }}" placeholder="https://muj-web.cz/atmovio/webhook.php"></div>
 <div><label>Token (stejný jako v přijímači)</label><input type="password" name="token" value="{{ web.token }}" autocomplete="off" placeholder="dlouhý náhodný řetězec"></div></div>
 <details><summary>Pokročilé</summary>
 <div><label>Jak se má tento záznamník na webu jmenovat</label><input type="text" name="nvr_name" value="{{ web.nvr_name }}"></div>
@@ -2558,46 +2555,47 @@ PublicKey = ...
 Endpoint = router.example.cz:51820
 AllowedIPs = 10.10.10.0/24
 PersistentKeepalive = 25">{{ conf }}</textarea>
-<p class="hint">V routeru vytvoř nového klienta WireGuard, zkopíruj jeho konfiguraci a vlož ji sem <b>celou, tak jak je</b>. SkyWatch si ji sám upraví: řádky, které RPi nepotřebuje (DNS, skripty), vynechá a <code>AllowedIPs = 0.0.0.0/0</code> nahradí jen vzdálenou sítí, aby tunelem chodil pouze provoz ke kameře. Nejdřív nahoře vyplň a ověř IP adresu vzdálené kamery – podle ní se síť pozná.</p>
+<p class="hint">V routeru vytvoř nového klienta WireGuard, zkopíruj jeho konfiguraci a vlož ji sem <b>celou, tak jak je</b>. Atmovio si ji sám upraví: řádky, které RPi nepotřebuje (DNS, skripty), vynechá a <code>AllowedIPs = 0.0.0.0/0</code> nahradí jen vzdálenou sítí, aby tunelem chodil pouze provoz ke kameře. Nejdřív nahoře vyplň a ověř IP adresu vzdálené kamery – podle ní se síť pozná.</p>
 <button class="btn">Uložit a aktivovat</button></form></div></div></details>
 {% endblock %}"""
 
 TEMPLATES["system.html"] = """{% extends "base.html" %}{% block content %}
-<div class="grid">
+<div class="grid-wide">
 <div class="card"><h2>Raspberry Pi</h2>
-<div class="tw"><table class="kv"><tr><td>Název v síti</td><td>{{ s.hostname }}</td></tr><tr><td>IP adresa</td><td>{{ s.ip }}</td></tr><tr><td>Teplota</td><td>{{ s.temp }}</td></tr><tr><td>Zátěž</td><td>{{ s.load }}</td></tr><tr><td>Paměť</td><td>{{ s.mem }}</td></tr><tr><td>Běží od restartu</td><td>{{ s.uptime }}</td></tr><tr><td>Systémový disk</td><td>{{ s.rootfs }}</td></tr><tr><td>SkyWatch</td><td>verze {{ version }}</td></tr></table></div>
+<div class="tw"><table class="kv"><tr><td>Název v síti</td><td>{{ s.hostname }}</td></tr><tr><td>IP adresa</td><td>{{ s.ip }}</td></tr><tr><td>Teplota</td><td>{{ s.temp }}</td></tr><tr><td>Zátěž</td><td>{{ s.load }}</td></tr><tr><td>Paměť</td><td>{{ s.mem }}</td></tr><tr><td>Běží od restartu</td><td>{{ s.uptime }}</td></tr><tr><td>Systémový disk</td><td>{{ s.rootfs }}</td></tr><tr><td>Atmovio</td><td>verze {{ version }}</td></tr></table></div>
 <form method="post" action="/system/ctl" style="display:inline"><button class="btn small" name="action" value="restart_frigate">Restartovat nahrávání</button> <button class="btn small sec" name="action" value="fix_frigate">Opravit konfiguraci nahrávání</button> <button class="btn small danger" name="action" value="reboot" onclick="return confirm('Restartovat celé Raspberry Pi? Nahrávání se na minutu přeruší.')">Restartovat Raspberry Pi</button></form>
 <p class="hint" style="margin-top:10px">Když něco nefunguje, zkus nejdřív restart nahrávání; restart celého RPi až potom.</p></div>
 <div class="card"><h2>Zdraví disků (S.M.A.R.T.)</h2>
-{% if not disks_health %}<p class="hint">Zatím žádné měření – první proběhne do hodiny po startu SkyWatch.</p>{% endif %}
+{% if not disks_health %}<p class="hint">Zatím žádné měření – první proběhne do hodiny po startu Atmovio.</p>{% endif %}
 {% for d in disks_health %}<div style="display:flex;gap:.6rem;align-items:flex-start;margin-bottom:.7rem"><span class="dot {{ d.level }}" style="margin-top:.45rem;width:10px;height:10px;border-radius:50%;flex:none"></span>
 <div><b>{{ d.role }}</b> · {{ d.model or d.dev }}{% if d.temp %} · {{ d.temp }} °C{% endif %}
 <div class="hint">{% if d.level == 'ok' %}bez vadných sektorů, stav {{ 'OK' if d.healthy else '?' }}{% else %}nečitelné {{ d.pending or 0 }} · přemapované {{ d.reallocated or 0 }} · neopravitelné {{ d.uncorrectable or 0 }}<br>{{ d.trend }}{% endif %} <span class="mut">· měřeno {{ d.ts[8:10] }}. {{ d.ts[5:7]|int }}. {{ d.ts[11:16] }}</span></div></div></div>{% endfor %}
-<p class="hint">Měří se každou hodinu. Nečitelné (pending) sektory jsou místa, která disk nedokázal přečíst – když jejich počet zůstane stejný, jde o jednorázovou chybu (typicky tvrdé vypnutí); když roste, disk končí a je čas ho vyměnit. SkyWatch to sleduje a lišta nahoře zčervená jen při růstu nebo selhání.</p></div>
+<p class="hint">Měří se každou hodinu. Nečitelné (pending) sektory jsou místa, která disk nedokázal přečíst – když jejich počet zůstane stejný, jde o jednorázovou chybu (typicky tvrdé vypnutí); když roste, disk končí a je čas ho vyměnit. Atmovio to sleduje a lišta nahoře zčervená jen při růstu nebo selhání.</p></div>
 <div class="card"><h2>Heslo do přehrávače záznamů (Frigate)</h2>
-<p class="hint">Přehrávač má vlastní přihlášení: uživatel <b>admin</b>, heslo stejné jako do SkyWatch (nastaví se při instalaci i při každé změně hesla níže). Když se rozejdou, nech si vygenerovat nové – zobrazí se tady.</p>
+<p class="hint">Přehrávač má vlastní přihlášení: uživatel <b>admin</b>, heslo stejné jako do Atmovio (nastaví se při instalaci i při každé změně hesla níže). Když se rozejdou, nech si vygenerovat nové – zobrazí se tady.</p>
 <form method="post" action="/system/ctl"><button class="btn small sec" name="action" value="frigate_pw" onclick="return confirm('Vygenerovat nové heslo pro přehrávač? Trvá cca 30 s, nahrávání se krátce restartuje.')">Vygenerovat nové heslo</button></form>
 {% if frigate_pw %}<pre>Uživatel: admin
 Heslo:    {{ frigate_pw }}</pre>{% endif %}</div>
 <div class="card" id="api"><h2>API pro jiné systémy</h2>
 <p class="hint">Jen čtení: stav, kamery, snímky, detekce, videa (<code>/api/v1/…</code>, popis v <code>docs/api.md</code>). Hodí se pro Home Assistant, vlastní web nebo skripty. Klíč pošli v hlavičce <code>Authorization: Bearer &lt;klíč&gt;</code>.</p>
+<div class="flash" style="font-weight:400"><span>📤</span><div><b>Odesílání na tvůj web</b> (každou minutu stav + stejná data jako API, plus upozornění se snímkem) se nastavuje v <a href="/email">Upozornění → vlastní web (webhook)</a>{% if web_ok %} – <span class="badge ok">propojeno</span>{% else %} – <span class="badge warn">nenastaveno</span>{% endif %}. Tam se zadává adresa a token; API klíč níže slouží jen pro čtení <i>z</i> RPi.</div></div>
 {% if new_api_key %}<div class="flash"><span>🔑</span><div><b>Nový klíč (zobrazí se jen teď):</b><pre id="apikey" style="margin:.3rem 0 0;user-select:all">{{ new_api_key }}</pre><button type="button" class="btn small sec" onclick="swCopy('apikey', this)">Kopírovat</button></div></div>{% endif %}
 {% if api_keys %}<div class="tw"><table><tr><th>Název</th><th>Klíč</th><th>Vytvořen</th><th></th></tr>{% for k in api_keys %}<tr><td>{{ k.name }}</td><td><code>{{ k.hint }}</code></td><td class="hint">{{ k.created|czdt }}</td><td><form method="post" action="/system/api_key/delete" onsubmit="return confirm('Zrušit klíč {{ k.name }}? Co ho používá, přestane fungovat.')"><input type="hidden" name="hint" value="{{ k.hint }}"><button class="btn small sec">Zrušit</button></form></td></tr>{% endfor %}</table></div>{% endif %}
 <form method="post" action="/system/api_key" class="row" style="align-items:end;margin-top:.5rem"><div><label>Název nového klíče</label><input type="text" name="name" placeholder="např. Home Assistant" maxlength="40"></div><div style="flex:0"><button class="btn small">Vytvořit klíč</button></div></form>
 <div class="hint" style="margin-top:.4rem">Zkus: <code>curl -H "Authorization: Bearer KLÍČ" http://{{ s.ip.split(' ')[0] }}/api/v1/status</code></div></div>
-<div class="card" id="update"><h2>Aktualizace SkyWatch</h2>
+<div class="card" id="update"><h2>Aktualizace Atmovio</h2>
 <div class="tw"><table class="kv"><tr><td>Nainstalováno</td><td>verze {{ version }}</td></tr><tr><td>Nejnovější vydání</td><td>{% if update_info.latest %}verze {{ update_info.latest }}{% elif update_info.checked %}zatím žádné{% else %}ještě nezjištěno{% endif %}{% if update_info.checked %} <span class="hint">· zjištěno {{ update_info.checked|czdt }}</span>{% endif %}</td></tr></table></div>
 {% if update_info.available %}<div class="flash"><span>🆕</span><div><b>K dispozici je verze {{ update_info.latest }}.</b></div></div>{% elif update_info.error %}<div class="flash warn"><span>⚠️</span><div>Kontrola se nepovedla: {{ update_info.error }}</div></div>{% endif %}
 <a class="btn small{% if not update_info.available %} sec{% endif %}" href="/system/update">{% if update_info.available %}Co je nového a aktualizovat{% else %}Kontrola a novinky{% endif %}</a>
 <p class="hint" style="margin-top:10px">Nové verze se berou z GitHubu ({{ github_repo }}). Instaluje se jen na kliknutí, původní verze se zálohuje a při chybě se sama vrátí.</p></div>
-<div class="card"><h2>Heslo do SkyWatch</h2>
+<div class="card"><h2>Heslo do Atmovio</h2>
 <form method="post" action="/system/password"><label>Nové heslo (min. 12 znaků)</label><input type="password" name="pw1" required minlength="12" autocomplete="new-password"><label>Znovu</label><input type="password" name="pw2" required minlength="12" autocomplete="new-password"><button class="btn">Změnit heslo</button></form></div>
 </div>
 <details><summary>Pro pokročilé: služby, aktualizace, logy</summary>
 <pre>{{ docker }}</pre>
 <form method="post" action="/system/ctl" style="display:inline"><button class="btn small sec" name="action" value="restart_portainer">Restart Portainer</button> <button class="btn small sec" name="action" value="update" onclick="return confirm('Stáhnout verze z docker-compose.yml a restartovat kontejnery?')">Aktualizovat kontejnery</button></form>
-<p class="hint">Aktualizace systému, síť, uživatelé a disky: <a href="{{ cockpit_ui }}" target="_blank" rel="noopener">Cockpit ↗</a>. Kontejnery: <a href="{{ portainer_ui }}" target="_blank" rel="noopener">Portainer ↗</a>. Aktualizace SkyWatch: karta výše, nebo ručně přes SSH <code>sudo bash update-skywatch.sh</code>.</p>
-<p class="hint">Logy všech částí (SkyWatch, disk, VPN, nahrávání, systém) najdeš v sekci <a href="/logs">Logy</a>.</p></details>
+<p class="hint">Aktualizace systému, síť, uživatelé a disky: <a href="{{ cockpit_ui }}" target="_blank" rel="noopener">Cockpit ↗</a>. Kontejnery: <a href="{{ portainer_ui }}" target="_blank" rel="noopener">Portainer ↗</a>. Aktualizace Atmovio: karta výše, nebo ručně přes SSH <code>sudo bash update-atmovio.sh</code>.</p>
+<p class="hint">Logy všech částí (Atmovio, disk, VPN, nahrávání, systém) najdeš v sekci <a href="/logs">Logy</a>.</p></details>
 {% endblock %}"""
 
 TEMPLATES["update.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small sec" href="/system">← Systém</a></div>{% endblock %}{% block content %}
@@ -2606,9 +2604,9 @@ TEMPLATES["update.html"] = """{% extends "base.html" %}{% block actions %}<div c
 <div class="card"><h2>Verze</h2>
 <div class="tw"><table class="kv"><tr><td>Nainstalováno</td><td>verze {{ version }}</td></tr><tr><td>Nejnovější vydání</td><td>{% if st.latest %}verze {{ st.latest }}{% if st.published %} <span class="hint">· vydáno {{ st.published }}</span>{% endif %}{% elif st.checked %}zatím žádné vydání{% else %}ještě nezjištěno{% endif %}</td></tr><tr><td>Naposledy zjištěno</td><td>{% if st.checked %}{{ st.checked|czdt }}{% else %}–{% endif %}</td></tr></table></div>
 {% if st.error %}<div class="flash warn"><span>⚠️</span><div>Kontrola se nepovedla: {{ st.error }}<br><span class="hint">RPi potřebuje přístup na api.github.com a github.com.</span></div></div>{% endif %}
-{% if running %}<div class="flash"><span>⏳</span><div><b>Aktualizace probíhá…</b> Web se na chvíli odmlčí, až se SkyWatch restartuje. Nech stránku otevřenou, sama ukáže výsledek.</div></div>
-{% elif st.available %}<div class="flash"><span>🆕</span><div><b>K dispozici je verze {{ st.latest }}.</b> Trvá to zhruba 2–4 minuty; nahrávání kamer běží dál, jen web SkyWatch je chvíli nedostupný. Původní verze se zálohuje a při chybě se sama vrátí.</div></div>
-<form method="post" action="/system/update/start" data-nobusy><button class="btn" :disabled="running" onclick="return confirm('Nainstalovat SkyWatch {{ st.latest }}? Web bude asi minutu nedostupný.')">Nainstalovat verzi {{ st.latest }}</button></form>
+{% if running %}<div class="flash"><span>⏳</span><div><b>Aktualizace probíhá…</b> Web se na chvíli odmlčí, až se Atmovio restartuje. Nech stránku otevřenou, sama ukáže výsledek.</div></div>
+{% elif st.available %}<div class="flash"><span>🆕</span><div><b>K dispozici je verze {{ st.latest }}.</b> Trvá to zhruba 2–4 minuty; nahrávání kamer běží dál, jen web Atmovio je chvíli nedostupný. Původní verze se zálohuje a při chybě se sama vrátí.</div></div>
+<form method="post" action="/system/update/start" data-nobusy><button class="btn" :disabled="running" onclick="return confirm('Nainstalovat Atmovio {{ st.latest }}? Web bude asi minutu nedostupný.')">Nainstalovat verzi {{ st.latest }}</button></form>
 {% elif st.checked %}<p class="hint">Máš nejnovější verzi.</p>{% else %}<p class="hint">Klikni na Zkontrolovat teď.</p>{% endif %}
 <form method="post" action="/system/update/check" style="margin-top:.6rem"><button class="btn small sec" :disabled="running" data-busy="Ptám se GitHubu">Zkontrolovat teď</button></form>
 <form method="post" action="/system/update/auto" data-nobusy style="margin-top:.8rem"><label><input type="checkbox" name="auto_check" value="1" {% if auto_check %}checked{% endif %} onchange="this.form.submit()"> Kontrolovat nové verze automaticky (1× denně jen dotaz na GitHub; nic se neinstaluje samo)</label></form>
@@ -2620,7 +2618,7 @@ TEMPLATES["update.html"] = """{% extends "base.html" %}{% block actions %}<div c
 <div class="card" x-show="running || log" x-cloak>
  <h2>Průběh aktualizace</h2>
  <div class="flash" x-show="phase=='run'"><span>⏳</span><div>Připravuji novou verzi (stažení knihoven, kontrola)…</div></div>
- <div class="flash" x-show="phase=='restart'"><span>⏳</span><div>SkyWatch se restartuje, čekám na odpověď…</div></div>
+ <div class="flash" x-show="phase=='restart'"><span>⏳</span><div>Atmovio se restartuje, čekám na odpověď…</div></div>
  <div class="flash" x-show="phase=='done'"><span>✅</span><div><b>Hotovo.</b> Běží verze <span x-text="newVersion"></span>. <a href="/system/update">Obnovit stránku</a></div></div>
  <div class="flash err" x-show="phase=='failed'"><span>⛔</span><div><b>Aktualizace selhala</b>, původní verze byla obnovena. Podrobnosti v záznamu níže.</div></div>
  <pre style="max-height:24rem;overflow:auto;font-size:.8rem;white-space:pre-wrap" x-text="log"></pre>
@@ -2864,7 +2862,7 @@ async def lifespan(_app):
         await run_in_threadpool(watcher.join, 5)
 
 
-app = FastAPI(title="SkyWatch", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+app = FastAPI(title="Atmovio", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 (APP_DIR / "static" / "vendor").mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
 _cfg0 = load_config()
@@ -2881,7 +2879,7 @@ SUBTITLES = {
     "/vpn": "Je vzdálená kamera dostupná? Síťové údaje RPi.",
     "/logs": "Co se v systému děje: hlídání oblohy, kamery, disk, VPN, nahrávání.",
     "/system": "Stav Raspberry Pi, restart, hesla, aktualizace.",
-    "/system/update": "Nové verze SkyWatch z GitHubu: kontrola, co je nového, instalace jedním tlačítkem.",
+    "/system/update": "Nové verze Atmovio z GitHubu: kontrola, co je nového, instalace jedním tlačítkem.",
     "/videos": "Videa vystřižená ze záznamů – ke stažení, s náhledem. Sama se mažou po nastavené době.",
 }
 
@@ -3125,7 +3123,7 @@ async def auth_middleware(request: Request, call_next):
 
 # SessionMiddleware musí být přidán až PO auth middleware (poslední přidaný je nejvíc vnější)
 app.add_middleware(SessionMiddleware, secret_key=_cfg0["secret"], max_age=60 * 60 * 24 * 14,
-                   same_site="lax", https_only=os.environ.get("SKYWATCH_HTTPS") == "1")
+                   same_site="lax", https_only=os.environ.get("ATMOVIO_HTTPS") == "1")
 
 
 # --------------------------------------------------------------------------- REST API v1 (jen čtení; klíč v Nastavení → Systém) – docs/api.md
@@ -3266,7 +3264,7 @@ def api_events(limit: int = 20):
 
 @app.post("/system/api_key")
 def api_key_create(request: Request, name: str = Form("")):
-    key = "sw_" + secrets.token_urlsafe(30)
+    key = "at_" + secrets.token_urlsafe(30)   # do 3.x "sw_"; staré klíče platí dál (ověřuje se jen hash)
     with edit_config() as cfg:
         keys = cfg.setdefault("api_keys", [])
         keys.append({"name": " ".join(name.split())[:40] or f"klíč {len(keys) + 1}", "hash": hashlib.sha256(key.encode()).hexdigest(),
@@ -3652,7 +3650,7 @@ def go2rtc_probe(cfg, url: str, timeout: int = 15) -> dict | None | bool:
     """Ověří stream tak, jak ho uvidí Frigate – přes go2rtc (dočasný stream + ffprobe restreamu).
     Vrací dict (video ok), None (go2rtc video nedostal), False (go2rtc nedostupný – nelze rozhodnout)."""
     api = cfg.get("go2rtc_url", "http://127.0.0.1:1984").rstrip("/") + "/api/streams"
-    name = f"skywatch_test_{secrets.token_hex(4)}"
+    name = f"atmovio_test_{secrets.token_hex(4)}"
     try:
         r = requests.put(api, params={"name": name, "src": url}, timeout=5)
         if r.status_code >= 400:
@@ -3734,7 +3732,7 @@ def _back_url(back: str, default: str = "/cameras") -> str:
 @app.post("/cameras/add")
 @frigate_transaction
 def cameras_add(request: Request, name: str = Form(...), main: str = Form(...), sub: str = Form(""),
-                test: str = Form(""), skywatch: str = Form(""), user: str = Form(""), password: str = Form(""),
+                test: str = Form(""), atmovio: str = Form(""), user: str = Form(""), password: str = Form(""),
                 replace: str = Form(""), back: str = Form("")):
     cfg = load_config()
     back = _back_url(back)
@@ -3828,7 +3826,7 @@ def cameras_add(request: Request, name: str = Form(...), main: str = Form(...), 
             names.pop(replace, None)
             current["ai"]["cameras"] = [name if c == replace else c for c in current["ai"]["cameras"]]
         names[name] = label
-        if not replace and skywatch and name not in current["ai"]["cameras"]:
+        if not replace and atmovio and name not in current["ai"]["cameras"]:
             current["ai"]["cameras"].append(name)
     rc, out = frigate_restart()
     verb = "upravena" if replace else "přidána"
@@ -4416,7 +4414,7 @@ def frigate_exports(cfg) -> dict:
 
 
 def export_thumb_path(cfg, rec: dict, fr: dict | None) -> Path | None:
-    """Náhled videa: nejdřív ten od Frigate, jinak si ho SkyWatch vyrobí ffmpegem (a uloží na HDD)."""
+    """Náhled videa: nejdřív ten od Frigate, jinak si ho Atmovio vyrobí ffmpegem (a uloží na HDD)."""
     if fr and fr.get("thumb_path"):
         p = frigate_media_path(fr["thumb_path"])
         if p and p.is_file():
@@ -4488,7 +4486,7 @@ def cleanup_exports(cfg):
 
 @app.get("/clip/{camera}.mp4")
 def clip_proxy(request: Request, camera: str, start: float, end: float):
-    """Přehrání úseku záznamu přímo ve SkyWatch – proxy na Frigate (bez hesla, jen pro přihlášené)."""
+    """Přehrání úseku záznamu přímo ve Atmovio – proxy na Frigate (bez hesla, jen pro přihlášené)."""
     if not re.fullmatch(r"[a-zA-Z0-9_]{1,64}", camera) or end <= start or end - start > 3600:
         return JSONResponse({"error": "bad range"}, status_code=400)
     cfg = load_config()
@@ -4823,7 +4821,7 @@ async def web_test(request: Request):
         if not cfg["web"]["token"]:
             raise ValueError("Chybí token.")
         resp = await run_in_threadpool(web_post, cfg, {"type": "ping"})
-        await run_in_threadpool(web_event, cfg, "test", "Test spojení SkyWatch",
+        await run_in_threadpool(web_event, cfg, "test", "Test spojení Atmovio",
                                 f"Spojení RPi → web funguje. Server: {resp.get('nvr', '')}, čas serveru {resp.get('server_time', '')}.")
         watcher.web_error = ""
         watcher._last_watchdog = 0
@@ -4868,7 +4866,7 @@ async def email_save(request: Request):
 async def email_test(request: Request):
     try:
         em = await run_in_threadpool(save_email_form, await request.form())
-        await run_in_threadpool(send_email, em, "[SkyWatch] Testovací e-mail", "Pokud čteš tento e-mail, odesílání z Raspberry Pi funguje.\n")
+        await run_in_threadpool(send_email, em, "[Atmovio] Testovací e-mail", "Pokud čteš tento e-mail, odesílání z Raspberry Pi funguje.\n")
         flash(request, f"Testovací e-mail odeslán na {em['to']}.")
     except Exception as e:
         flash(request, f"Odeslání selhalo: {e}", "err")
@@ -5058,7 +5056,7 @@ def normalize_wg_config(conf: str, previous: str = "", remote_ip: str = "") -> t
                     hosts = [f"{ip}/{net.max_prefixlen}" for ip in inside]
                     narrowed.extend(h for h in hosts if h not in narrowed)
                     notes.append(f"AllowedIPs {net} jsem zúžil jen na kamery ({', '.join(str(ip) for ip in inside)}) – ostatní zařízení "
-                                 "z VPN (třeba telefon) pak vidí RPi i na domácí adrese. Další kameru na chatě stačí přidat ve SkyWatch a VPN znovu uložit.")
+                                 "z VPN (třeba telefon) pak vidí RPi i na domácí adrese. Další kameru na chatě stačí přidat ve Atmovio a VPN znovu uložit.")
                 else:
                     narrowed.append(network)
             keep = narrowed
@@ -5215,7 +5213,7 @@ def vpn_ping(request: Request, test_ip: str = Form("")):
 # ---- logs
 
 LOG_SOURCES = [
-    ("skywatch", "SkyWatch", "Hlídání oblohy (AI), kamery, upozornění, e-maily, změny nastavení – vše, co dělá SkyWatch."),
+    ("atmovio", "Atmovio", "Hlídání oblohy (AI), kamery, upozornění, e-maily, změny nastavení – vše, co dělá Atmovio."),
     ("storage", "Disk a nahrávání", "Správce HDD: připojení disku, přepínání živý režim / nahrávání."),
     ("vpn", "VPN", "Tunel WireGuard: start, stop a důvody, proč se nespojil."),
     ("frigate", "Frigate", "Přehrávač a nahrávání záznamů (kontejner Frigate): chyby kamer, streamů a disku."),
@@ -5239,15 +5237,15 @@ def _journal(args: list[str], n: int, since: str) -> str:
 def read_log_source(src: str, n: int = 300) -> str:
     n = max(20, min(int(n), 5000))
     since = log_since(src)
-    if src == "skywatch":
+    if src == "atmovio":
         try:
             lines = LOG_FILE.read_text(encoding="utf-8", errors="replace").splitlines()
         except Exception:
             lines = []
-        journal = _journal(["-u", "skywatch", "-p", "warning"], 40, since)
+        journal = _journal(["-u", "atmovio", "-p", "warning"], 40, since)
         text = "\n".join(lines[-n:])
         if journal:
-            text += "\n\n# Služba skywatch (varování ze systemd):\n" + journal
+            text += "\n\n# Služba atmovio (varování ze systemd):\n" + journal
         return text
     if src == "storage":
         return _journal(["-u", "nvr-storage"], n, since)
@@ -5283,15 +5281,15 @@ def log_summary(text: str) -> list[tuple[str, str]]:
 
 
 @app.get("/logs", response_class=HTMLResponse)
-def logs_page(request: Request, src: str = "skywatch", n: int = 300, q: str = "", raw: str = ""):
+def logs_page(request: Request, src: str = "atmovio", n: int = 300, q: str = "", raw: str = ""):
     keys = [k for k, _n, _d in LOG_SOURCES]
     if src not in keys:
-        src = "skywatch"
+        src = "atmovio"
     n = n if n in (100, 300, 1000) else 300
     text = read_log_source(src, n)
     q = q.strip()[:80]
     if src == "frigate" and not raw:
-        # Provozní řádky webserveru (každou minutu dotaz SkyWatche a kontrola živosti) nejsou chyby – schovej je.
+        # Provozní řádky webserveru (každou minutu dotaz Atmovioe a kontrola živosti) nejsou chyby – schovej je.
         text = "\n".join(line for line in text.splitlines()
                          if not re.search(r'request_time=|" 400 0 "-"|s6-rc: info:', line))
     if q:
@@ -5302,11 +5300,11 @@ def logs_page(request: Request, src: str = "skywatch", n: int = 300, q: str = ""
 
 
 @app.post("/logs/clear")
-def logs_clear(request: Request, src: str = Form("skywatch")):
+def logs_clear(request: Request, src: str = Form("atmovio")):
     keys = [k for k, _n, _d in LOG_SOURCES]
     if src not in keys:
-        src = "skywatch"
-    if src == "skywatch":
+        src = "atmovio"
+    if src == "atmovio":
         try:
             for h in _logger.handlers:
                 h.acquire()
@@ -5320,22 +5318,22 @@ def logs_clear(request: Request, src: str = Form("skywatch")):
                 Path(f"{LOG_FILE}.{i}").unlink(missing_ok=True)
         except Exception as e:
             flash(request, f"Log se nepodařilo vymazat: {e}", "err")
-            return RedirectResponse("/logs?src=skywatch", status_code=303)
-        log("Log SkyWatch vymazán uživatelem")
+            return RedirectResponse("/logs?src=atmovio", status_code=303)
+        log("Log Atmovio vymazán uživatelem")
     cfg = load_config()
     cfg.setdefault("log_since", {})[src] = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     save_config(cfg)
-    flash(request, "Log vymazán – zobrazují se jen nové záznamy." if src != "skywatch" else "Log SkyWatch vymazán.")
+    flash(request, "Log vymazán – zobrazují se jen nové záznamy." if src != "atmovio" else "Log Atmovio vymazán.")
     return RedirectResponse(f"/logs?src={src}", status_code=303)
 
 
 @app.get("/logs/download")
-def logs_download(request: Request, src: str = "skywatch"):
+def logs_download(request: Request, src: str = "atmovio"):
     keys = [k for k, _n, _d in LOG_SOURCES]
     if src not in keys:
-        src = "skywatch"
+        src = "atmovio"
     text = read_log_source(src, 5000)
-    name = f"skywatch-log-{src}-{dt.datetime.now().strftime('%Y%m%d-%H%M')}.txt"
+    name = f"atmovio-log-{src}-{dt.datetime.now().strftime('%Y%m%d-%H%M')}.txt"
     return Response(text, media_type="text/plain; charset=utf-8", headers={"Content-Disposition": f"attachment; filename={name}"})
 
 
@@ -5345,7 +5343,7 @@ def logs_download(request: Request, src: str = "skywatch"):
 def system_page(request: Request):
     _rc, docker = run("docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'", timeout=15)
     cfg = load_config()
-    return render(request, "system.html", "Systém", s=sys_info(), docker=docker, version=APP_VERSION,
+    return render(request, "system.html", "Systém", s=sys_info(), docker=docker, version=APP_VERSION, web_ok=web_ready(cfg),
                   frigate_pw=request.session.pop("frigate_pw", None), disks_health=disk_health(),
                   new_api_key=request.session.pop("new_api_key", None), api_keys=cfg.get("api_keys") or [])
 
@@ -5390,7 +5388,7 @@ def system_ctl(request: Request, action: str = Form(...)):
 @app.get("/system/update", response_class=HTMLResponse)
 def update_page(request: Request):
     cfg = load_config()
-    return render(request, "update.html", "Aktualizace SkyWatch", st=update_state(), running=update_running(),
+    return render(request, "update.html", "Aktualizace Atmovio", st=update_state(), running=update_running(),
                   log_text=update_log_tail(), auto_check=bool((cfg.get("update") or {}).get("auto_check", True)))
 
 
@@ -5442,9 +5440,9 @@ def system_password(request: Request, pw1: str = Form(...), pw2: str = Form(...)
         request.session["auth"] = hashlib.sha256(cfg["admin_password_hash"].encode()).hexdigest()
         if frigate_set_admin_password(cfg, pw1):
             note = "" if storage_ready() else " (Frigate běží bez HDD; po připojení disku s dřívější databází může platit heslo z něj.)"
-            flash(request, "Heslo změněno – platí pro SkyWatch i Frigate (admin)." + note)
+            flash(request, "Heslo změněno – platí pro Atmovio i Frigate (admin)." + note)
         else:
-            flash(request, "Heslo SkyWatch změněno, ale Frigate ho nepřevzal (neběží?). Nové mu vygeneruješ tlačítkem výše.", "err")
+            flash(request, "Heslo Atmovio změněno, ale Frigate ho nepřevzal (neběží?). Nové mu vygeneruješ tlačítkem výše.", "err")
     return RedirectResponse("/system", status_code=303)
 
 
@@ -5469,1104 +5467,4 @@ def on_startup():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("SKYWATCH_PORT", "80")))
-SKYWATCH_APP_EOF
-cat > "$STAGE/storage_guard.py" <<'SKYWATCH_STORAGE_EOF'
-#!/usr/bin/env python3
-"""Hlídání HDD a přepínání Frigate mezi nahráváním a živým náhledem.
-
-Samostatná služba, nezávislá na HDD. Konfigurace uživatele zůstává v config.yml.
-Diskové I/O probíhá v jediném časově omezeném podprocesu, ne v řídicí smyčce.
-"""
-import copy
-import datetime as dt
-import fcntl
-import io
-import json
-import os
-import sqlite3
-from pathlib import Path
-import subprocess
-import sys
-import tempfile
-import time
-
-from ruamel.yaml import YAML
-
-NVR = Path(os.environ.get('NVR_DIR', '/opt/nvr'))
-SKY = NVR / 'skywatch'
-MOUNT = Path('/mnt/nvr')
-# Stav se zapisuje každé 2 s – patří do RAM (/run), ne na SSD.
-STATUS = Path('/run/skywatch/storage-status.json')
-COMPOSE = NVR / 'docker-compose.yml'
-LIVE_CONFIG = NVR / 'frigate/config/config.live.yml'
-SOURCE_CONFIG = NVR / 'frigate/config/config.yml'
-SYSTEMD = Path('/etc/systemd/system')
-
-
-def atomic(path, text):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix='.' + path.name)
-    try:
-        with os.fdopen(fd, 'w') as out:
-            out.write(text)
-            out.flush()
-            os.fsync(out.fileno())
-        os.replace(tmp, path)
-    finally:
-        Path(tmp).unlink(missing_ok=True)
-
-
-def read_yaml(path):
-    return YAML().load(path.read_text()) or {}
-
-
-def dump(data):
-    out = io.StringIO()
-    YAML().dump(data, out)
-    return out.getvalue()
-
-
-def live_config(data):
-    data = copy.deepcopy(data)
-    # Frigate nesmí při úklidu prázdného média odstranit index záznamů na HDD.
-    # Název souboru musí obsahovat 'frigate.db' – Frigate před migrací zálohuje přes
-    # path.replace('frigate.db', 'backup.db'); jiný název skončí SameFileError a pádem.
-    data['database'] = {'path': '/config/live/frigate.db'}
-    for scope in [data, *(data.get('cameras') or {}).values()]:
-        scope.setdefault('record', {}).update(enabled=False, sync_recordings=False)
-        scope.setdefault('snapshots', {})['enabled'] = False
-        # Odstranění role record zabrání i tvorbě dočasných video segmentů.
-        inputs = scope.get('ffmpeg', {}).get('inputs', [])
-        for inp in inputs:
-            inp['roles'] = [role for role in inp.get('roles', []) if role != 'record']
-        if inputs and not any('detect' in inp['roles'] for inp in inputs):
-            inputs[0]['roles'].append('detect')
-        if inputs:
-            scope['ffmpeg']['inputs'] = [inp for inp in inputs if inp['roles']]
-    return data
-
-
-def media_config(service, healthy):
-    """Compose vždy explicitně určuje médium; nikdy nevytváří složku na SSD."""
-    service = copy.deepcopy(service)
-    def target(volume):
-        return volume.get('target') if isinstance(volume, dict) else volume.split(':')[1]
-    service['volumes'] = [v for v in service.get('volumes', []) if target(v) != '/media/frigate']
-    service['volumes'].append(
-        {'type': 'bind', 'source': str(MOUNT / 'frigate'), 'target': '/media/frigate',
-         'bind': {'create_host_path': False}} if healthy else
-        {'type': 'tmpfs', 'target': '/media/frigate', 'tmpfs': {'size': 32 * 1024 * 1024}})
-    env = service.get('environment', {})
-    if isinstance(env, list):
-        env = dict(item.split('=', 1) if '=' in item else (item, None) for item in env)
-    env['CONFIG_FILE'] = '/config/config.yml' if healthy else '/config/config.live.yml'
-    service['environment'] = env
-    # Start po rebootu musí nejprve rozhodnout podle stavu disku.
-    service['restart'] = 'no'
-    return service
-
-
-def probe_disk():
-    """Volá se pouze v podprocesu; vadné USB může blokovat i stat/fsync."""
-    mounts = Path('/proc/self/mountinfo').read_text().splitlines()
-    entry = next((line for line in mounts if line.split()[4] == str(MOUNT)), '')
-    if not entry or entry.split(' - ', 1)[1].split()[0] != 'ext4':
-        return False
-    if not MOUNT.is_mount() or MOUNT.stat().st_dev == Path('/').stat().st_dev:
-        return False
-    # Ověřit právě prostor záznamů, ne pouze jiný adresář na témže disku.
-    directories = ('frigate', 'frigate/recordings', 'skywatch', 'skywatch/snapshots')
-    if any((MOUNT / name).is_symlink() for name in directories):
-        return False
-    for name in directories:
-        directory = MOUNT / name
-        directory.mkdir(exist_ok=True)
-        if directory.stat().st_dev != MOUNT.stat().st_dev:
-            return False
-    # Bez zápisu nelze rozlišit připojený disk od read-only / vadného HDD.
-    fd, name = tempfile.mkstemp(prefix='.skywatch-probe-', dir=MOUNT / 'frigate/recordings')
-    try:
-        with os.fdopen(fd, 'wb') as out:
-            out.write(b'SkyWatch storage check\n')
-            out.flush()
-            os.fsync(out.fileno())
-    finally:
-        Path(name).unlink(missing_ok=True)
-    return True
-
-
-class Probe:
-    def __init__(self):
-        self.process = None
-        self.started = 0
-
-    def sample(self):
-        """None = měření běží; False = chyba/timeout; True = fsync prošel."""
-        if self.process is None:
-            self.process = subprocess.Popen([sys.executable, __file__, '--probe'],
-                                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            self.started = time.monotonic()
-            return None
-        rc = self.process.poll()
-        if rc is not None:
-            self.process = None
-            return rc == 0
-        if time.monotonic() - self.started > 4:
-            self.process.kill()
-            # Nečekat na proces v D state a nevytvářet další, dokud neskončí.
-            return False
-        return None
-
-
-def command(args, timeout=90):
-    result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
-    if result.returncode:
-        raise RuntimeError((result.stderr or result.stdout)[-1000:])
-    return result.stdout
-
-
-_last_publish = {'key': None, 'at': 0.0}
-
-
-def publish(mode, reason):
-    """Zapíše stav jen při změně nebo nejpozději po 10 s (SkyWatch bere stav za čerstvý 15 s)."""
-    now = time.time()
-    if _last_publish['key'] == (mode, reason) and now - _last_publish['at'] < 10:
-        return
-    _last_publish.update(key=(mode, reason), at=now)
-    atomic(STATUS, json.dumps({'mode': mode, 'reason': reason, 'checked_at': now, 'guard_pid': os.getpid()}, ensure_ascii=False))
-
-
-class Guard:
-    def __init__(self):
-        self.mode = None
-        self.successes = 0
-        self.config_text = None
-        self.retry_at = 0
-        self.last_running_check = 0
-        self.mount_id = None
-
-    def reconcile(self, healthy, mount_id=None):
-        if mount_id != self.mount_id:
-            self.successes = 0
-            self.mount_id = mount_id
-        if healthy is True:
-            self.successes += 1
-        elif healthy is False:
-            self.successes = 0
-        # Návrat až po třech úspěšných zápisech; pád okamžitě.
-        desired = 'recording' if self.successes >= 3 else 'live'
-        if healthy is None and self.mode == 'recording':
-            desired = 'recording'
-        source = SOURCE_CONFIG.read_text()
-        request = SKY / 'storage-restart'
-        revision = (source, request.read_text() if request.exists() else '')
-        changed = revision != self.config_text
-        if self.mode and time.monotonic() - self.last_running_check >= 10:
-            self.last_running_check = time.monotonic()
-            try:
-                if command(['docker', 'inspect', '-f', '{{.State.Running}}', 'frigate'], timeout=5).strip() != 'true':
-                    self.mode = None
-            except Exception:
-                self.mode = None
-        if self.mode == desired and not changed:
-            publish(self.mode, 'HDD je zapisovatelný.' if self.mode == 'recording' else 'HDD chybí, neodpovídá nebo neprošel kontrolou zápisu. Živý náhled bez záznamu.')
-            return
-        if time.monotonic() < self.retry_at:
-            return
-        publish('switching', 'Přepínám režim Frigate; náhled může být krátce přerušen.')
-        try:
-            config = YAML().load(source) or {}
-            database = config.get('database', {}).get('path', '/config/frigate.db')
-            source_db = NVR / 'frigate/config' / Path(database).relative_to('/config')
-            live_db = NVR / 'frigate/config/live/frigate.db'
-            live_db.parent.mkdir(mode=0o700, exist_ok=True)
-            if desired == 'live' and self.mode != 'live':
-                if source_db.exists():
-                    # Konzistentní SQLite backup včetně WAL, nikoli kopie otevřeného souboru.
-                    command([sys.executable, __file__, '--backup-db', str(source_db),
-                             str(live_db)])
-            elif desired == 'recording' and not source_db.exists() and live_db.exists():
-                # První instalace bez HDD: zachovat přihlášení vytvořené v live režimu.
-                command([sys.executable, __file__, '--backup-db', str(live_db), str(source_db)])
-            atomic(LIVE_CONFIG, dump(live_config(config)))
-            compose = read_yaml(COMPOSE)
-            compose['services']['frigate'] = media_config(compose['services']['frigate'], desired == 'recording')
-            atomic(COMPOSE, dump(compose))
-            # Omezená doba zastavení – na nemocný disk nečekat desítky sekund.
-            command(['docker', 'compose', '-f', str(COMPOSE), 'up', '-d', '--no-deps', '--force-recreate', '--timeout', '5', 'frigate'])
-            self.mode, self.config_text = desired, revision
-            publish(desired, 'HDD je zapisovatelný.' if desired == 'recording' else 'Pouze živý náhled. Nahrávání a ukládání snímků jsou vypnuté.')
-        except Exception as exc:
-            self.mode = None
-            self.retry_at = time.monotonic() + 15
-            publish('error', f'Přepnutí se nepodařilo, opakuji: {exc}')
-
-
-def install():
-    """Převod instalace tohoto projektu; původní soubory ponechá v záloze."""
-    # Bez démona nelze bezpečně změnit restart policy starého kontejneru.
-    # Neodstraňovat starou mount závislost před touto kontrolou.
-    command(['docker', 'info'], timeout=10)
-    compose = read_yaml(COMPOSE)
-    if 'frigate' not in compose.get('services', {}):
-        raise RuntimeError('V Compose chybí služba frigate.')
-    config = read_yaml(SOURCE_CONFIG)
-    database = Path(config.get('database', {}).get('path', '/config/frigate.db'))
-    if not database.is_relative_to('/config') or '..' in database.parts:
-        raise RuntimeError('Správce vyžaduje databázi Frigate na SSD uvnitř /config.')
-    backup = SKY / 'backups' / ('storage-' + dt.datetime.now().strftime('%Y%m%d%H%M%S'))
-    backup.mkdir(parents=True, exist_ok=True)
-    files = [COMPOSE, SYSTEMD / 'skywatch.service',
-             SYSTEMD / 'docker.service.d/nvr-storage.conf',
-             SYSTEMD / 'nvr-storage.service']
-    for index, path in enumerate(files):
-        if path.exists():
-            atomic(backup / f'{index}-{path.name}', path.read_text())
-    atomic(LIVE_CONFIG, dump(live_config(config)))
-    compose['services']['frigate'] = media_config(compose['services']['frigate'], False)
-    atomic(COMPOSE, dump(compose))
-    # Zrušit pouze starou závislost vytvořenou tímto projektem.
-    files[2].unlink(missing_ok=True)
-    unit = files[1].read_text()
-    unit = '\n'.join(line for line in unit.splitlines() if not (
-        line == 'RequiresMountsFor=/mnt/nvr' or line == 'BindsTo=mnt-nvr.mount'
-        or line == 'After=mnt-nvr.mount' or line == 'ConditionPathIsMountPoint=/mnt/nvr')) + '\n'
-    atomic(files[1], unit)
-    atomic(files[3], f'''[Unit]
-Description=NVR storage guard – živý náhled při poruše HDD
-After=docker.service network-online.target
-Wants=docker.service network-online.target
-
-[Service]
-ExecStart={SKY}/venv/bin/python {SKY}/storage_guard.py
-WorkingDirectory={NVR}
-Restart=always
-RestartSec=5
-UMask=0077
-
-[Install]
-WantedBy=multi-user.target
-''')
-    # Původní restart policy nesmí po rebootu obejít kontrolu disku.
-    existing = command(['docker', 'ps', '-a', '--filter', 'name=^/frigate$', '--format', '{{.ID}}'])
-    if existing.strip():
-        command(['docker', 'update', '--restart=no', 'frigate'])
-    command(['systemctl', 'daemon-reload'])
-    command(['systemctl', 'start', 'docker'])
-    command(['systemctl', 'enable', 'nvr-storage.service'])
-    command(['systemctl', 'restart', 'nvr-storage.service'])
-
-
-def main():
-    if '--backup-db' in sys.argv:
-        with sqlite3.connect(f'file:{sys.argv[2]}?mode=ro', uri=True, timeout=5) as source:
-            with sqlite3.connect(sys.argv[3], timeout=5) as destination:
-                source.backup(destination)
-        return 0
-    if '--probe' in sys.argv:
-        try:
-            return 0 if probe_disk() else 1
-        except (OSError, ValueError):
-            return 1
-    if '--install' in sys.argv:
-        install()
-        return 0
-    SKY.mkdir(parents=True, exist_ok=True)
-    with (SKY / '.storage.lock').open('w') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        probe, guard = Probe(), Guard()
-        while True:
-            try:
-                # Změna mount ID zachytí i rychlé odpojení/připojení mezi sondami.
-                mounts = Path('/proc/self/mountinfo').read_text().splitlines()
-                mount_id = next((line.split()[0] for line in mounts if line.split()[4] == str(MOUNT)), None)
-                guard.reconcile(probe.sample(), mount_id)
-            except Exception as exc:
-                publish('error', str(exc))
-            time.sleep(2)
-
-
-if __name__ == '__main__':
-    raise SystemExit(main())
-SKYWATCH_STORAGE_EOF
-cat > "$STAGE/requirements.txt" <<'SKYWATCH_REQUIREMENTS_EOF'
-# Přímé závislosti ověřené lokálními testy; Python 3.11+.
-fastapi==0.141.1
-uvicorn==0.52.4
-jinja2==3.1.6
-python-multipart==0.0.32
-itsdangerous==2.2.0
-requests==2.34.2
-pillow==12.3.0
-ruamel.yaml==0.18.17
-astral==3.2
-SKYWATCH_REQUIREMENTS_EOF
-
-# --- statické soubory (CSS/JS) a knihovny Pico CSS + Alpine.js (offline kopie)
-write_static() {  # $1 = cílový adresář
-  mkdir -p "$1/vendor"
-  cat > "$1/skywatch.css" <<'SKYWATCH_CSS_EOF'
-/* SkyWatch – vlastní vzhled nad Pico CSS 2 (světlý i tmavý režim). */
-
-:root {
-  --pico-font-size: 94%;
-  --pico-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, "Helvetica Neue", Arial, sans-serif;
-  --pico-line-height: 1.5;
-  --pico-spacing: .8rem;
-  --pico-form-element-spacing-vertical: .55rem;
-  --pico-form-element-spacing-horizontal: .8rem;
-  --pico-border-radius: .65rem;
-  --pico-block-spacing-vertical: 1rem;
-  --pico-block-spacing-horizontal: 1.1rem;
-
-  --sw-nav: #0b1220;
-  --sw-nav-2: #111a2e;
-  --sw-nav-tx: #b6c2d6;
-  --sw-nav-line: rgba(255, 255, 255, .07);
-  --sw-sidebar-w: 248px;
-  --sw-ok: #16a34a; --sw-ok-bg: #dcfce7;
-  --sw-warn: #b45309; --sw-warn-bg: #fef3c7;
-  --sw-err: #b91c1c; --sw-err-bg: #fee2e2;
-  --sw-info: #0369a1; --sw-info-bg: #e0f2fe;
-  --sw-muted: #64748b;
-  --sw-text: #0f172a;
-  --sw-shadow: 0 1px 2px rgba(15, 23, 42, .05), 0 6px 20px rgba(15, 23, 42, .06);
-  --sw-img-bg: #0b1220;
-}
-[data-theme="light"], :root:not([data-theme="dark"]) {
-  --pico-background-color: #f3f5f9;
-  --pico-card-background-color: #ffffff;
-  --pico-card-border-color: #e3e8ef;
-  --pico-primary: #0284c7;
-  --pico-primary-hover: #0369a1;
-  --pico-primary-background: #0284c7;
-  --pico-primary-hover-background: #0369a1;
-  --pico-primary-inverse: #ffffff;
-  --pico-primary-focus: rgba(2, 132, 199, .25);
-  --pico-color: #0f172a;
-  --pico-muted-color: #64748b;
-  --pico-muted-border-color: #e3e8ef;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --pico-background-color: #0b1220;
-    --pico-card-background-color: #131d33;
-    --pico-card-border-color: #24304a;
-    --pico-card-sectioning-background-color: #172239;
-    --pico-primary: #38bdf8;
-    --pico-primary-hover: #7dd3fc;
-    --pico-primary-background: #0ea5e9;
-    --pico-primary-hover-background: #38bdf8;
-    --pico-primary-inverse: #04121c;
-    --pico-color: #e2e8f0;
-    --pico-muted-color: #94a3b8;
-    --pico-muted-border-color: #24304a;
-    --sw-ok: #4ade80; --sw-ok-bg: #123524;
-    --sw-warn: #fbbf24; --sw-warn-bg: #3a2a0f;
-    --sw-err: #f87171; --sw-err-bg: #3f1515;
-    --sw-info: #7dd3fc; --sw-info-bg: #0c2a3d;
-    --sw-muted: #94a3b8;
-    --sw-text: #e2e8f0;
-    --sw-shadow: 0 1px 2px rgba(0, 0, 0, .4);
-  }
-}
-[data-theme="dark"] {
-  --pico-background-color: #0b1220;
-  --pico-card-background-color: #131d33;
-  --pico-card-border-color: #24304a;
-  --pico-card-sectioning-background-color: #172239;
-  --pico-primary: #38bdf8;
-  --pico-primary-hover: #7dd3fc;
-  --pico-primary-background: #0ea5e9;
-  --pico-primary-hover-background: #38bdf8;
-  --pico-primary-inverse: #04121c;
-  --pico-color: #e2e8f0;
-  --pico-muted-color: #94a3b8;
-  --pico-muted-border-color: #24304a;
-  --sw-ok: #4ade80; --sw-ok-bg: #123524;
-  --sw-warn: #fbbf24; --sw-warn-bg: #3a2a0f;
-  --sw-err: #f87171; --sw-err-bg: #3f1515;
-  --sw-info: #7dd3fc; --sw-info-bg: #0c2a3d;
-  --sw-muted: #94a3b8;
-  --sw-text: #e2e8f0;
-  --sw-shadow: 0 1px 2px rgba(0, 0, 0, .4);
-}
-
-/* ---------- základ ---------- */
-html { -webkit-text-size-adjust: 100%; }
-body { margin: 0; background: var(--pico-background-color); }
-[x-cloak] { display: none !important; }
-h1 { font-size: 1.5rem; margin: 0 0 .15rem; font-weight: 800; letter-spacing: -.01em; }
-h2 { font-size: 1.05rem; margin: 0 0 .75rem; font-weight: 750; }
-h3 { font-size: .95rem; margin: 0 0 .5rem; font-weight: 700; }
-p { margin: 0 0 .75rem; }
-.sub { color: var(--pico-muted-color); margin: 0; font-size: .92rem; }
-.hint { font-size: .85rem; color: var(--pico-muted-color); line-height: 1.45; }
-.hint b { color: var(--pico-color); }
-.mut { color: var(--pico-muted-color); }
-code { font-size: .85em; }
-
-/* ---------- rozvržení ---------- */
-.app { display: grid; grid-template-columns: var(--sw-sidebar-w) minmax(0, 1fr); min-height: 100vh; }
-.app > .content { min-width: 0; display: flex; flex-direction: column; }
-main.page { padding: 1.4rem 1.7rem 3rem; max-width: 1240px; width: 100%; }
-.page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.1rem; }
-.page-head .actions { display: flex; gap: .5rem; flex-wrap: wrap; }
-
-/* ---------- boční menu ---------- */
-.sidebar { background: var(--sw-nav); color: var(--sw-nav-tx); position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; padding: 1rem .8rem; overflow-y: auto; }
-.brand { display: flex; align-items: center; gap: .65rem; color: #fff; text-decoration: none; font-weight: 800; font-size: 1.2rem; padding: .3rem .5rem 1rem; }
-.brand:hover { text-decoration: none; color: #fff; }
-.brand small { display: block; font-weight: 500; font-size: .68rem; color: var(--sw-nav-tx); letter-spacing: .04em; text-transform: uppercase; }
-.brand .logo { width: 36px; height: 36px; flex: none; }
-.nav a, .nav button.group { display: flex; align-items: center; gap: .65rem; width: 100%; color: var(--sw-nav-tx); text-decoration: none; padding: .55rem .75rem; border-radius: .6rem; font-weight: 500; font-size: .95rem; background: none; border: 0; margin: 0 0 .1rem; text-align: left; cursor: pointer; box-shadow: none; }
-.nav a:hover, .nav button.group:hover { background: var(--sw-nav-line); color: #fff; }
-.nav a.active { background: var(--pico-primary-background); color: var(--pico-primary-inverse); font-weight: 700; }
-.nav .ic { width: 22px; text-align: center; font-size: 1.05rem; flex: none; }
-.nav .caret { margin-left: auto; transition: transform .15s; font-size: .8rem; opacity: .7; }
-.nav .caret.open { transform: rotate(180deg); }
-.nav .sub { display: flex; flex-direction: column; margin: 0 0 .3rem .6rem; padding-left: .6rem; border-left: 1px solid var(--sw-nav-line); }
-.nav .sub a { padding: .45rem .7rem; font-size: .9rem; }
-.nav .label { font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; color: var(--sw-nav-tx); opacity: .6; padding: .9rem .75rem .3rem; }
-.sidebar .grow { flex: 1; }
-.sidebar .ext { padding: .5rem .75rem; font-size: .8rem; }
-.sidebar .ext a { display: block; color: var(--sw-nav-tx); padding: .2rem 0; text-decoration: none; }
-.sidebar .ext a:hover { color: #fff; }
-.sidebar .foot { padding: .6rem .75rem 0; display: flex; gap: .5rem; align-items: center; }
-.sidebar .foot button { margin: 0; padding: .4rem .8rem; font-size: .85rem; background: transparent; color: var(--sw-nav-tx); border: 1px solid var(--sw-nav-line); }
-.sidebar .foot button:hover { color: #fff; border-color: rgba(255, 255, 255, .3); background: transparent; }
-.sidebar .version { font-size: .72rem; color: var(--sw-nav-tx); opacity: .6; margin-left: auto; }
-
-/* stavové čipy v menu */
-.side-status { display: grid; gap: .35rem; margin: .2rem .5rem .8rem; }
-.side-status a { display: flex; align-items: center; gap: .5rem; text-decoration: none; color: var(--sw-nav-tx); font-size: .8rem; padding: .35rem .55rem; border-radius: .5rem; background: var(--sw-nav-2); }
-.side-status a:hover { color: #fff; }
-.side-status .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
-.dot.ok { background: var(--sw-ok); box-shadow: 0 0 0 3px rgba(74, 222, 128, .18); }
-.dot.warn { background: var(--sw-warn); box-shadow: 0 0 0 3px rgba(251, 191, 36, .18); }
-.dot.err { background: var(--sw-err); box-shadow: 0 0 0 3px rgba(248, 113, 113, .18); }
-.dot.mut { background: var(--sw-muted); }
-
-/* horní lišta (mobil) */
-header.top { display: none; }
-
-/* ---------- karty ---------- */
-.card { background: var(--pico-card-background-color); border: 1px solid var(--pico-card-border-color); border-radius: .9rem; padding: 1.1rem 1.2rem; margin-bottom: 1rem; box-shadow: var(--sw-shadow); }
-.card.tight { padding: .8rem .95rem; }
-.card.accent { border-color: var(--pico-primary); }
-.card.warn { border-color: var(--sw-warn); }
-.section-head { display: flex; justify-content: space-between; align-items: center; gap: .75rem; flex-wrap: wrap; margin-bottom: .6rem; }
-.section-head h2 { margin: 0; }
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; }
-.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1rem; }
-.row { display: flex; gap: .9rem; flex-wrap: wrap; }
-.row > * { flex: 1; min-width: 160px; }
-
-/* stavové dlaždice */
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .8rem; margin-bottom: 1rem; }
-.tile { display: block; text-decoration: none; color: inherit; background: var(--pico-card-background-color); border: 1px solid var(--pico-card-border-color); border-radius: .9rem; padding: .9rem 1rem .85rem; box-shadow: var(--sw-shadow); position: relative; overflow: hidden; }
-.tile:hover { text-decoration: none; color: inherit; border-color: var(--pico-primary); }
-.tile::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--pico-muted-border-color); }
-.tile.ok::before { background: var(--sw-ok); } .tile.warn::before { background: var(--sw-warn); } .tile.err::before { background: var(--sw-err); } .tile.info::before { background: var(--pico-primary); }
-.tile .k { font-size: .72rem; color: var(--pico-muted-color); text-transform: uppercase; letter-spacing: .06em; display: flex; align-items: center; gap: .4rem; }
-.tile .v { font-size: 1.35rem; font-weight: 800; margin: .15rem 0 .05rem; letter-spacing: -.01em; }
-.tile .d { font-size: .82rem; color: var(--pico-muted-color); }
-.tile .ico { position: absolute; right: .9rem; top: .8rem; font-size: 1.3rem; opacity: .7; }
-
-/* ---------- odznaky, stavy ---------- */
-.badge { display: inline-flex; align-items: center; gap: .3rem; padding: .1rem .6rem; border-radius: 999px; font-size: .75rem; font-weight: 700; white-space: nowrap; line-height: 1.5; vertical-align: middle; }
-.badge.ok { background: var(--sw-ok-bg); color: var(--sw-ok); }
-.badge.warn { background: var(--sw-warn-bg); color: var(--sw-warn); }
-.badge.err { background: var(--sw-err-bg); color: var(--sw-err); }
-.badge.info { background: var(--sw-info-bg); color: var(--sw-info); }
-.badge.mut { background: var(--pico-muted-border-color); color: var(--pico-muted-color); }
-a.badge { text-decoration: none; cursor: pointer; }
-a.badge:hover { filter: brightness(1.1); text-decoration: underline; }
-.tile.err .v { color: var(--sw-err); } .tile.warn .v { color: var(--sw-warn); }
-
-/* ---------- tlačítka ---------- */
-.btn, a.btn { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; background: var(--pico-primary-background); color: var(--pico-primary-inverse); border: 1px solid var(--pico-primary-background); padding: .55rem 1rem; border-radius: .6rem; font: inherit; font-weight: 700; font-size: .92rem; cursor: pointer; text-decoration: none; margin: .4rem .5rem 0 0; width: auto; line-height: 1.3; box-shadow: none; }
-.btn:hover, a.btn:hover { background: var(--pico-primary-hover-background); border-color: var(--pico-primary-hover-background); color: var(--pico-primary-inverse); text-decoration: none; }
-.btn.sec { background: var(--pico-card-background-color); color: var(--sw-text); border-color: var(--pico-muted-border-color); }
-.btn.sec:hover { border-color: var(--pico-primary); color: var(--pico-primary); background: var(--pico-card-background-color); }
-.btn.danger { background: var(--sw-err-bg); color: var(--sw-err); border-color: var(--sw-err); }
-.btn.danger:hover { background: var(--sw-err); color: #fff; }
-.btn.small { padding: .32rem .7rem; font-size: .82rem; margin: .25rem .4rem 0 0; }
-.btn.block { width: 100%; }
-button[disabled], .btn[disabled] { opacity: .6; cursor: wait; }
-form { margin: 0; }
-/* Pico dává tlačítkům 100% šířku – v našich formulářích ne */
-button:not(.block) { width: auto; }
-button:not(.btn) { margin-bottom: 0; }
-[role="group"] .btn { margin: 0; }
-
-/* ---------- formuláře ---------- */
-label { display: block; font-size: .82rem; color: var(--pico-muted-color); margin: .7rem 0 .3rem; font-weight: 650; }
-input:not([type="checkbox"]):not([type="radio"]), select, textarea { margin-bottom: 0; }
-textarea { min-height: 110px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; }
-.check { display: flex; align-items: center; gap: .65rem; margin: .6rem 0; font-size: .95rem; color: var(--pico-color); font-weight: 500; cursor: pointer; }
-.check input[type="checkbox"] { appearance: none; -webkit-appearance: none; width: 42px; height: 24px; border-radius: 999px; background: var(--pico-muted-border-color); position: relative; flex: none; transition: .15s; margin: 0; cursor: pointer; border: 0; }
-.check input[type="checkbox"]::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: .15s; box-shadow: 0 1px 2px rgba(0, 0, 0, .3); }
-.check input[type="checkbox"]:checked { background: var(--pico-primary-background); }
-.check input[type="checkbox"]:checked::after { left: 21px; }
-.check input[type="checkbox"]:focus-visible { outline: 2px solid var(--pico-primary-focus); }
-.chips { display: flex; flex-wrap: wrap; gap: .45rem; margin: .3rem 0; }
-.chip { display: inline-flex; align-items: center; gap: .4rem; padding: .4rem .75rem; border-radius: 999px; border: 1px solid var(--pico-muted-border-color); background: var(--pico-card-background-color); cursor: pointer; font-size: .88rem; user-select: none; margin: 0; color: var(--pico-color); font-weight: 500; }
-.chip input { width: 15px; height: 15px; margin: 0; accent-color: var(--pico-primary); }
-.chip:has(input:checked) { background: var(--sw-info-bg); border-color: var(--pico-primary); }
-
-/* ---------- tabulky ---------- */
-.tw { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-table { width: 100%; font-size: .9rem; margin: 0; }
-th, td { padding: .55rem .5rem; vertical-align: top; }
-th { color: var(--pico-muted-color); font-weight: 650; font-size: .74rem; text-transform: uppercase; letter-spacing: .05em; }
-/* statistika AI po dnech */
-.stats7 { overflow-x: auto; }
-.stats7 table { font-size: .88rem; }
-.stats7 td, .stats7 th { text-align: right; white-space: nowrap; padding: .4rem .5rem; }
-.stats7 td:first-child, .stats7 th:first-child { text-align: left; }
-.stats7 tr.today td { background: var(--sw-info-bg); }
-.stats7 tr.today td:first-child { font-weight: 750; }
-.stats7 tr.sum td { border-top: 2px solid var(--pico-muted-border-color); font-weight: 650; }
-/* kamery: velké dlaždice 50/50 */
-.cams.big { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
-.cams.big .cam .img { aspect-ratio: 16 / 9; }
-.cams.big .cam .name { font-size: 1.05rem; }
-@media (max-width: 760px) { .cams.big { grid-template-columns: 1fr; } }
-/* živý obraz – velká kamera */
-.live-big { background: #000; aspect-ratio: 16 / 9; display: flex; align-items: center; justify-content: center; color: #94a3b8; }
-.live-big img { width: 100%; height: 100%; object-fit: contain; display: block; }
-.kv td:first-child { color: var(--pico-muted-color); width: 40%; }
-
-/* ---------- hlášky, toasty ---------- */
-.flash { padding: .75rem 1rem; border-radius: .7rem; margin-bottom: .9rem; background: var(--sw-ok-bg); color: var(--sw-ok); font-weight: 600; white-space: pre-line; display: flex; gap: .6rem; align-items: flex-start; }
-.flash.err { background: var(--sw-err-bg); color: var(--sw-err); }
-.flash.warn { background: var(--sw-warn-bg); color: var(--sw-warn); }
-.flash a { color: inherit; text-decoration: underline; }
-.flash .x { margin-left: auto; background: none; border: 0; color: inherit; font-size: 1.1rem; line-height: 1; padding: 0 .2rem; cursor: pointer; opacity: .7; width: auto; }
-.toasts { position: fixed; right: 1rem; top: 1rem; z-index: 900; display: flex; flex-direction: column; gap: .5rem; max-width: min(460px, calc(100vw - 2rem)); }
-.toast { background: var(--pico-card-background-color); border: 1px solid var(--pico-card-border-color); border-left: 4px solid var(--sw-ok); border-radius: .7rem; padding: .7rem .9rem; box-shadow: var(--sw-shadow); font-size: .9rem; display: flex; gap: .6rem; align-items: flex-start; white-space: pre-line; }
-.toast.err { border-left-color: var(--sw-err); } .toast.warn { border-left-color: var(--sw-warn); }
-.toast .x { margin-left: auto; background: none; border: 0; color: var(--pico-muted-color); font-size: 1.1rem; line-height: 1; padding: 0 .2rem; cursor: pointer; width: auto; }
-
-/* ---------- busy overlay ---------- */
-#busy { position: fixed; inset: 0; background: rgba(2, 6, 23, .5); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 20px; }
-#busy[hidden] { display: none; }
-.busy-box { background: var(--pico-card-background-color); color: var(--pico-color); border-radius: .9rem; padding: 1rem 1.3rem; box-shadow: var(--sw-shadow); display: flex; gap: .9rem; align-items: center; max-width: 440px; }
-.spin { width: 26px; height: 26px; border: 3px solid var(--pico-muted-border-color); border-top-color: var(--pico-primary); border-radius: 50%; animation: spin .9s linear infinite; flex: none; }
-@keyframes spin { to { transform: rotate(360deg); } }
-
-/* ---------- lightbox ---------- */
-.lightbox { position: fixed; inset: 0; z-index: 1100; background: rgba(2, 6, 23, .9); display: flex; align-items: center; justify-content: center; padding: 1.5rem; cursor: zoom-out; }
-.lightbox figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: .5rem; max-width: 100%; max-height: 100%; cursor: default; }
-.lightbox img { max-width: min(96vw, 1700px); max-height: 84vh; border-radius: .6rem; box-shadow: 0 20px 60px rgba(0, 0, 0, .6); }
-.lightbox figcaption { color: #e2e8f0; font-size: .95rem; text-align: center; }
-.lightbox .close { position: fixed; top: .75rem; right: 1rem; width: 44px; height: 44px; border: 0; border-radius: 50%; background: rgba(255, 255, 255, .14); color: #fff; font-size: 1.7rem; line-height: 1; cursor: pointer; padding: 0; margin: 0; }
-.lightbox .close:hover { background: rgba(255, 255, 255, .28); }
-.lightbox .nav-btn { position: fixed; top: 50%; transform: translateY(-50%); width: 46px; height: 46px; border-radius: 50%; border: 0; background: rgba(255, 255, 255, .14); color: #fff; font-size: 1.5rem; cursor: pointer; padding: 0; margin: 0; }
-.lightbox .nav-btn.prev { left: 1rem; } .lightbox .nav-btn.next { right: 1rem; }
-.lightbox .nav-btn:hover { background: rgba(255, 255, 255, .28); }
-body.lb-open { overflow: hidden; }
-.lightbox.player video { width: min(96vw, 1400px); max-height: 84vh; border-radius: .6rem; background: #000; box-shadow: 0 20px 60px rgba(0, 0, 0, .6); }
-.lightbox.player .speeds { display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; justify-content: center; }
-.lightbox.player .speeds .lbl { color: #94a3b8; font-size: .8rem; margin-right: .2rem; }
-.lightbox.player .speeds button { margin: 0; width: auto; padding: .2rem .6rem; border-radius: 999px; border: 1px solid rgba(255, 255, 255, .25); background: rgba(255, 255, 255, .1); color: #fff; font-size: .8rem; font-weight: 700; line-height: 1.5; cursor: pointer; }
-.lightbox.player .speeds button:hover { background: rgba(255, 255, 255, .22); }
-.lightbox.player .speeds button.on { background: var(--pico-primary); border-color: var(--pico-primary); }
-.lightbox.player .speeds .pos { color: #e2e8f0; font-size: .85rem; font-variant-numeric: tabular-nums; margin-left: .4rem; }
-/* videa ke stažení */
-.gallery.videos { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; }
-.shot .line { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
-.shot.video .thumb { position: relative; display: block; aspect-ratio: 16 / 9; background: var(--sw-img-bg); overflow: hidden; }
-.shot.video .thumb img { aspect-ratio: auto; width: 100%; height: 100%; object-fit: cover; }
-.shot.video .thumb .play { position: absolute; inset: 0; margin: auto; width: 58px; height: 58px; border-radius: 50%; background: rgba(2, 6, 23, .6); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; padding-left: .25rem; transition: transform .15s, background .15s; }
-.shot.video .thumb:hover .play { transform: scale(1.08); background: var(--pico-primary); }
-.shot.video .thumb .dur { position: absolute; right: .5rem; bottom: .5rem; background: rgba(2, 6, 23, .7); color: #fff; font-size: .75rem; font-weight: 700; padding: .1rem .45rem; border-radius: .35rem; }
-.shot.video .thumb.wait { display: grid; place-items: center; color: #94a3b8; font-size: .9rem; }
-.shot.video .title { font-weight: 750; font-size: 1rem; line-height: 1.3; margin-bottom: .35rem; }
-.facts { display: grid; grid-template-columns: max-content 1fr; gap: .15rem .7rem; margin: 0 0 .5rem; font-size: .85rem; }
-.facts dt { color: var(--pico-muted-color); font-weight: 600; margin: 0; }
-.facts dd { margin: 0; }
-.shot .acts { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; margin-top: auto; }
-.shot .acts .btn.small { margin: 0; align-self: auto; }
-.shot .acts form { margin: 0; }
-a[data-lightbox] { cursor: zoom-in; }
-
-/* ---------- kamery ---------- */
-.cams { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .9rem; }
-.cam { background: var(--pico-card-background-color); border: 1px solid var(--pico-card-border-color); border-radius: .9rem; overflow: hidden; box-shadow: var(--sw-shadow); }
-.cam .img { aspect-ratio: 16 / 9; background: var(--sw-img-bg) linear-gradient(135deg, #0b1220, #1e293b); display: flex; align-items: center; justify-content: center; color: #64748b; font-size: .85rem; position: relative; text-decoration: none; }
-.cam .img img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.cam .img .live { position: absolute; left: .5rem; top: .5rem; background: rgba(2, 6, 23, .65); color: #fff; font-size: .7rem; font-weight: 700; padding: .12rem .45rem; border-radius: .35rem; display: inline-flex; align-items: center; gap: .3rem; }
-.cam .img .live .dot { width: 7px; height: 7px; box-shadow: none; }
-.cam .body { padding: .65rem .8rem .75rem; }
-.cam .name { font-weight: 750; font-size: .95rem; display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
-.cam .meta { font-size: .8rem; color: var(--pico-muted-color); margin-top: .15rem; display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; }
-
-/* ---------- galerie ---------- */
-.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: .8rem; }
-.shot { background: var(--pico-card-background-color); border: 1px solid var(--pico-card-border-color); border-radius: .8rem; overflow: hidden; display: flex; flex-direction: column; }
-.shot img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; background: var(--sw-img-bg); }
-.shot .b { padding: .55rem .7rem .7rem; font-size: .85rem; display: flex; flex-direction: column; gap: .2rem; }
-.shot .s { font-weight: 800; font-size: .95rem; color: var(--pico-primary); }
-.shot .when { font-weight: 700; }
-.shot .btn.small { align-self: flex-start; margin-top: .3rem; }
-
-/* ---------- ostatní prvky ---------- */
-.big { font-size: 1.8rem; font-weight: 800; letter-spacing: -.01em; }
-.bar { height: 8px; background: var(--pico-muted-border-color); border-radius: 4px; overflow: hidden; margin-top: .5rem; }
-.bar i { display: block; height: 100%; background: var(--pico-primary-background); }
-.bar i.warn { background: var(--sw-warn); } .bar i.err { background: var(--sw-err); }
-.steps { counter-reset: s; margin: 0; padding: 0; list-style: none; }
-.steps li { position: relative; padding: .4rem 0 .4rem 2.4rem; counter-increment: s; }
-.steps li::before { content: counter(s); position: absolute; left: 0; top: .35rem; width: 26px; height: 26px; border-radius: 50%; background: var(--pico-primary-background); color: var(--pico-primary-inverse); font-weight: 800; display: flex; align-items: center; justify-content: center; font-size: .82rem; }
-details { border: 1px solid var(--pico-card-border-color); border-radius: .7rem; padding: 0 .9rem; margin: .75rem 0; background: var(--pico-card-background-color); }
-details summary { cursor: pointer; padding: .7rem 0; font-weight: 650; color: var(--pico-muted-color); margin: 0; }
-details[open] summary { border-bottom: 1px solid var(--pico-card-border-color); margin-bottom: .5rem; }
-details.card summary { padding: .85rem 0; }
-details summary::after { display: none; }
-.events { list-style: none; margin: 0; padding: 0; }
-.events li { padding: .45rem 0; border-bottom: 1px solid var(--pico-card-border-color); font-size: .9rem; display: flex; gap: .6rem; align-items: flex-start; }
-.events li:last-child { border: 0; }
-.events .t { color: var(--pico-muted-color); font-size: .78rem; white-space: nowrap; min-width: 92px; padding-top: .1rem; }
-.tabs { display: flex; flex-wrap: wrap; gap: .35rem; }
-.tab { padding: .4rem .8rem; border-radius: .55rem; border: 1px solid var(--pico-muted-border-color); text-decoration: none; color: var(--pico-color); font-size: .9rem; background: var(--pico-card-background-color); }
-.tab.active { background: var(--pico-primary-background); color: var(--pico-primary-inverse); border-color: var(--pico-primary-background); }
-pre { background: var(--pico-card-sectioning-background-color, var(--pico-background-color)); border: 1px solid var(--pico-card-border-color); padding: .75rem; border-radius: .6rem; overflow: auto; font-size: .8rem; white-space: pre-wrap; word-break: break-word; max-height: 360px; margin: 0 0 .75rem; }
-.logbox { max-height: 70vh; font-size: .8rem; line-height: 1.45; }
-.guide { display: grid; gap: .5rem; padding: .3rem 0 .9rem; font-size: .9rem; line-height: 1.5; }
-.guide > div { padding-left: .8rem; border-left: 3px solid var(--sw-info-bg); }
-
-/* ---------- dashboard ---------- */
-.kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .8rem; }
-.kpi .item { padding: .6rem .8rem; border-radius: .7rem; background: var(--pico-card-sectioning-background-color, var(--pico-background-color)); }
-.kpi .k { font-size: .72rem; color: var(--pico-muted-color); text-transform: uppercase; letter-spacing: .06em; }
-.kpi .v { font-size: 1.15rem; font-weight: 800; }
-.kpi .d { font-size: .8rem; color: var(--pico-muted-color); }
-.ring { --p: 0; width: 64px; height: 64px; border-radius: 50%; background: conic-gradient(var(--pico-primary-background) calc(var(--p) * 1%), var(--pico-muted-border-color) 0); display: grid; place-items: center; flex: none; }
-.ring > span { width: 50px; height: 50px; border-radius: 50%; background: var(--pico-card-background-color); display: grid; place-items: center; font-weight: 800; font-size: .85rem; }
-.ai-today { display: flex; gap: 1rem; align-items: center; }
-.sunline { display: flex; gap: 1rem; align-items: center; font-size: .85rem; color: var(--pico-muted-color); flex-wrap: wrap; }
-
-/* ---------- mobil ---------- */
-.menu-btn, nav.bottom, .scrim { display: none; }
-@media (max-width: 920px) {
-  .app { grid-template-columns: 1fr; }
-  .sidebar { position: fixed; inset: 0 auto 0 0; width: min(300px, 86vw); z-index: 40; transform: translateX(-100%); transition: transform .2s; height: 100dvh; box-shadow: 0 0 40px rgba(0, 0, 0, .5); }
-  .sidebar.open { transform: none; }
-  .scrim.open { display: block; position: fixed; inset: 0; background: rgba(0, 0, 0, .45); z-index: 30; }
-  header.top { display: flex; align-items: center; gap: .6rem; padding: .55rem .9rem; background: var(--sw-nav); color: #fff; position: sticky; top: 0; z-index: 20; }
-  header.top .brand { padding: 0; font-size: 1.05rem; flex: 1; }
-  header.top .brand small { display: none; }
-  header.top .brand .logo { width: 28px; height: 28px; }
-  .menu-btn { display: inline-flex; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: .6rem; background: rgba(255, 255, 255, .08); color: #fff; font-size: 1.3rem; cursor: pointer; border: 0; padding: 0; margin: 0; }
-  main.page { padding: .9rem .9rem 5.4rem; }
-  h1 { font-size: 1.3rem; }
-  .card { padding: .9rem; border-radius: .8rem; }
-  nav.bottom { display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; bottom: 0; left: 0; right: 0; background: var(--sw-nav); border-top: 1px solid #1e293b; z-index: 25; padding: .25rem 0 max(.25rem, env(safe-area-inset-bottom)); }
-  nav.bottom a, nav.bottom button { color: var(--sw-nav-tx); text-decoration: none; font-size: .68rem; text-align: center; padding: .35rem .1rem; display: flex; flex-direction: column; align-items: center; gap: .1rem; cursor: pointer; background: none; border: 0; margin: 0; width: auto; }
-  nav.bottom .ic { font-size: 1.25rem; }
-  nav.bottom a.active { color: var(--pico-primary); }
-  .row > * { min-width: 100%; }
-  .tiles { grid-template-columns: repeat(2, 1fr); gap: .6rem; }
-  .tile .v { font-size: 1.15rem; }
-  .kpi { grid-template-columns: repeat(2, 1fr); }
-  .toasts { left: .75rem; right: .75rem; top: auto; bottom: 4.6rem; max-width: none; }
-  th, td { padding: .45rem .4rem; font-size: .85rem; }
-}
-SKYWATCH_CSS_EOF
-  cat > "$1/skywatch.js" <<'SKYWATCH_JS_EOF'
-/* SkyWatch – interakce (Alpine.js komponenty + pomocné funkce). */
-(function () {
-  'use strict';
-
-  // ---------- Alpine komponenty ----------
-  document.addEventListener('alpine:init', function () {
-    // Kostra stránky: mobilní menu, rozbalená skupina Nastavení, toasty, lightbox.
-    Alpine.data('shell', function (opts) {
-      opts = opts || {};
-      return {
-        menu: false,
-        settingsOpen: !!opts.settingsOpen,
-        toasts: [],
-        lb: { open: false, src: '', caption: '', items: [], index: -1 },
-        init: function () {
-          var self = this;
-          (opts.flashes || []).forEach(function (f) { self.toast(f.text, f.kind); });
-          document.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape') { self.lb.open = false; self.menu = false; document.body.classList.remove('lb-open'); }
-            if (self.lb.open && e.key === 'ArrowRight') self.lbStep(1);
-            if (self.lb.open && e.key === 'ArrowLeft') self.lbStep(-1);
-          });
-          document.addEventListener('click', function (e) {
-            var a = e.target.closest('a[data-lightbox]');
-            if (!a) return;
-            e.preventDefault();
-            var group = a.dataset.lightbox || '';
-            var links = group ? Array.prototype.slice.call(document.querySelectorAll('a[data-lightbox="' + group + '"]')) : [a];
-            self.lb.items = links.map(function (l) { return { src: l.href, caption: l.dataset.caption || '' }; });
-            self.lb.index = Math.max(0, links.indexOf(a));
-            self.lbShow();
-          });
-        },
-        toast: function (text, kind) {
-          var id = Date.now() + Math.random();
-          this.toasts.push({ id: id, text: text, kind: kind || '' });
-          if (kind !== 'err') {
-            var self = this;
-            setTimeout(function () { self.dismiss(id); }, 7000);
-          }
-        },
-        dismiss: function (id) { this.toasts = this.toasts.filter(function (t) { return t.id !== id; }); },
-        lbShow: function () {
-          var it = this.lb.items[this.lb.index];
-          if (!it) return;
-          this.lb.src = it.src; this.lb.caption = it.caption; this.lb.open = true;
-          document.body.classList.add('lb-open');
-        },
-        lbClose: function () { this.lb.open = false; this.lb.src = ''; document.body.classList.remove('lb-open'); },
-        lbStep: function (d) {
-          if (this.lb.items.length < 2) return;
-          this.lb.index = (this.lb.index + d + this.lb.items.length) % this.lb.items.length;
-          this.lbShow();
-        }
-      };
-    });
-
-    // Automatické obnovení stránky (dashboard, logy) – ne při otevřeném obrázku, menu nebo rozepsaném formuláři.
-    Alpine.data('autorefresh', function (seconds) {
-      return {
-        init: function () {
-          var self = this;
-          function tick() {
-            var busy = document.querySelector('form:focus-within') || document.body.classList.contains('lb-open') ||
-              document.querySelector('details[open][data-keep]');
-            if (!busy && document.visibilityState === 'visible') location.reload(); else setTimeout(tick, 15000);
-          }
-          setTimeout(tick, (seconds || 60) * 1000);
-        }
-      };
-    });
-
-    // Průběh aktualizace SkyWatch (/system/update): každé 3 s se ptá /system/update/status.
-    // Během restartu služby dotaz selže – to je normální fáze "restart"; hotovo = odpověď s jinou verzí.
-    Alpine.data('updater', function (running, version, log) {
-      return {
-        running: !!running, version: version, log: log || '', phase: running ? 'run' : '', newVersion: '', idle: 0,
-        init: function () { if (this.running) this.poll(); },
-        later: function () { var self = this; setTimeout(function () { self.poll(); }, 3000); },
-        poll: function () {
-          var self = this;
-          fetch('/system/update/status', { credentials: 'same-origin', cache: 'no-store' })
-            .then(function (r) { if (!r.ok || r.redirected) throw new Error('nedostupné'); return r.json(); })
-            .then(function (s) {
-              if (s.log) self.log = s.log;
-              if (s.version && s.version !== self.version) { self.phase = 'done'; self.newVersion = s.version; self.running = false; return; }
-              if (s.running) { self.phase = 'run'; self.idle = 0; self.later(); return; }
-              // Jednotka skončila a verze je stejná: buď rollback (poznáme z logu), nebo se ještě nerozběhla.
-              if (/selhala|obnovuji|rollback/i.test(self.log) || ++self.idle > 10) { self.phase = 'failed'; self.running = false; return; }
-              self.phase = 'run'; self.later();
-            })
-            .catch(function () { self.phase = 'restart'; self.later(); });
-        }
-      };
-    });
-  });
-
-  // ---------- Odeslání formuláře: zablokovat tlačítko a ukázat, co se děje ----------
-  var HINTS = [
-    ['/cameras/add', 'Ověřuji kameru a čekám na skutečné snímky z každé adresy – může to trvat i několik minut, pak se restartuje nahrávání.'],
-    ['/discover', 'Prohledávám síť a ověřuji každou nalezenou adresu – i několik minut.'],
-    ['/storage/disk', 'Připravuji disk – formátování a připojení trvá do minuty.'],
-    ['/ai/test', 'Beru snímek z kamery a posílám ho AI – do půl minuty.'],
-    ['/ai/check', 'Ověřuji klíč u poskytovatele AI.'],
-    ['/system/ctl', 'Provádím akci; služby se restartují.'],
-    ['/system/update/check', 'Ptám se GitHubu na poslední vydání.'],
-  ];
-  function installBusy() {
-    var busy = document.getElementById('busy');
-    if (!busy) return;
-    var txt = document.getElementById('busy-text'), hint = document.getElementById('busy-hint');
-    document.addEventListener('submit', function (e) {
-      var f = e.target;
-      if (!(f instanceof HTMLFormElement) || f.dataset.nobusy !== undefined || f.method.toLowerCase() === 'get') return;
-      var btn = e.submitter || f.querySelector('button:not([type=button]),[type=submit]');
-      var label = (btn && (btn.dataset.busy || btn.textContent.trim())) || 'Odesílám';
-      setTimeout(function () {
-        if (e.defaultPrevented) return;
-        if (btn) { btn.disabled = true; btn.dataset.label = btn.textContent; btn.textContent = label.replace(/^[^\wÀ-ž]+/, '') + '…'; }
-        txt.textContent = label + '…';
-        var action = f.getAttribute('action') || '';
-        var h = HINTS.filter(function (x) { return action.indexOf(x[0]) > -1; })[0];
-        hint.textContent = h ? h[1] : 'Stránka se sama obnoví, až bude hotovo.';
-        busy.hidden = false;
-      }, 0);
-    }, true);
-    window.addEventListener('pageshow', function () {
-      busy.hidden = true;
-      document.querySelectorAll('button[disabled][data-label]').forEach(function (b) { b.disabled = false; b.textContent = b.dataset.label; });
-    });
-  }
-
-  // ---------- Kopírování do schránky (funguje i na http bez certifikátu) ----------
-  window.swCopy = function (el, btn) {
-    var node = typeof el === 'string' ? document.getElementById(el) : el;
-    if (!node) return;
-    var text = node.value !== undefined ? node.value : node.textContent;
-    function done(ok) {
-      if (!btn) return;
-      var old = btn.textContent;
-      btn.textContent = ok ? 'Zkopírováno ✓' : 'Vyber text a stiskni Ctrl/Cmd+C';
-      setTimeout(function () { btn.textContent = old; }, 2500);
-    }
-    if (navigator.clipboard && window.isSecureContext) {
-      navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); });
-      return;
-    }
-    var r = document.createRange(); r.selectNodeContents(node);
-    var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
-    try { done(document.execCommand('copy')); } catch (e) { done(false); }
-  };
-
-  // ---------- Náhledy kamer: když obrázek nejde, ukázat text místo prázdna ----------
-  window.swImgFail = function (img, text) {
-    img.style.display = 'none';
-    var s = document.createElement('span'); s.textContent = text || 'bez obrazu';
-    img.parentNode.appendChild(s);
-  };
-
-  // ---------- Kamery: snímky se samy obnovují, živý přenos jen na kliknutí ----------
-  function installSnapshots() {
-    document.querySelectorAll('img[data-refresh]').forEach(function (img) {
-      var sec = Math.max(3, parseInt(img.dataset.refresh, 10) || 10);
-      var base = img.dataset.snap || img.getAttribute('src').replace(/[?&]t=\d+/, '');
-      img.dataset.snap = base;
-      setInterval(function () {
-        if (document.visibilityState !== 'visible' || img.dataset.live === '1' || document.body.classList.contains('lb-open')) return;
-        img.src = base + (base.indexOf('?') > -1 ? '&' : '?') + 't=' + Date.now();
-      }, sec * 1000);
-    });
-  }
-  window.swLiveToggle = function (btn) {
-    var img = document.getElementById(btn.dataset.target);
-    if (!img) return;
-    if (img.dataset.live === '1') {
-      img.dataset.live = '0';
-      img.src = img.dataset.snap + (img.dataset.snap.indexOf('?') > -1 ? '&' : '?') + 't=' + Date.now();
-      btn.textContent = '▶ Spustit živý přenos'; btn.classList.remove('sec');
-    } else {
-      img.dataset.live = '1';
-      img.src = img.dataset.stream + '&t=' + Date.now();
-      btn.textContent = '⏹ Zastavit živý přenos'; btn.classList.add('sec');
-    }
-  };
-  // Při opuštění stránky přenos ukončit (prohlížeč jinak drží spojení do bfcache).
-  window.addEventListener('pagehide', function () {
-    document.querySelectorAll('img[data-live="1"]').forEach(function (img) { img.src = ''; });
-  });
-
-  // ---------- Přehrávač videa přes celou obrazovku (s rychlostí až 120×) ----------
-  // Do 16× používá nativní playbackRate (víc prohlížeče nedovolí); vyšší rychlosti se dělají
-  // skokovým posunem času (timelapse) – funguje i na 60× a 120×.
-  var SPEEDS = [1, 2, 4, 8, 16, 30, 60, 120];
-  window.swPlayVideo = function (src, title) {
-    var old = document.getElementById('sw-player');
-    if (old) old.remove();
-    var box = document.createElement('div');
-    box.id = 'sw-player'; box.className = 'lightbox player';
-    box.innerHTML = '<button type="button" class="close" aria-label="Zavřít">×</button><figure><video controls autoplay muted playsinline preload="metadata"></video>' +
-      '<div class="speeds"><span class="lbl">Rychlost</span>' +
-      SPEEDS.map(function (v) { return '<button type="button" data-v="' + v + '"' + (v === 1 ? ' class="on"' : '') + '>' + v + '×</button>'; }).join('') +
-      '<button type="button" class="pp" hidden>⏸</button><span class="pos"></span></div><figcaption></figcaption></figure>';
-    var video = box.querySelector('video'), bar = box.querySelector('.speeds'), pp = box.querySelector('.pp'), pos = box.querySelector('.pos');
-    video.src = src;
-    box.querySelector('figcaption').textContent = title || '';
-    var step = { speed: 0, timer: null, running: false, seekHandler: null };
-    function fmt(t) { t = Math.max(0, Math.floor(t || 0)); return Math.floor(t / 60) + ':' + ('0' + t % 60).slice(-2); }
-    function showPos() { if (isFinite(video.duration)) pos.textContent = fmt(video.currentTime) + ' / ' + fmt(video.duration); }
-    function stopStep() {
-      step.running = false;
-      if (step.timer) { clearTimeout(step.timer); step.timer = null; }
-      if (step.seekHandler) { video.removeEventListener('seeked', step.seekHandler); step.seekHandler = null; }
-      pp.textContent = '▶';
-    }
-    function tick() {
-      if (!step.running) return;
-      if (!isFinite(video.duration) || video.currentTime >= video.duration - 0.05) { stopStep(); return; }
-      var t0 = performance.now();
-      step.seekHandler = function () {
-        video.removeEventListener('seeked', step.seekHandler); step.seekHandler = null;
-        showPos();
-        if (!step.running) return;
-        step.timer = setTimeout(tick, Math.max(0, 125 - (performance.now() - t0)));
-      };
-      video.addEventListener('seeked', step.seekHandler);
-      video.currentTime = Math.min(video.duration, video.currentTime + step.speed * 0.125);
-    }
-    function startStep() { if (step.running) return; video.pause(); step.running = true; pp.textContent = '⏸'; tick(); }
-    function setSpeed(v) {
-      stopStep();
-      bar.querySelectorAll('button[data-v]').forEach(function (b) { b.classList.toggle('on', +b.dataset.v === v); });
-      if (v <= 16) {
-        step.speed = 0; pp.hidden = true;
-        video.playbackRate = v; video.muted = v > 1 || video.muted;
-        if (video.paused) video.play().catch(function () {});
-      } else {
-        step.speed = v; pp.hidden = false;
-        video.playbackRate = 1;
-        startStep();
-      }
-    }
-    bar.addEventListener('click', function (e) {
-      var b = e.target.closest('button[data-v]');
-      if (b) { setSpeed(+b.dataset.v); return; }
-      if (e.target === pp) { if (step.running) stopStep(); else startStep(); }
-    });
-    // V režimu skoků nativní tlačítko Play jen znovu spustí skákání.
-    video.addEventListener('play', function () { if (step.speed > 16 && !step.running) { video.pause(); startStep(); } });
-    video.addEventListener('timeupdate', function () { if (!step.speed) showPos(); });
-    video.addEventListener('loadedmetadata', showPos);
-    function close() { stopStep(); video.pause(); video.removeAttribute('src'); video.load(); box.remove(); document.body.classList.remove('lb-open'); document.removeEventListener('keydown', onKey); }
-    function onKey(e) {
-      if (e.key === 'Escape') close();
-      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-        var cur = step.speed || video.playbackRate, i = SPEEDS.indexOf(cur);
-        if (i < 0) i = 0;
-        i = Math.max(0, Math.min(SPEEDS.length - 1, i + (e.key === 'ArrowUp' ? 1 : -1)));
-        setSpeed(SPEEDS[i]); e.preventDefault();
-      }
-    }
-    box.querySelector('.close').addEventListener('click', close);
-    box.addEventListener('click', function (e) { if (e.target === box) close(); });
-    document.addEventListener('keydown', onKey);
-    document.body.appendChild(box); document.body.classList.add('lb-open');
-    return false;
-  };
-
-  function boot() { installBusy(); installSnapshots(); }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
-})();
-SKYWATCH_JS_EOF
-}
-fetch_vendor() {  # $1 = cílový adresář static
-  local d="$1/vendor" ok=1
-  mkdir -p "$d"
-  if [[ ! -s "$d/pico.min.css" ]]; then
-    curl -fsSL --max-time 60 -o "$d/pico.min.css.tmp" "https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" \
-      && mv "$d/pico.min.css.tmp" "$d/pico.min.css" || { rm -f "$d/pico.min.css.tmp"; ok=0; }
-  fi
-  if [[ ! -s "$d/alpine.min.js" ]]; then
-    curl -fsSL --max-time 60 -o "$d/alpine.min.js.tmp" "https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js" \
-      && mv "$d/alpine.min.js.tmp" "$d/alpine.min.js" || { rm -f "$d/alpine.min.js.tmp"; ok=0; }
-  fi
-  [[ $ok -eq 1 ]] || echo "! Knihovny Pico CSS / Alpine.js se nepodařilo stáhnout – SkyWatch je načte z internetu (CDN), dokud se to nepovede při dalším updatu."
-}
-write_static "$STAGE/static"
-
-# Staré prostředí zůstává beze změn a běžící služba dál obsluhuje web.
-python3 -m venv "$NEW_VENV"
-"$NEW_VENV/bin/python" -m pip install -q -r "$STAGE/requirements.txt"
-"$NEW_VENV/bin/python" -m pip check
-SKYWATCH_DIR="$SKY_DIR" PYTHONPATH="$STAGE" PYTHONDONTWRITEBYTECODE=1 "$NEW_VENV/bin/python" -c 'import app, storage_guard; app.load_config()'
-cp -a "$SKY_DIR/app.py" "$BACKUP/app.py"
-if [[ -f "$SKY_DIR/storage_guard.py" ]]; then cp -a "$SKY_DIR/storage_guard.py" "$BACKUP/storage_guard.py"; fi
-if [[ -f "$SKY_DIR/requirements.txt" ]]; then cp -a "$SKY_DIR/requirements.txt" "$BACKUP/requirements.txt"; fi
-cp -a "$SKY_DIR/config.json" "$BACKUP/config.json"
-if [[ -d "$SKY_DIR/static" ]]; then cp -a "$SKY_DIR/static" "$BACKUP/static"; fi
-
-rollback() {
-  trap - ERR INT TERM
-  set +e
-  echo "Aktualizace selhala, obnovuji původní aplikaci a prostředí."
-  systemctl stop skywatch.service
-  cp -a "$BACKUP/app.py" "$SKY_DIR/app.py"
-  if [[ -f "$BACKUP/storage_guard.py" ]]; then cp -a "$BACKUP/storage_guard.py" "$SKY_DIR/storage_guard.py"; fi
-  if [[ -f "$BACKUP/requirements.txt" ]]; then cp -a "$BACKUP/requirements.txt" "$SKY_DIR/requirements.txt"; fi
-  if [[ -d "$BACKUP/static" ]]; then rm -rf "$SKY_DIR/static"; cp -a "$BACKUP/static" "$SKY_DIR/static"; fi
-  if [[ -e "$BACKUP/venv" || -L "$BACKUP/venv" ]]; then
-    [[ ! -L "$SKY_DIR/venv" ]] || unlink "$SKY_DIR/venv"
-    mv "$BACKUP/venv" "$SKY_DIR/venv"
-  fi
-  systemctl restart nvr-storage.service 2>/dev/null || true
-  systemctl restart skywatch.service
-  systemctl is-active --quiet skywatch.service || echo "Původní služba také nenaběhla; zkontroluj journalctl -u skywatch."
-  echo "Záloha: $BACKUP"
-  exit 1
-}
-trap rollback ERR INT TERM
-systemctl stop nvr-storage.service 2>/dev/null || true
-systemctl stop skywatch.service
-mv "$SKY_DIR/venv" "$BACKUP/venv"
-# Venv se nepřejmenovává: jeho pip/uvicorn obsahují absolutní cesty.
-ln -s "$NEW_VENV" "$SKY_DIR/venv"
-mv "$STAGE/app.py" "$SKY_DIR/app.py"
-mv "$STAGE/storage_guard.py" "$SKY_DIR/storage_guard.py"
-mv "$STAGE/requirements.txt" "$SKY_DIR/requirements.txt"
-mkdir -p "$SKY_DIR/static/vendor"
-mv -f "$STAGE/static/skywatch.css" "$SKY_DIR/static/skywatch.css"
-mv -f "$STAGE/static/skywatch.js" "$SKY_DIR/static/skywatch.js"
-fetch_vendor "$SKY_DIR/static"
-"$NEW_VENV/bin/python" "$SKY_DIR/storage_guard.py" --install
-
-# --- smartd (S.M.A.R.T. hlídání HDD): bez disku nesmí svítit jako chyba, s USB diskem má běžet
-setup_smartd() {
-  mkdir -p /etc/systemd/system/smartmontools.service.d
-  cat > /etc/systemd/system/smartmontools.service.d/nvr.conf <<'EOF'
-[Unit]
-# Data disk se připojuje až po startu; smartd se má spustit i po jeho pozdějším připojení.
-After=mnt-nvr.mount
-[Service]
-# 17 = "žádné zařízení ke sledování" – bez HDD to není chyba.
-SuccessExitStatus=17
-Restart=on-failure
-RestartSec=60
-EOF
-  cat > /etc/smartd.conf <<'EOF'
-# NVR: sledovat všechny disky včetně USB boxů (-d removable = nepadat, když disk zmizí; -n standby = nebudit uspaný disk).
-# Bez e-mailu (na RPi není poštovní server) – varování jdou do systémového logu a SkyWatch je ukazuje na každé stránce.
-DEVICESCAN -d removable -n standby,q -a -W 4,45,55
-EOF
-  grep -q '^smartd_opts=' /etc/default/smartmontools 2>/dev/null || echo 'smartd_opts=""' >> /etc/default/smartmontools
-  # unit soubory nejsou tajné – bez práv pro ostatní systemd při každém startu varuje
-  chmod 644 /etc/systemd/system/skywatch.service /etc/systemd/system/nvr-storage.service /etc/systemd/system/smartmontools.service.d/nvr.conf 2>/dev/null || true
-  # systémový žurnál: ponechat na disku kvůli diagnostice, ale omezit velikost (šetří SSD)
-  mkdir -p /etc/systemd/journald.conf.d
-  printf '[Journal]\nSystemMaxUse=200M\nSystemMaxFileSize=20M\n' > /etc/systemd/journald.conf.d/nvr.conf
-  chmod 644 /etc/systemd/journald.conf.d/nvr.conf
-  systemctl restart systemd-journald 2>/dev/null || true
-  systemctl daemon-reload
-  systemctl enable smartmontools.service >/dev/null 2>&1 || true
-  systemctl restart smartmontools.service 2>/dev/null || true
-}
-if [[ ! -f /etc/systemd/system/smartmontools.service.d/nvr.conf ]] || grep -q -- '-m root' /etc/smartd.conf 2>/dev/null; then setup_smartd; fi
-systemctl restart skywatch.service
-for _ in $(seq 1 20); do
-  if systemctl is-active --quiet skywatch.service && "$NEW_VENV/bin/python" - <<'PY'
-import json, urllib.request
-try:
-    with urllib.request.urlopen("http://127.0.0.1/api/health", timeout=2) as response:
-        assert json.load(response)["ok"] is True
-except Exception:
-    raise SystemExit(1)
-PY
-  then
-    trap - ERR INT TERM
-    rm -rf "$STAGE" "$SKY_DIR"/.update-* 2>/dev/null || true
-    # Zálohy (každá obsahuje i celé venv, ~100 MB): nechat jen 2 poslední, starší smazat.
-    ls -1dt "$SKY_DIR"/backups/*/ 2>/dev/null | tail -n +3 | xargs -r rm -rf
-    # Stará prostředí venv-*: smazat ta, na která už neukazuje ani aktuální venv, ani žádná ponechaná záloha.
-    keep_venvs=$(readlink -f "$SKY_DIR/venv"; for b in "$SKY_DIR"/backups/*/venv; do [[ -e "$b" ]] && readlink -f "$b"; done)
-    for v in "$SKY_DIR"/venv-*; do
-      [[ -d "$v" && ! -L "$v" ]] || continue
-      grep -qxF "$(readlink -f "$v")" <<<"$keep_venvs" || rm -rf "$v"
-    done
-    echo "✔ SkyWatch aktualizován: http://$(hostname -I | awk '{print $1}')"
-    echo "Záloha původní aplikace a prostředí: $BACKUP (starší zálohy smazány, drží se 2 poslední – $(du -sh "$SKY_DIR/backups" 2>/dev/null | cut -f1))"
-    exit 0
-  fi
-  sleep 2
-done
-journalctl -u skywatch -n 30 --no-pager
-rollback
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("ATMOVIO_PORT", "80")))

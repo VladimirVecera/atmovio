@@ -8,7 +8,7 @@
 
 1. Enter the camera's **user name and password** (the ones you use in the camera's own web page). Without them most
    cameras refuse to stream (HTTP 401) and cannot be verified.
-2. SkyWatch scans the LAN (ONVIF discovery + TCP scan of ports 554/80/8000/8080/8554 in the given subnets; you can add a
+2. Atmovio scans the LAN (ONVIF discovery + TCP scan of ports 554/80/8000/8080/8554 in the given subnets; you can add a
    remote subnet reachable over VPN, e.g. `10.10.10.0/24`).
 3. For each device it reads the stream profiles over ONVIF and **tests every RTSP URL for real decoded video frames**
    – exactly the way Frigate will read it. URLs without video are dropped; a wrong port is corrected automatically.
@@ -63,6 +63,6 @@ zones are kept. **Odebrat kameru** removes it from recording and AI; recordings 
 ## Known quirks
 
 - Cameras that only speak RTSP over port 80 or 8554: discovery tries those ports and fixes the URL.
-- Some cameras (Tapo, older Xiaomi) do not negotiate with go2rtc; SkyWatch switches to an ffmpeg source automatically and tells you (no audio in that mode).
+- Some cameras (Tapo, older Xiaomi) do not negotiate with go2rtc; Atmovio switches to an ffmpeg source automatically and tells you (no audio in that mode).
 - ONVIF discovery is multicast – it only finds cameras in the Pi's own LAN. Use the subnet scan for VPN networks.
-- If a camera shows **BEZ SIGNÁLU** after an IP change, edit the URL on the camera page; SkyWatch does not track DHCP changes. Give cameras fixed IPs.
+- If a camera shows **BEZ SIGNÁLU** after an IP change, edit the URL on the camera page; Atmovio does not track DHCP changes. Give cameras fixed IPs.

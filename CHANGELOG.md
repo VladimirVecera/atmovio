@@ -1,6 +1,23 @@
 # Changelog
 
-All notable changes to SkyWatch. Versions correspond to `APP_VERSION` in `src/skywatch/app.py`.
+All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
+
+## 4.0 – 2026-09 – renamed to Atmovio
+
+- **SkyWatch is now Atmovio** (the old name collides with existing products). Everything is renamed: repository
+  `VladimirVecera/atmovio`, install dir `/opt/nvr/atmovio`, service `atmovio.service`, `update-atmovio.sh`,
+  env `ATMOVIO_DIR`, new API keys start with `at_` (old `sw_` keys keep working).
+- The updater migrates an existing SkyWatch 3.x install in place (moves the directory, renames the service,
+  database, log and snapshot folder, rewrites `config.json`); configuration, cameras, detections and videos are kept.
+  Releases also ship `update-skywatch.sh` (same file, old name) so 3.2–3.4 installs can update from the web UI.
+- Webhook heartbeat sends `atmovio_url` and, for older receivers, `skywatch_url` with the same value.
+- New logo.
+
+## 3.4 – 2026-09
+
+- Systém page: wider cards; the API card explains where the outgoing webhook (data + alerts to your website) is configured.
+- Docs: hardware page (supported Pi, parts, disk sizing), README hardware and AI sections, full REST API field reference
+  and the REST-vs-webhook overview.
 
 ## 3.3 – 2026-09
 
@@ -10,12 +27,12 @@ All notable changes to SkyWatch. Versions correspond to `APP_VERSION` in `src/sk
 
 ## 3.2 – 2026-09
 
-- Update from the web UI: SkyWatch checks GitHub Releases once a day (can be turned off), shows a banner when a
+- Update from the web UI: Atmovio checks GitHub Releases once a day (can be turned off), shows a banner when a
   newer version exists, and installs it on one click (Nastavení → Systém → Aktualizace) – downloads
-  `update-skywatch.sh` from the release, verifies SHA-256 against `SHA256SUMS`, runs it as a separate systemd unit
+  `update-atmovio.sh` from the release, verifies SHA-256 against `SHA256SUMS`, runs it as a separate systemd unit
   and shows progress/result; the existing automatic rollback applies.
 - `GET /api/v1/status` reports `update.latest` / `update.available`.
-- Release workflow: pushing a `v*` tag builds a GitHub release with `install.sh`, `update-skywatch.sh` and `SHA256SUMS`.
+- Release workflow: pushing a `v*` tag builds a GitHub release with `install.sh`, `update-atmovio.sh` and `SHA256SUMS`.
 
 ## 3.1 – 2026-09
 

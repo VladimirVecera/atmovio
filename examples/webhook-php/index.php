@@ -1,23 +1,23 @@
 <?php
 /**
- * SkyWatch – simple public status page for data received by webhook.php.
+ * Atmovio – simple public status page for data received by webhook.php.
  * Shows NVR status, camera thumbnails and the latest sky alerts with images.
  */
 
 declare(strict_types=1);
 require_once __DIR__ . '/config.php';
 
-if (SKYWATCH_VIEW_PASSWORD !== '') {
+if (ATMOVIO_VIEW_PASSWORD !== '') {
     $u = $_SERVER['PHP_AUTH_USER'] ?? '';
     $p = $_SERVER['PHP_AUTH_PW'] ?? '';
-    if (!hash_equals(SKYWATCH_VIEW_USER, $u) || !hash_equals(SKYWATCH_VIEW_PASSWORD, $p)) {
-        header('WWW-Authenticate: Basic realm="SkyWatch"');
+    if (!hash_equals(ATMOVIO_VIEW_USER, $u) || !hash_equals(ATMOVIO_VIEW_PASSWORD, $p)) {
+        header('WWW-Authenticate: Basic realm="Atmovio"');
         http_response_code(401);
         exit('Login required');
     }
 }
 
-$dir = rtrim(SKYWATCH_DATA_DIR, '/');
+$dir = rtrim(ATMOVIO_DATA_DIR, '/');
 
 // Serve images through PHP so the data directory can stay private.
 if (isset($_GET['img'])) {
@@ -53,7 +53,7 @@ $labels = [
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SkyWatch – <?= $h($state['nvr'] ?? 'kamery') ?></title>
+<title>Atmovio – <?= $h($state['nvr'] ?? 'kamery') ?></title>
 <style>
 :root{color-scheme:light dark;font-family:system-ui,sans-serif}
 body{margin:0;background:#f3f5f9;color:#0f172a}
@@ -76,13 +76,13 @@ h1{font-size:1.5rem;margin:.2rem 0}
 </head>
 <body>
 <main>
-<h1>☁️ <?= $h($state['nvr'] ?? 'SkyWatch') ?></h1>
+<h1>☁️ <?= $h($state['nvr'] ?? 'Atmovio') ?></h1>
 <?php if (!$state): ?>
-  <div class="card">Zatím nepřišla žádná data. V SkyWatch nastav adresu tohoto přijímače a token (Nastavení → Upozornění) a klikni <b>Uložit a otestovat spojení</b>.</div>
+  <div class="card">Zatím nepřišla žádná data. V Atmovio nastav adresu tohoto přijímače a token (Nastavení → Upozornění) a klikni <b>Uložit a otestovat spojení</b>.</div>
 <?php else: $s = $state['status']; ?>
   <div class="card">
     <?= $stale ? '<span class="badge err">záznamník se neozývá</span>' : '<span class="badge ok">online</span>' ?>
-    <span class="hint">poslední zpráva <?= $h($when($state['received'])) ?> · SkyWatch <?= $h($state['version']) ?></span>
+    <span class="hint">poslední zpráva <?= $h($when($state['received'])) ?> · Atmovio <?= $h($state['version']) ?></span>
     <div style="margin-top:.5rem">
       Nahrávání: <?= !empty($s['frigate_online']) && $s['frigate_online'] !== '0' ? '<span class="badge ok">běží</span>' : '<span class="badge err">neběží</span>' ?>
       · Disk: <?= $h($s['disk_pct'] ?? '?') ?> % plný (volné <?= $h($s['disk_free'] ?? '?') ?>)
@@ -111,7 +111,7 @@ h1{font-size:1.5rem;margin:.2rem 0}
       <div class="t"><?= $h($when($e['ts'])) ?> · <?= $h($e['camera_label']) ?><?= $e['score'] !== null ? ' · <span class="badge info">' . (int) $e['score'] . '/10</span>' : '' ?></div>
       <div><?php foreach ($e['phenomena'] as $ph): ?><span class="badge warn"><?= $h($labels[$ph] ?? $ph) ?></span> <?php endforeach; ?></div>
       <p style="margin:.4rem 0;white-space:pre-line"><?= $h($e['message']) ?></p>
-      <?php if ($e['link'] !== ''): ?><a class="hint" href="<?= $h($e['link']) ?>">detail v SkyWatch (jen z domácí sítě / VPN)</a><?php endif; ?>
+      <?php if ($e['link'] !== ''): ?><a class="hint" href="<?= $h($e['link']) ?>">detail v Atmovio (jen z domácí sítě / VPN)</a><?php endif; ?>
     </div>
   </div>
   <?php if ($shown >= 30) break; endforeach; if ($shown === 0): ?><p class="hint">Zatím žádné.</p><?php endif; ?>
@@ -125,7 +125,7 @@ h1{font-size:1.5rem;margin:.2rem 0}
       <b><?= $h($e['subject']) ?></b> <span class="hint"><?= $h($e['message']) ?></span></div>
   <?php if ($shown >= 20) break; endforeach; if ($shown === 0): ?><p class="hint">Zatím žádné.</p><?php endif; ?>
 </div>
-<p class="hint">Stránku generuje ukázkový přijímač z projektu <a href="https://github.com/VladimirVecera/skywatch">SkyWatch</a>. Obnovuje se ručně; záznamník posílá stav každou minutu.</p>
+<p class="hint">Stránku generuje ukázkový přijímač z projektu <a href="https://github.com/VladimirVecera/atmovio">Atmovio</a>. Obnovuje se ručně; záznamník posílá stav každou minutu.</p>
 </main>
 <div class="lb" id="lb" onclick="this.classList.remove('open')"><img id="lbi" alt=""></div>
 <script>function lb(s){document.getElementById('lbi').src=s;document.getElementById('lb').classList.add('open')}</script>

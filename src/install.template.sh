@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  RPi 5 NVR + SkyWatch – instalační script
+#  RPi 5 NVR + Atmovio – instalační script
 #  Raspberry Pi OS Lite 64-bit (Debian 13 "trixie")
 #
 #  Nainstaluje a zprovozní:
 #    * Docker + Frigate (NVR: záznam kamer, přehrávání, export)   https://IP:8971
 #    * Portainer (správa kontejnerů)                              https://IP:9443
 #    * Cockpit (správa systému, sítě, disků, aktualizací)         https://IP:9090
-#    * SkyWatch (vlastní administrace: kamery, retence, mazání,
+#    * Atmovio (vlastní administrace: kamery, retence, mazání,
 #      AI hlídání oblohy, e-mail, VPN klient, systém)             http://IP
 #
 #  Spuštění:  sudo bash install.sh
@@ -17,7 +17,7 @@ umask 077
 
 NVR_DIR=/opt/nvr
 DATA_MNT=/mnt/nvr
-SKY_DIR=$NVR_DIR/skywatch
+SKY_DIR=$NVR_DIR/atmovio
 FRIGATE_CFG_DIR=$NVR_DIR/frigate/config
 INFO_FILE=$NVR_DIR/INSTALL-INFO.txt
 LOG=/var/log/nvr-install.log
@@ -30,7 +30,8 @@ die()   { echo -e "${C_R}✖ $*${C_0}" >&2; exit 1; }
 
 [[ $EUID -eq 0 ]] || die "Spusť jako root: sudo bash install.sh"
 [[ -t 0 ]] || die "Spusť stažený skript v interaktivním terminálu (ne curl | bash)."
-[[ ! -f "$SKY_DIR/config.json" ]] || die "SkyWatch už je nainstalován. Pro aktualizaci použij update-skywatch.sh; konfiguraci nepřepisuji."
+[[ ! -f "$SKY_DIR/config.json" ]] || die "Atmovio už je nainstalován. Pro aktualizaci použij update-atmovio.sh; konfiguraci nepřepisuji."
+[[ ! -f /opt/nvr/skywatch/config.json ]] || die "Je tu instalace SkyWatch (starý název Atmovia). Nespouštěj instalátor – spusť update-atmovio.sh, ten ji přejmenuje a aktualizuje se zachováním nastavení."
 touch "$LOG"; chmod 600 "$LOG"
 exec > >(tee -a "$LOG") 2>&1
 echo "=== NVR install $(date) ==="
@@ -51,7 +52,7 @@ export DEBIAN_FRONTEND=noninteractive
 # ----------------------------------------------------------------------------- 1. dotazy
 step "Základní nastavení"
 DEFAULT_TZ="Europe/Prague"
-echo "Heslo administrátora platí pro SkyWatch a Portainer; alespoň 12 znaků."
+echo "Heslo administrátora platí pro Atmovio a Portainer; alespoň 12 znaků."
 while true; do
   read -rsp "Heslo administrátora: " ADMIN_PW; echo
   read -rsp "Heslo znovu:         " ADMIN_PW2; echo
@@ -73,7 +74,7 @@ while true; do
 done
 timedatectl set-timezone "$TZONE"
 
-echo "E-mail lze nastavit později ve SkyWatch → E-mail."
+echo "E-mail lze nastavit později ve Atmovio → E-mail."
 read -rp "SMTP server (Enter = přeskočit): " SMTP_HOST
 SMTP_PORT=587; SMTP_SEC=starttls; SMTP_USER=""; SMTP_PASS=""; MAIL_FROM=""; MAIL_TO=""
 if [[ -n "$SMTP_HOST" ]]; then
@@ -115,12 +116,12 @@ RestartSec=60
 EOF
   cat > /etc/smartd.conf <<'EOF'
 # NVR: sledovat všechny disky včetně USB boxů (-d removable = nepadat, když disk zmizí; -n standby = nebudit uspaný disk).
-# Bez e-mailu (na RPi není poštovní server) – varování jdou do systémového logu a SkyWatch je ukazuje na každé stránce.
+# Bez e-mailu (na RPi není poštovní server) – varování jdou do systémového logu a Atmovio je ukazuje na každé stránce.
 DEVICESCAN -d removable -n standby,q -a -W 4,45,55
 EOF
   grep -q '^smartd_opts=' /etc/default/smartmontools 2>/dev/null || echo 'smartd_opts=""' >> /etc/default/smartmontools
   # unit soubory nejsou tajné – bez práv pro ostatní systemd při každém startu varuje
-  chmod 644 /etc/systemd/system/skywatch.service /etc/systemd/system/nvr-storage.service /etc/systemd/system/smartmontools.service.d/nvr.conf 2>/dev/null || true
+  chmod 644 /etc/systemd/system/atmovio.service /etc/systemd/system/nvr-storage.service /etc/systemd/system/smartmontools.service.d/nvr.conf 2>/dev/null || true
   # systémový žurnál: ponechat na disku kvůli diagnostice, ale omezit velikost (šetří SSD)
   mkdir -p /etc/systemd/journald.conf.d
   printf '[Journal]\nSystemMaxUse=200M\nSystemMaxFileSize=20M\n' > /etc/systemd/journald.conf.d/nvr.conf
@@ -309,7 +310,7 @@ mkdir -p "$FRIGATE_CFG_DIR" "$NVR_DIR/portainer"
 
 if [[ ! -f "$FRIGATE_CFG_DIR/config.yml" ]]; then
 cat > "$FRIGATE_CFG_DIR/config.yml" <<EOF
-# Konfigurace Frigate – kamery přidávej v SkyWatch (http://IP → Kamery)
+# Konfigurace Frigate – kamery přidávej v Atmovio (http://IP → Kamery)
 # nebo zde přes Frigate UI → Nastavení → Editor konfigurace.
 mqtt:
   enabled: false
@@ -379,8 +380,8 @@ services:
           size: 1000000000
     ports:
       - "8971:8971"            # UI + API s přihlášením (HTTPS)
-      - "127.0.0.1:5000:5000"  # API bez přihlášení – jen pro SkyWatch na tomto RPi
-      - "127.0.0.1:1984:1984"  # go2rtc API – snímky pro SkyWatch
+      - "127.0.0.1:5000:5000"  # API bez přihlášení – jen pro Atmovio na tomto RPi
+      - "127.0.0.1:1984:1984"  # go2rtc API – snímky pro Atmovio
       - "127.0.0.1:8554:8554"            # RTSP restream
       - "8555:8555/tcp"        # WebRTC
       - "8555:8555/udp"
@@ -412,29 +413,29 @@ docker compose pull
 docker compose up -d portainer
 ok "Portainer spuštěn; Frigate spustí správce úložiště"
 
-# ----------------------------------------------------------------------------- 6. SkyWatch
-step "SkyWatch (vlastní administrace)"
+# ----------------------------------------------------------------------------- 6. Atmovio
+step "Atmovio (vlastní administrace)"
 mkdir -p "$SKY_DIR"
-cat > "$SKY_DIR/app.py" <<'SKYWATCH_APP_EOF'
-__SKYWATCH_APP__
-SKYWATCH_APP_EOF
-cat > "$SKY_DIR/storage_guard.py" <<'SKYWATCH_STORAGE_EOF'
-__SKYWATCH_STORAGE__
-SKYWATCH_STORAGE_EOF
+cat > "$SKY_DIR/app.py" <<'ATMOVIO_APP_EOF'
+__ATMOVIO_APP__
+ATMOVIO_APP_EOF
+cat > "$SKY_DIR/storage_guard.py" <<'ATMOVIO_STORAGE_EOF'
+__ATMOVIO_STORAGE__
+ATMOVIO_STORAGE_EOF
 
-cat > "$SKY_DIR/requirements.txt" <<'SKYWATCH_REQUIREMENTS_EOF'
-__SKYWATCH_REQUIREMENTS__
-SKYWATCH_REQUIREMENTS_EOF
+cat > "$SKY_DIR/requirements.txt" <<'ATMOVIO_REQUIREMENTS_EOF'
+__ATMOVIO_REQUIREMENTS__
+ATMOVIO_REQUIREMENTS_EOF
 
 # --- statické soubory (CSS/JS) a knihovny Pico CSS + Alpine.js (offline kopie)
 write_static() {  # $1 = cílový adresář
   mkdir -p "$1/vendor"
-  cat > "$1/skywatch.css" <<'SKYWATCH_CSS_EOF'
-__SKYWATCH_CSS__
-SKYWATCH_CSS_EOF
-  cat > "$1/skywatch.js" <<'SKYWATCH_JS_EOF'
-__SKYWATCH_JS__
-SKYWATCH_JS_EOF
+  cat > "$1/atmovio.css" <<'ATMOVIO_CSS_EOF'
+__ATMOVIO_CSS__
+ATMOVIO_CSS_EOF
+  cat > "$1/atmovio.js" <<'ATMOVIO_JS_EOF'
+__ATMOVIO_JS__
+ATMOVIO_JS_EOF
 }
 fetch_vendor() {  # $1 = cílový adresář static
   local d="$1/vendor" ok=1
@@ -447,44 +448,44 @@ fetch_vendor() {  # $1 = cílový adresář static
     curl -fsSL --max-time 60 -o "$d/alpine.min.js.tmp" "https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js" \
       && mv "$d/alpine.min.js.tmp" "$d/alpine.min.js" || { rm -f "$d/alpine.min.js.tmp"; ok=0; }
   fi
-  [[ $ok -eq 1 ]] || echo "! Knihovny Pico CSS / Alpine.js se nepodařilo stáhnout – SkyWatch je načte z internetu (CDN), dokud se to nepovede při dalším updatu."
+  [[ $ok -eq 1 ]] || echo "! Knihovny Pico CSS / Alpine.js se nepodařilo stáhnout – Atmovio je načte z internetu (CDN), dokud se to nepovede při dalším updatu."
 }
 write_static "$SKY_DIR/static"
 fetch_vendor "$SKY_DIR/static"
 if [[ ! -x "$SKY_DIR/venv/bin/python" ]]; then python3 -m venv "$SKY_DIR/venv"; fi
 "$SKY_DIR/venv/bin/pip" install -q --upgrade pip
-"$SKY_DIR/venv/bin/pip" install -q -r "$SKY_DIR/requirements.txt" || die "Instalace Python balíčků pro SkyWatch selhala"
+"$SKY_DIR/venv/bin/pip" install -q -r "$SKY_DIR/requirements.txt" || die "Instalace Python balíčků pro Atmovio selhala"
 
 # počáteční konfigurace (heslo, pásmo, retence)
-SKYWATCH_DIR=$SKY_DIR SKYWATCH_ADMIN_PASSWORD="$ADMIN_PW" SMTP_HOST="$SMTP_HOST" SMTP_PORT="$SMTP_PORT" SMTP_SEC="$SMTP_SEC" \
+ATMOVIO_DIR=$SKY_DIR ATMOVIO_ADMIN_PASSWORD="$ADMIN_PW" SMTP_HOST="$SMTP_HOST" SMTP_PORT="$SMTP_PORT" SMTP_SEC="$SMTP_SEC" \
   SMTP_USER="$SMTP_USER" SMTP_PASS="$SMTP_PASS" MAIL_FROM="$MAIL_FROM" MAIL_TO="$MAIL_TO" "$SKY_DIR/venv/bin/python" - <<EOF
 import json, os, sys
 sys.path.insert(0, "$SKY_DIR")
-os.environ["SKYWATCH_DIR"] = "$SKY_DIR"
+os.environ["ATMOVIO_DIR"] = "$SKY_DIR"
 import app
 cfg = app.load_config()
-cfg["admin_password_hash"] = app.hash_pw(os.environ["SKYWATCH_ADMIN_PASSWORD"])
+cfg["admin_password_hash"] = app.hash_pw(os.environ["ATMOVIO_ADMIN_PASSWORD"])
 cfg["tz"] = "$TZONE"
 cfg["frigate_config_path"] = "$FRIGATE_CFG_DIR/config.yml"
 cfg["recordings_path"] = "$DATA_MNT/frigate/recordings"
-cfg["snapshot_dir"] = "$DATA_MNT/skywatch/snapshots"
+cfg["snapshot_dir"] = "$DATA_MNT/atmovio/snapshots"
 cfg["email"].update({"host": os.environ.get("SMTP_HOST", ""), "port": int(os.environ.get("SMTP_PORT", "587") or 587),
     "security": os.environ.get("SMTP_SEC", "starttls"), "user": os.environ.get("SMTP_USER", ""),
     "password": os.environ.get("SMTP_PASS", ""), "from": os.environ.get("MAIL_FROM", ""), "to": os.environ.get("MAIL_TO", "")})
 app.save_config(cfg)
-print("SkyWatch config OK")
+print("Atmovio config OK")
 EOF
 
-cat > /etc/systemd/system/skywatch.service <<EOF
+cat > /etc/systemd/system/atmovio.service <<EOF
 [Unit]
-Description=SkyWatch – NVR administrace a AI hlídání oblohy
+Description=Atmovio – NVR administrace a AI hlídání oblohy
 After=network-online.target docker.service
 Wants=network-online.target
 
 [Service]
 UMask=0077
-Environment=SKYWATCH_DIR=$SKY_DIR
-Environment=SKYWATCH_PORT=80
+Environment=ATMOVIO_DIR=$SKY_DIR
+Environment=ATMOVIO_PORT=80
 WorkingDirectory=$SKY_DIR
 ExecStart=$SKY_DIR/venv/bin/python $SKY_DIR/app.py
 Restart=always
@@ -495,15 +496,15 @@ WantedBy=multi-user.target
 EOF
 systemctl daemon-reload
 "$SKY_DIR/venv/bin/python" "$SKY_DIR/storage_guard.py" --install
-chmod 644 /etc/systemd/system/skywatch.service /etc/systemd/system/nvr-storage.service 2>/dev/null || true
+chmod 644 /etc/systemd/system/atmovio.service /etc/systemd/system/nvr-storage.service 2>/dev/null || true
 systemctl daemon-reload
-systemctl enable --now skywatch.service
+systemctl enable --now atmovio.service
 sleep 3
-systemctl is-active --quiet skywatch.service || { journalctl -u skywatch -n 30 --no-pager; die "SkyWatch se nespustil"; }
-ok "SkyWatch běží na portu 80"
+systemctl is-active --quiet atmovio.service || { journalctl -u atmovio -n 30 --no-pager; die "Atmovio se nespustil"; }
+ok "Atmovio běží na portu 80"
 
 # ----------------------------------------------------------------------------- 7. Frigate heslo
-step "Čekám na start Frigate a nastavuji heslo admin (stejné jako SkyWatch, až 3 minuty)"
+step "Čekám na start Frigate a nastavuji heslo admin (stejné jako Atmovio, až 3 minuty)"
 # Port 5000 je jen na localhostu a bez přihlášení – heslo se nastaví přímo přes API,
 # nezávisle na tom, co Frigate vypíše do logu.
 FRIGATE_PW_NOTE=""
@@ -521,31 +522,31 @@ if [[ $FRIGATE_UP -eq 1 ]]; then
   PW_JSON=$(jq -cn --arg p "$ADMIN_PW" '{password:$p}')
   if curl -fsS -m 10 -X PUT http://127.0.0.1:5000/api/users/admin/password \
        -H 'Content-Type: application/json' -d "$PW_JSON" >/dev/null 2>&1; then
-    ok "Heslo Frigate (admin) nastaveno stejné jako pro SkyWatch"
+    ok "Heslo Frigate (admin) nastaveno stejné jako pro Atmovio"
   else
     warn "Heslo Frigate se nepodařilo nastavit přes API"
-    FRIGATE_PW_NOTE="(nepodařilo se nastavit – nové vygeneruješ v SkyWatch → Systém → Vygenerovat nové heslo)"
+    FRIGATE_PW_NOTE="(nepodařilo se nastavit – nové vygeneruješ v Atmovio → Systém → Vygenerovat nové heslo)"
   fi
 else
   warn "Frigate nenaběhl do 3 minut – heslo nenastaveno"
-  FRIGATE_PW_NOTE="(Frigate nenaběhl – zkontroluj 'sudo docker logs frigate'; heslo pak nastavíš v SkyWatch → Systém)"
+  FRIGATE_PW_NOTE="(Frigate nenaběhl – zkontroluj 'sudo docker logs frigate'; heslo pak nastavíš v Atmovio → Systém)"
 fi
 
 # ----------------------------------------------------------------------------- 7b. test e-mailu
-MAIL_NOTE="zatím nenastaven – doplň v SkyWatch → E-mail (příjemce $MAIL_TO je předvyplněný)"
+MAIL_NOTE="zatím nenastaven – doplň v Atmovio → E-mail (příjemce $MAIL_TO je předvyplněný)"
 if [[ -n "$SMTP_HOST" ]]; then
   step "Testovací e-mail na $MAIL_TO"
   IP_NOW=$(hostname -I | awk '{print $1}')
-  if SKYWATCH_DIR=$SKY_DIR NVR_IP="$IP_NOW" "$SKY_DIR/venv/bin/python" - <<'PYEOF'
+  if ATMOVIO_DIR=$SKY_DIR NVR_IP="$IP_NOW" "$SKY_DIR/venv/bin/python" - <<'PYEOF'
 import os, sys
-sys.path.insert(0, os.environ["SKYWATCH_DIR"])
+sys.path.insert(0, os.environ["ATMOVIO_DIR"])
 import app
 cfg = app.load_config()
-app.send_email(cfg["email"], "[SkyWatch] Instalace dokončena",
-    "Raspberry Pi NVR je nainstalováno a odesílání e-mailů funguje.\n\nSkyWatch: http://%s\n" % os.environ["NVR_IP"])
+app.send_email(cfg["email"], "[Atmovio] Instalace dokončena",
+    "Raspberry Pi NVR je nainstalováno a odesílání e-mailů funguje.\n\nAtmovio: http://%s\n" % os.environ["NVR_IP"])
 PYEOF
   then ok "Testovací e-mail odeslán na $MAIL_TO"; MAIL_NOTE="funkční, testovací e-mail odeslán na $MAIL_TO"
-  else warn "Testovací e-mail se nepodařilo odeslat (nejspíš špatné heslo k SMTP). Instalace pokračuje – heslo opravíš a otestuješ v SkyWatch → E-mail."; MAIL_NOTE="NEFUNKČNÍ – oprav heslo k SMTP v SkyWatch → E-mail a klikni na test"
+  else warn "Testovací e-mail se nepodařilo odeslat (nejspíš špatné heslo k SMTP). Instalace pokračuje – heslo opravíš a otestuješ v Atmovio → E-mail."; MAIL_NOTE="NEFUNKČNÍ – oprav heslo k SMTP v Atmovio → E-mail a klikni na test"
   fi
 fi
 
@@ -555,15 +556,15 @@ HOSTN=$(hostname)
 {
 echo "==================== RPi 5 NVR – přístupy ($(date '+%d.%m.%Y %H:%M')) ===================="
 echo
-echo "  SkyWatch (administrace – funguje i na mobilu)     : http://$IP        (nebo http://$HOSTN.local)"
+echo "  Atmovio (administrace – funguje i na mobilu)     : http://$IP        (nebo http://$HOSTN.local)"
 echo "      heslo: to, které jsi zadal při instalaci"
 echo
 echo "  Frigate (živý náhled, záznamy, export videa)      : https://$IP:8971"
 echo "      uživatel: admin"
-echo "      heslo:    stejné jako SkyWatch $FRIGATE_PW_NOTE"
+echo "      heslo:    stejné jako Atmovio $FRIGATE_PW_NOTE"
 echo
 echo "  Portainer (Docker kontejnery)                     : https://$IP:9443"
-echo "      uživatel: admin      heslo: stejné jako SkyWatch"
+echo "      uživatel: admin      heslo: stejné jako Atmovio"
 echo
 echo "  Cockpit (systém, síť/statická IP, disky, updaty)  : https://$IP:9090"
 echo "      přihlášení systémovým uživatelem (${SUDO_USER:-pi}) a jeho heslem"

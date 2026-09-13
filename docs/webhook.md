@@ -2,17 +2,17 @@
 
 *[Česky](cs/webhook.md)*
 
-SkyWatch lives in your LAN. To see your cameras and alerts from anywhere without opening ports, SkyWatch
+Atmovio lives in your LAN. To see your cameras and alerts from anywhere without opening ports, Atmovio
 **pushes** data to a URL you own: a heartbeat with status and small previews every minute, and every alert with the AI snapshot.
 Your website stores and shows them (and can forward e-mails). The website never controls the Pi.
 
 A ready-to-use receiver in PHP is in [`examples/webhook-php`](../examples/webhook-php) – three files, no database.
 
-## Setup in SkyWatch
+## Setup in Atmovio
 
 **Nastavení → Upozornění → Kam chodí upozornění: vlastní web (webhook)**
 
-- **Adresa přijímače** – the exact final URL (`https://example.com/skywatch/webhook.php`). Avoid redirects (`www`, trailing slash) – a redirect turns the POST into a GET.
+- **Adresa přijímače** – the exact final URL (`https://example.com/atmovio/webhook.php`). Avoid redirects (`www`, trailing slash) – a redirect turns the POST into a GET.
 - **Token** – a long random secret, the same string you put into the receiver.
 - Advanced: name of this NVR, whether to send thumbnails.
 - **Uložit a otestovat spojení** sends `ping` and a `test` event.
@@ -26,7 +26,7 @@ The last error, if any, is shown on the page and in the **Logy** page.
 ```
 Authorization: Bearer <token>
 X-Token: <token>          (same value – for hosts that strip Authorization)
-User-Agent: SkyWatch/<version>
+User-Agent: Atmovio/<version>
 ```
 
 Response must be JSON. `{"ok": true}` = accepted. Anything else (or non-2xx) is treated as failure and shown to the user.
@@ -45,7 +45,7 @@ Expected response: `{"ok": true, "nvr": "name to display", "server_time": "2026-
 {
   "type": "heartbeat",
   "nvr": "Raspberry Pi 5 NVR", "version": "3.1",
-  "skywatch_url": "http://192.168.1.20", "frigate_url": "https://192.168.1.20:8971",
+  "atmovio_url": "http://192.168.1.20", "frigate_url": "https://192.168.1.20:8971",
   "status": {
     "frigate_online": "1", "frigate_version": "0.17.2",
     "storage_mode": "recording", "disk_pct": 41, "disk_free": "1.2 TB",
@@ -84,17 +84,17 @@ snapshot could not be built. All `*_url` links point to the Pi and work only at 
   "type": "event",
   "kind": "sky",                       // sky | outage | recovery | system | test
   "camera": "zahrada", "camera_label": "Zahrada – západ",
-  "subject": "[SkyWatch] Zahrada – západ: Červánky (9/10)",
+  "subject": "[Atmovio] Zahrada – západ: Červánky (9/10)",
   "message": "Kamera: …\nČas: 13.09.2026 19:12\nSkóre: 9/10\nJev: Červánky\n\n<AI description>…",
   "score": 9,                          // sky events only
   "phenomena": ["cervanky"],           // ids from the catalogue, sky events only
   "ts": "2026-09-13T19:12:03",
   "image": "<base64 JPEG, full resolution>",   // when a snapshot exists
-  "link": "http://192.168.1.20/detection/123",  // detail in SkyWatch (LAN/VPN only)
+  "link": "http://192.168.1.20/detection/123",  // detail in Atmovio (LAN/VPN only)
   "frigate_url": "https://192.168.1.20:8971"
 }
 ```
-Response: `{"ok": true}`; optionally `"emailed": true` if your site forwarded the event by e-mail – SkyWatch then shows
+Response: `{"ok": true}`; optionally `"emailed": true` if your site forwarded the event by e-mail – Atmovio then shows
 "web + e-mail z webu" in the detection note.
 
 Phenomenon ids: `cervanky, shelf, mammatus, beranci, bourka, blesk, duha, halo, paprsky, lentikularni, mlha, tornado,

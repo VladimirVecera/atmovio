@@ -1,14 +1,14 @@
 <?php
 /**
- * SkyWatch webhook receiver (example, no database needed).
+ * Atmovio webhook receiver (example, no database needed).
  * ---------------------------------------------------------------------
- * SkyWatch POSTs JSON here (see docs/webhook.md):
+ * Atmovio POSTs JSON here (see docs/webhook.md):
  *   {"type":"ping"}
  *   {"type":"heartbeat", "nvr":"…", "status":{…}, "cameras":[{…,"thumb":"<base64 jpeg>"}]}
  *   {"type":"event", "kind":"sky|outage|recovery|system|test", "camera":"…", "subject":"…",
  *    "message":"…", "score":8, "phenomena":["cervanky"], "ts":"2026-09-13T19:12:00", "image":"<base64 jpeg>", "link":"…"}
  * Authentication: header  Authorization: Bearer <token>  (also sent as X-Token).
- * Response: JSON {"ok":true, …}. Anything else makes SkyWatch show the error in its UI.
+ * Response: JSON {"ok":true, …}. Anything else makes Atmovio show the error in its UI.
  *
  * Storage: data/state.json (last heartbeat), data/events.json (last N events),
  *          data/thumbs/<camera>.jpg, data/events/<id>.jpg
@@ -82,11 +82,11 @@ function save_json(string $file, $value): void
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
     api_end(405, ['ok' => false, 'error' => 'POST JSON expected.']);
 }
-if (SKYWATCH_TOKEN === 'change-me-to-a-long-random-string') {
-    api_end(500, ['ok' => false, 'error' => 'Receiver is not configured: set SKYWATCH_TOKEN in config.php.']);
+if (ATMOVIO_TOKEN === 'change-me-to-a-long-random-string') {
+    api_end(500, ['ok' => false, 'error' => 'Receiver is not configured: set ATMOVIO_TOKEN in config.php.']);
 }
 $token = read_token();
-if ($token === '' || !hash_equals(SKYWATCH_TOKEN, $token)) {
+if ($token === '' || !hash_equals(ATMOVIO_TOKEN, $token)) {
     usleep(300000);
     api_end(401, ['ok' => false, 'error' => 'Invalid token.']);
 }
@@ -100,7 +100,7 @@ if (!is_array($data)) {
     api_end(400, ['ok' => false, 'error' => 'Invalid JSON.']);
 }
 
-$dir = rtrim(SKYWATCH_DATA_DIR, '/');
+$dir = rtrim(ATMOVIO_DATA_DIR, '/');
 foreach ([$dir, "$dir/thumbs", "$dir/events"] as $d) {
     if (!is_dir($d) && !mkdir($d, 0750, true)) {
         api_end(500, ['ok' => false, 'error' => "Cannot create $d"]);
@@ -112,7 +112,7 @@ if (!is_file("$dir/.htaccess")) {
 
 switch ((string) ($data['type'] ?? '')) {
     case 'ping':
-        api_end(200, ['ok' => true, 'nvr' => (string) ($data['nvr'] ?? 'SkyWatch'), 'server_time' => date('c')]);
+        api_end(200, ['ok' => true, 'nvr' => (string) ($data['nvr'] ?? 'Atmovio'), 'server_time' => date('c')]);
 
     case 'heartbeat':
         $cams = [];
@@ -130,7 +130,7 @@ switch ((string) ($data['type'] ?? '')) {
         }
         save_json("$dir/state.json", [
             'received' => date('c'), 'nvr' => (string) ($data['nvr'] ?? ''), 'version' => (string) ($data['version'] ?? ''),
-            'skywatch_url' => (string) ($data['skywatch_url'] ?? ''), 'frigate_url' => (string) ($data['frigate_url'] ?? ''),
+            'atmovio_url' => (string) ($data['atmovio_url'] ?? $data['skywatch_url'] ?? ''), 'frigate_url' => (string) ($data['frigate_url'] ?? ''),
             'status' => (array) ($data['status'] ?? []), 'cameras' => $cams,
         ]);
         api_end(200, ['ok' => true]);
@@ -149,16 +149,16 @@ switch ((string) ($data['type'] ?? '')) {
             'link' => (string) ($data['link'] ?? ''), 'image' => $hasImage,
         ];
         array_unshift($events, $event);
-        foreach (array_slice($events, SKYWATCH_KEEP_EVENTS) as $old) {
+        foreach (array_slice($events, ATMOVIO_KEEP_EVENTS) as $old) {
             @unlink("$dir/events/{$old['id']}.jpg");
         }
-        save_json("$dir/events.json", array_slice($events, 0, SKYWATCH_KEEP_EVENTS));
+        save_json("$dir/events.json", array_slice($events, 0, ATMOVIO_KEEP_EVENTS));
 
         $emailed = false;
-        if (SKYWATCH_MAIL_TO !== '' && in_array($event['kind'], ['sky', 'outage', 'recovery'], true)) {
-            $headers = 'From: ' . SKYWATCH_MAIL_FROM . "\r\nContent-Type: text/plain; charset=utf-8";
+        if (ATMOVIO_MAIL_TO !== '' && in_array($event['kind'], ['sky', 'outage', 'recovery'], true)) {
+            $headers = 'From: ' . ATMOVIO_MAIL_FROM . "\r\nContent-Type: text/plain; charset=utf-8";
             $body = $event['message'] . ($event['link'] !== '' ? "\n\n" . $event['link'] : '');
-            $emailed = @mail(SKYWATCH_MAIL_TO, '=?UTF-8?B?' . base64_encode($event['subject']) . '?=', $body, $headers);
+            $emailed = @mail(ATMOVIO_MAIL_TO, '=?UTF-8?B?' . base64_encode($event['subject']) . '?=', $body, $headers);
         }
         api_end(200, ['ok' => true, 'id' => $id, 'emailed' => $emailed]);
 

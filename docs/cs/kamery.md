@@ -7,7 +7,7 @@
 **Nastavení → Kamery → Vyhledat kamery v síti** je nejjednodušší cesta:
 
 1. Zadej **uživatele a heslo kamery** (to, čím se přihlašuješ do její webové stránky). Bez nich většina kamer video nevydá (HTTP 401) a nejde je ověřit.
-2. SkyWatch prohledá síť (ONVIF + sken portů 554/80/8000/8080/8554 v zadaných sítích; můžeš přidat vzdálenou síť za VPN, např. `10.10.10.0/24`).
+2. Atmovio prohledá síť (ONVIF + sken portů 554/80/8000/8080/8554 v zadaných sítích; můžeš přidat vzdálenou síť za VPN, např. `10.10.10.0/24`).
 3. U každého zařízení načte profily streamů přes ONVIF a **každou RTSP adresu ověří na skutečné dekódované snímky** – přesně tak, jak ji bude číst Frigate. Adresy bez videa vynechá, špatný port opraví.
 4. Potvrď název a klikni **Přidat kameru**. Frigate se restartuje (20–40 s) a kamera se objeví v Přehledu.
 
@@ -59,6 +59,6 @@ Stránka kamery → Nastavení kamery → **Uložit změny** znovu ověří stre
 ## Známé zvláštnosti
 
 - Kamery s RTSP jen na portu 80 nebo 8554: hledání tyto porty zkusí a adresu opraví.
-- Některé kamery (Tapo, starší Xiaomi) se s go2rtc nedomluví; SkyWatch automaticky přepne na zdroj přes ffmpeg a řekne to (bez zvuku).
+- Některé kamery (Tapo, starší Xiaomi) se s go2rtc nedomluví; Atmovio automaticky přepne na zdroj přes ffmpeg a řekne to (bez zvuku).
 - ONVIF hledání je multicast – najde jen kamery ve vlastní síti Pi. Pro sítě za VPN použij sken podsítě.
-- Když kamera po změně IP ukazuje **BEZ SIGNÁLU**, uprav adresu na stránce kamery; SkyWatch DHCP změny nesleduje. Dej kamerám pevné IP.
+- Když kamera po změně IP ukazuje **BEZ SIGNÁLU**, uprav adresu na stránce kamery; Atmovio DHCP změny nesleduje. Dej kamerám pevné IP.

@@ -1,4 +1,4 @@
-/* SkyWatch – vlastní vzhled nad Pico CSS 2 (světlý i tmavý režim). */
+/* Atmovio – vlastní vzhled nad Pico CSS 2 (světlý i tmavý režim). */
 
 :root {
   --pico-font-size: 94%;
@@ -151,6 +151,8 @@ header.top { display: none; }
 .section-head h2 { margin: 0; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; }
 .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1rem; }
+.grid-wide { display: grid; grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); gap: 1.2rem; }
+@media (max-width: 560px) { .grid-wide { grid-template-columns: 1fr; } }
 .row { display: flex; gap: .9rem; flex-wrap: wrap; }
 .row > * { flex: 1; min-width: 160px; }
 

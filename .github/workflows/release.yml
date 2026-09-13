@@ -1,7 +1,7 @@
 name: Release
 
-# Vydání = tag v<verze> (např. v3.2). K release se přiloží install.sh, update-skywatch.sh a SHA256SUMS;
-# SkyWatch na RPi si z něj bere aktualizace (Nastavení → Systém → Aktualizace).
+# Vydání = tag v<verze> (např. v3.2). K release se přiloží install.sh, update-atmovio.sh a SHA256SUMS;
+# Atmovio na RPi si z něj bere aktualizace (Nastavení → Systém → Aktualizace).
 on:
   push:
     tags: ["v*"]
@@ -18,10 +18,13 @@ jobs:
         run: bash src/build.sh --check
       - name: Tag matches APP_VERSION
         run: |
-          v=$(sed -n 's/^APP_VERSION = "\([^"]*\)".*/\1/p' src/skywatch/app.py)
+          v=$(sed -n 's/^APP_VERSION = "\([^"]*\)".*/\1/p' src/atmovio/app.py)
           [ "v$v" = "$GITHUB_REF_NAME" ] || { echo "APP_VERSION=$v, tag=$GITHUB_REF_NAME – must match"; exit 1; }
+      - name: Legacy asset name for SkyWatch 3.x installs
+        # Verze 3.2–3.4 (ještě pod jménem SkyWatch) hledají v release soubor update-skywatch.sh; stejný obsah pod starým jménem.
+        run: cp update-atmovio.sh update-skywatch.sh
       - name: Checksums
-        run: sha256sum install.sh update-skywatch.sh > SHA256SUMS && cat SHA256SUMS
+        run: sha256sum install.sh update-atmovio.sh update-skywatch.sh > SHA256SUMS && cat SHA256SUMS
       - name: Release notes from CHANGELOG
         run: |
           python3 - "${GITHUB_REF_NAME#v}" > notes.md <<'PY'
@@ -29,12 +32,12 @@ jobs:
           ver = sys.argv[1]
           text = open("CHANGELOG.md", encoding="utf-8").read()
           m = re.search(r"^## " + re.escape(ver) + r"\b[^\n]*\n(.*?)(?=^## |\Z)", text, re.S | re.M)
-          body = (m.group(1).strip() if m else "") or f"SkyWatch {ver}"
+          body = (m.group(1).strip() if m else "") or f"Atmovio {ver}"
           print(body)
-          print("\n---\nUpdate: Nastavení → Systém → Aktualizace in the web UI, or `scp update-skywatch.sh pi@IP: && ssh pi@IP sudo bash update-skywatch.sh`.")
+          print("\n---\nUpdate: Nastavení → Systém → Aktualizace in the web UI, or `scp update-atmovio.sh pi@IP: && ssh pi@IP sudo bash update-atmovio.sh`. (`update-skywatch.sh` is the same file under the old name for SkyWatch 3.x installs.)")
           PY
           cat notes.md
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" install.sh update-skywatch.sh SHA256SUMS --title "SkyWatch ${GITHUB_REF_NAME#v}" --notes-file notes.md
+        run: gh release create "$GITHUB_REF_NAME" install.sh update-atmovio.sh update-skywatch.sh SHA256SUMS --title "Atmovio ${GITHUB_REF_NAME#v}" --notes-file notes.md

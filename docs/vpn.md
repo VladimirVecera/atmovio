@@ -6,18 +6,18 @@ A camera in another place (cottage, parents' house, workshop) can be recorded by
 its network. Two options:
 
 1. **Your router does it** (site-to-site VPN between the two routers, or the remote router is reachable). Then just add
-   the camera with its remote address – nothing to configure in SkyWatch.
+   the camera with its remote address – nothing to configure in Atmovio.
 2. **The Pi itself is a WireGuard client** of the remote router. This is what **Nastavení → Síť a VPN** is for.
 
 ## Setting up option 2
 
 1. On the *remote* router (Mikrotik, OpenWrt, Fritz!Box, UniFi, Teltonika, …) create a **WireGuard peer/client** for the Pi
    and download the generated client config (`[Interface] … [Peer] …`). Do not edit it.
-2. In SkyWatch → Síť a VPN → *Pro pokročilé: WireGuard tunel* paste the **whole config** and click **Uložit a aktivovat**.
+2. In Atmovio → Síť a VPN → *Pro pokročilé: WireGuard tunel* paste the **whole config** and click **Uložit a aktivovat**.
 3. Enter the remote camera's IP in *Ověřit* (ping) – it should answer. Then add the camera via **Vyhledat kamery** with the
    remote subnet (e.g. `10.10.10.0/24`) or manually with `rtsp://10.10.10.4:554/…`.
 
-SkyWatch is a **split tunnel by design**: only traffic to the remote camera(s) goes through the tunnel; e-mail, AI, the webhook
+Atmovio is a **split tunnel by design**: only traffic to the remote camera(s) goes through the tunnel; e-mail, AI, the webhook
 and your home LAN stay on the normal connection. It therefore rewrites the pasted config:
 
 - drops `DNS`, `PreUp/PostUp/PreDown/PostDown`, `Table`, `SaveConfig`, `FwMark` (and tells you);

@@ -2,16 +2,16 @@
 
 *[Česky](cs/ai.md)*
 
-SkyWatch does not run a neural network on the Pi. It sends a snapshot to a hosted vision model and asks
+Atmovio does not run a neural network on the Pi. It sends a snapshot to a hosted vision model and asks
 one question: *how interesting is this sky, and which of these phenomena do you actually see?*
-The model answers with a 0–10 score and a list of phenomena; SkyWatch does the rest (episodes, cooldowns, alerts, video).
+The model answers with a 0–10 score and a list of phenomena; Atmovio does the rest (episodes, cooldowns, alerts, video).
 
 ## Getting a free key (Google Gemini)
 
 1. Open [aistudio.google.com/apikey](https://aistudio.google.com/apikey), sign in with a Google account, **Create API key**. No credit card.
-2. SkyWatch → **Nastavení → AI hlídání oblohy → 1 · Klíč k AI**, paste the key, **Uložit a ověřit klíč**.
-3. Leave the model on **auto** – SkyWatch picks the newest *Flash-Lite* model your key can use (largest free daily quota, currently ~500 requests/day) and falls back to other models on 404/429/503.
-4. Set **Nejvíc dotazů na AI za den** to your quota; SkyWatch stops asking for the day when it is reached.
+2. Atmovio → **Nastavení → AI hlídání oblohy → 1 · Klíč k AI**, paste the key, **Uložit a ověřit klíč**.
+3. Leave the model on **auto** – Atmovio picks the newest *Flash-Lite* model your key can use (largest free daily quota, currently ~500 requests/day) and falls back to other models on 404/429/503.
+4. Set **Nejvíc dotazů na AI za den** to your quota; Atmovio stops asking for the day when it is reached.
 
 Note: on the free tier Google may use the sent images to improve its models. Other providers:
 
@@ -54,7 +54,7 @@ New phenomena added in a release are enabled automatically once on existing inst
 
 ## Automatic video (4 · Video automaticky)
 
-After an alert SkyWatch can cut a clip −N/+M minutes around the snapshot automatically (per camera, optional 25× timelapse).
+After an alert Atmovio can cut a clip −N/+M minutes around the snapshot automatically (per camera, optional 25× timelapse).
 The clip is created once the "after" minutes have passed; you find it in **Videa** marked *auto*, and the detection shows
 "video exportováno". Videos are deleted after the retention set on the Videa page (default 30 days).
 

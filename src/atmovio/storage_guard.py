@@ -20,10 +20,10 @@ import time
 from ruamel.yaml import YAML
 
 NVR = Path(os.environ.get('NVR_DIR', '/opt/nvr'))
-SKY = NVR / 'skywatch'
+SKY = NVR / 'atmovio'
 MOUNT = Path('/mnt/nvr')
 # Stav se zapisuje každé 2 s – patří do RAM (/run), ne na SSD.
-STATUS = Path('/run/skywatch/storage-status.json')
+STATUS = Path('/run/atmovio/storage-status.json')
 COMPOSE = NVR / 'docker-compose.yml'
 LIVE_CONFIG = NVR / 'frigate/config/config.live.yml'
 SOURCE_CONFIG = NVR / 'frigate/config/config.yml'
@@ -102,7 +102,7 @@ def probe_disk():
     if not MOUNT.is_mount() or MOUNT.stat().st_dev == Path('/').stat().st_dev:
         return False
     # Ověřit právě prostor záznamů, ne pouze jiný adresář na témže disku.
-    directories = ('frigate', 'frigate/recordings', 'skywatch', 'skywatch/snapshots')
+    directories = ('frigate', 'frigate/recordings', 'atmovio', 'atmovio/snapshots')
     if any((MOUNT / name).is_symlink() for name in directories):
         return False
     for name in directories:
@@ -111,10 +111,10 @@ def probe_disk():
         if directory.stat().st_dev != MOUNT.stat().st_dev:
             return False
     # Bez zápisu nelze rozlišit připojený disk od read-only / vadného HDD.
-    fd, name = tempfile.mkstemp(prefix='.skywatch-probe-', dir=MOUNT / 'frigate/recordings')
+    fd, name = tempfile.mkstemp(prefix='.atmovio-probe-', dir=MOUNT / 'frigate/recordings')
     try:
         with os.fdopen(fd, 'wb') as out:
-            out.write(b'SkyWatch storage check\n')
+            out.write(b'Atmovio storage check\n')
             out.flush()
             os.fsync(out.fileno())
     finally:
@@ -156,7 +156,7 @@ _last_publish = {'key': None, 'at': 0.0}
 
 
 def publish(mode, reason):
-    """Zapíše stav jen při změně nebo nejpozději po 10 s (SkyWatch bere stav za čerstvý 15 s)."""
+    """Zapíše stav jen při změně nebo nejpozději po 10 s (Atmovio bere stav za čerstvý 15 s)."""
     now = time.time()
     if _last_publish['key'] == (mode, reason) and now - _last_publish['at'] < 10:
         return
@@ -244,7 +244,7 @@ def install():
         raise RuntimeError('Správce vyžaduje databázi Frigate na SSD uvnitř /config.')
     backup = SKY / 'backups' / ('storage-' + dt.datetime.now().strftime('%Y%m%d%H%M%S'))
     backup.mkdir(parents=True, exist_ok=True)
-    files = [COMPOSE, SYSTEMD / 'skywatch.service',
+    files = [COMPOSE, SYSTEMD / 'atmovio.service',
              SYSTEMD / 'docker.service.d/nvr-storage.conf',
              SYSTEMD / 'nvr-storage.service']
     for index, path in enumerate(files):

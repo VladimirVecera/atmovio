@@ -13,18 +13,18 @@ jobs:
         with:
           python-version: "3.11"
       - name: Python syntax
-        run: python3 -m py_compile src/skywatch/app.py src/skywatch/storage_guard.py
+        run: python3 -m py_compile src/atmovio/app.py src/atmovio/storage_guard.py
       - name: Built scripts match sources
         run: bash src/build.sh --check
       - name: Shell syntax
-        run: bash -n install.sh && bash -n update-skywatch.sh
+        run: bash -n install.sh && bash -n update-atmovio.sh
       - name: Templates parse and app imports
         run: |
-          python3 -m pip install -q -r src/skywatch/requirements.txt
+          python3 -m pip install -q -r src/atmovio/requirements.txt
           mkdir -p /tmp/sw
-          SKYWATCH_DIR=/tmp/sw SKYWATCH_ADMIN_PASSWORD=ci-password-12345 python3 - <<'PY'
+          ATMOVIO_DIR=/tmp/sw ATMOVIO_ADMIN_PASSWORD=ci-password-12345 python3 - <<'PY'
           import os, sys
-          sys.path.insert(0, "src/skywatch")
+          sys.path.insert(0, "src/atmovio")
           import app
           for name in app.TEMPLATES:
               app.jenv.get_template(name)

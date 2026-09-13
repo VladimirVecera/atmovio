@@ -2,16 +2,16 @@
 
 *[English](../ai.md)*
 
-SkyWatch na Pi žádnou neuronovou síť nespouští. Pošle snímek hostovanému vizuálnímu modelu a zeptá se na jedno:
+Atmovio na Pi žádnou neuronovou síť nespouští. Pošle snímek hostovanému vizuálnímu modelu a zeptá se na jedno:
 *jak zajímavá je tahle obloha a které z těchto jevů na ní opravdu vidíš?* Model vrátí skóre 0–10 a seznam jevů;
-zbytek (epizody, odstupy, upozornění, video) dělá SkyWatch.
+zbytek (epizody, odstupy, upozornění, video) dělá Atmovio.
 
 ## Klíč zdarma (Google Gemini)
 
 1. Otevři [aistudio.google.com/apikey](https://aistudio.google.com/apikey), přihlas se Google účtem, **Create API key**. Bez platební karty.
-2. SkyWatch → **Nastavení → AI hlídání oblohy → 1 · Klíč k AI**, vlož klíč, **Uložit a ověřit klíč**.
-3. Model nech na **auto** – SkyWatch vybere nejnovější *Flash-Lite* model, který tvůj klíč může používat (největší denní limit zdarma, dnes ~500 dotazů/den), a při 404/429/503 přejde na jiný.
-4. **Nejvíc dotazů na AI za den** nastav podle svého limitu; po jeho dosažení se SkyWatch ten den už neptá.
+2. Atmovio → **Nastavení → AI hlídání oblohy → 1 · Klíč k AI**, vlož klíč, **Uložit a ověřit klíč**.
+3. Model nech na **auto** – Atmovio vybere nejnovější *Flash-Lite* model, který tvůj klíč může používat (největší denní limit zdarma, dnes ~500 dotazů/den), a při 404/429/503 přejde na jiný.
+4. **Nejvíc dotazů na AI za den** nastav podle svého limitu; po jeho dosažení se Atmovio ten den už neptá.
 
 Pozn.: v bezplatném tarifu může Google poslané snímky použít ke zlepšování modelů. Další poskytovatelé:
 
@@ -53,7 +53,7 @@ Jevy přidané v nové verzi se u existující instalace jednorázově zapnou sa
 
 ## Video automaticky (4 · Video automaticky)
 
-Po upozornění může SkyWatch sám vystřihnout úsek −N/+M minut kolem snímku (pro vybrané kamery, volitelně timelapse 25×).
+Po upozornění může Atmovio sám vystřihnout úsek −N/+M minut kolem snímku (pro vybrané kamery, volitelně timelapse 25×).
 Video vznikne, až uplynou minuty „po“; najdeš ho ve **Videích** se štítkem *auto* a u detekce je „video exportováno“.
 Videa se mažou po době nastavené na stránce Videa (výchozí 30 dní).
 

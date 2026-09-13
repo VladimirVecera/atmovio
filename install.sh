@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  RPi 5 NVR + SkyWatch – instalační script
+#  RPi 5 NVR + Atmovio – instalační script
 #  Raspberry Pi OS Lite 64-bit (Debian 13 "trixie")
 #
 #  Nainstaluje a zprovozní:
 #    * Docker + Frigate (NVR: záznam kamer, přehrávání, export)   https://IP:8971
 #    * Portainer (správa kontejnerů)                              https://IP:9443
 #    * Cockpit (správa systému, sítě, disků, aktualizací)         https://IP:9090
-#    * SkyWatch (vlastní administrace: kamery, retence, mazání,
+#    * Atmovio (vlastní administrace: kamery, retence, mazání,
 #      AI hlídání oblohy, e-mail, VPN klient, systém)             http://IP
 #
 #  Spuštění:  sudo bash install.sh
@@ -17,7 +17,7 @@ umask 077
 
 NVR_DIR=/opt/nvr
 DATA_MNT=/mnt/nvr
-SKY_DIR=$NVR_DIR/skywatch
+SKY_DIR=$NVR_DIR/atmovio
 FRIGATE_CFG_DIR=$NVR_DIR/frigate/config
 INFO_FILE=$NVR_DIR/INSTALL-INFO.txt
 LOG=/var/log/nvr-install.log
@@ -30,7 +30,8 @@ die()   { echo -e "${C_R}✖ $*${C_0}" >&2; exit 1; }
 
 [[ $EUID -eq 0 ]] || die "Spusť jako root: sudo bash install.sh"
 [[ -t 0 ]] || die "Spusť stažený skript v interaktivním terminálu (ne curl | bash)."
-[[ ! -f "$SKY_DIR/config.json" ]] || die "SkyWatch už je nainstalován. Pro aktualizaci použij update-skywatch.sh; konfiguraci nepřepisuji."
+[[ ! -f "$SKY_DIR/config.json" ]] || die "Atmovio už je nainstalován. Pro aktualizaci použij update-atmovio.sh; konfiguraci nepřepisuji."
+[[ ! -f /opt/nvr/skywatch/config.json ]] || die "Je tu instalace SkyWatch (starý název Atmovia). Nespouštěj instalátor – spusť update-atmovio.sh, ten ji přejmenuje a aktualizuje se zachováním nastavení."
 touch "$LOG"; chmod 600 "$LOG"
 exec > >(tee -a "$LOG") 2>&1
 echo "=== NVR install $(date) ==="
@@ -51,7 +52,7 @@ export DEBIAN_FRONTEND=noninteractive
 # ----------------------------------------------------------------------------- 1. dotazy
 step "Základní nastavení"
 DEFAULT_TZ="Europe/Prague"
-echo "Heslo administrátora platí pro SkyWatch a Portainer; alespoň 12 znaků."
+echo "Heslo administrátora platí pro Atmovio a Portainer; alespoň 12 znaků."
 while true; do
   read -rsp "Heslo administrátora: " ADMIN_PW; echo
   read -rsp "Heslo znovu:         " ADMIN_PW2; echo
@@ -73,7 +74,7 @@ while true; do
 done
 timedatectl set-timezone "$TZONE"
 
-echo "E-mail lze nastavit později ve SkyWatch → E-mail."
+echo "E-mail lze nastavit později ve Atmovio → E-mail."
 read -rp "SMTP server (Enter = přeskočit): " SMTP_HOST
 SMTP_PORT=587; SMTP_SEC=starttls; SMTP_USER=""; SMTP_PASS=""; MAIL_FROM=""; MAIL_TO=""
 if [[ -n "$SMTP_HOST" ]]; then
@@ -115,12 +116,12 @@ RestartSec=60
 EOF
   cat > /etc/smartd.conf <<'EOF'
 # NVR: sledovat všechny disky včetně USB boxů (-d removable = nepadat, když disk zmizí; -n standby = nebudit uspaný disk).
-# Bez e-mailu (na RPi není poštovní server) – varování jdou do systémového logu a SkyWatch je ukazuje na každé stránce.
+# Bez e-mailu (na RPi není poštovní server) – varování jdou do systémového logu a Atmovio je ukazuje na každé stránce.
 DEVICESCAN -d removable -n standby,q -a -W 4,45,55
 EOF
   grep -q '^smartd_opts=' /etc/default/smartmontools 2>/dev/null || echo 'smartd_opts=""' >> /etc/default/smartmontools
   # unit soubory nejsou tajné – bez práv pro ostatní systemd při každém startu varuje
-  chmod 644 /etc/systemd/system/skywatch.service /etc/systemd/system/nvr-storage.service /etc/systemd/system/smartmontools.service.d/nvr.conf 2>/dev/null || true
+  chmod 644 /etc/systemd/system/atmovio.service /etc/systemd/system/nvr-storage.service /etc/systemd/system/smartmontools.service.d/nvr.conf 2>/dev/null || true
   # systémový žurnál: ponechat na disku kvůli diagnostice, ale omezit velikost (šetří SSD)
   mkdir -p /etc/systemd/journald.conf.d
   printf '[Journal]\nSystemMaxUse=200M\nSystemMaxFileSize=20M\n' > /etc/systemd/journald.conf.d/nvr.conf
@@ -309,7 +310,7 @@ mkdir -p "$FRIGATE_CFG_DIR" "$NVR_DIR/portainer"
 
 if [[ ! -f "$FRIGATE_CFG_DIR/config.yml" ]]; then
 cat > "$FRIGATE_CFG_DIR/config.yml" <<EOF
-# Konfigurace Frigate – kamery přidávej v SkyWatch (http://IP → Kamery)
+# Konfigurace Frigate – kamery přidávej v Atmovio (http://IP → Kamery)
 # nebo zde přes Frigate UI → Nastavení → Editor konfigurace.
 mqtt:
   enabled: false
@@ -379,8 +380,8 @@ services:
           size: 1000000000
     ports:
       - "8971:8971"            # UI + API s přihlášením (HTTPS)
-      - "127.0.0.1:5000:5000"  # API bez přihlášení – jen pro SkyWatch na tomto RPi
-      - "127.0.0.1:1984:1984"  # go2rtc API – snímky pro SkyWatch
+      - "127.0.0.1:5000:5000"  # API bez přihlášení – jen pro Atmovio na tomto RPi
+      - "127.0.0.1:1984:1984"  # go2rtc API – snímky pro Atmovio
       - "127.0.0.1:8554:8554"            # RTSP restream
       - "8555:8555/tcp"        # WebRTC
       - "8555:8555/udp"
@@ -412,17 +413,17 @@ docker compose pull
 docker compose up -d portainer
 ok "Portainer spuštěn; Frigate spustí správce úložiště"
 
-# ----------------------------------------------------------------------------- 6. SkyWatch
-step "SkyWatch (vlastní administrace)"
+# ----------------------------------------------------------------------------- 6. Atmovio
+step "Atmovio (vlastní administrace)"
 mkdir -p "$SKY_DIR"
-cat > "$SKY_DIR/app.py" <<'SKYWATCH_APP_EOF'
+cat > "$SKY_DIR/app.py" <<'ATMOVIO_APP_EOF'
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-SkyWatch – webová administrace pro RPi 5 NVR (Frigate) + AI hlídání oblohy.
+Atmovio – webová administrace pro RPi 5 NVR (Frigate) + AI hlídání oblohy.
 
 Běží jako systemd služba na hostiteli (ne v Dockeru), aby mohla spravovat
-WireGuard, disky a Docker kontejnery. Konfigurace: /opt/nvr/skywatch/config.json
+WireGuard, disky a Docker kontejnery. Konfigurace: /opt/nvr/atmovio/config.json
 """
 import base64
 import concurrent.futures
@@ -469,16 +470,16 @@ from starlette.concurrency import run_in_threadpool
 from astral import LocationInfo
 from astral.sun import sun
 
-APP_DIR = Path(os.environ.get("SKYWATCH_DIR", "/opt/nvr/skywatch"))
+APP_DIR = Path(os.environ.get("ATMOVIO_DIR", "/opt/nvr/atmovio"))
 CONFIG_FILE = APP_DIR / "config.json"
-DB_FILE = APP_DIR / "skywatch.db"
-LOG_FILE = APP_DIR / "skywatch.log"
+DB_FILE = APP_DIR / "atmovio.db"
+LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "3.3"
-GITHUB_REPO = "VladimirVecera/skywatch"          # odkud se berou nové verze (GitHub Releases)
+APP_VERSION = "4.0"
+GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
-UPDATE_UNIT = "skywatch-update"                  # transientní systemd jednotka, ve které běží update-skywatch.sh
+UPDATE_UNIT = "atmovio-update"                  # transientní systemd jednotka, ve které běží update-atmovio.sh
 
 # Katalog jevů: id, název, popis pro AI. Uživatel si vybírá, na které chce upozornit.
 PHENOMENA = [
@@ -522,7 +523,7 @@ DEFAULT_CONFIG = {
     "restream_url": "rtsp://127.0.0.1:8554",
     "frigate_config_path": "/opt/nvr/frigate/config/config.yml",
     "recordings_path": "/mnt/nvr/frigate/recordings",
-    "snapshot_dir": "/mnt/nvr/skywatch/snapshots",
+    "snapshot_dir": "/mnt/nvr/atmovio/snapshots",
     "lat": 49.8,
     "lon": 15.5,
     "tz": "Europe/Prague",
@@ -635,9 +636,9 @@ def local_ip() -> str:
 
 
 def public_urls() -> dict:
-    """Adresy SkyWatch a přehrávače v LAN – pro odkazy v e-mailech a na webu."""
+    """Adresy Atmovio a přehrávače v LAN – pro odkazy v e-mailech a na webu."""
     ip = local_ip()
-    return {"skywatch": f"http://{ip}" if ip else "", "frigate": f"https://{ip}:8971" if ip else ""}
+    return {"atmovio": f"http://{ip}" if ip else "", "frigate": f"https://{ip}:8971" if ip else ""}
 
 
 def camera_labels(cfg) -> dict:
@@ -651,7 +652,7 @@ def cam_label(cfg, cam: str) -> str:
 
 _config_lock = threading.RLock()
 _frigate_lock = threading.RLock()
-_logger = logging.getLogger("skywatch")
+_logger = logging.getLogger("atmovio")
 
 
 def log(msg: str):
@@ -690,9 +691,9 @@ def load_config() -> dict:
         cfg["secret"] = secrets.token_hex(32)
         changed = True
     if not cfg["admin_password_hash"]:
-        pw = os.environ.get("SKYWATCH_ADMIN_PASSWORD", "")
+        pw = os.environ.get("ATMOVIO_ADMIN_PASSWORD", "")
         if len(pw) < 12:
-            raise RuntimeError("Pro první spuštění nastav SKYWATCH_ADMIN_PASSWORD (alespoň 12 znaků).")
+            raise RuntimeError("Pro první spuštění nastav ATMOVIO_ADMIN_PASSWORD (alespoň 12 znaků).")
         cfg["admin_password_hash"] = hash_pw(pw)
         changed = True
     # Starší konfigurace (verze 1) – převod na nové klíče.
@@ -1119,7 +1120,7 @@ def storage_status():
     if not (APP_DIR / "storage_guard.py").exists():
         return {"mode": "legacy", "reason": ""}
     try:
-        status_file = Path("/run/skywatch/storage-status.json")
+        status_file = Path("/run/atmovio/storage-status.json")
         if not status_file.exists():
             status_file = APP_DIR / "storage-status.json"  # starší verze hlídače (před updatem)
         status = json.loads(status_file.read_text())
@@ -1439,7 +1440,7 @@ def ai_evaluate(ai: dict, image_bytes: bytes) -> tuple[dict, str]:
     elif provider == "openai_compat":
         base = (ai.get("base_url") or "https://api.groq.com/openai/v1").rstrip("/")
         raw = _openai_style(base + "/chat/completions", key, model, prompt, b64,
-                            {"HTTP-Referer": "https://skywatch.local", "X-Title": "SkyWatch"})
+                            {"HTTP-Referer": "https://atmovio.local", "X-Title": "Atmovio"})
 
     elif provider == "ollama":
         r = requests.post(
@@ -1559,7 +1560,7 @@ def web_post(cfg, payload: dict, timeout=20) -> dict:
     # Token jde v Authorization i v X-Token – sdílené hostingy Authorization do PHP často nepředají.
     r = requests.post(w["url"], json=payload, timeout=timeout,
                       headers={"Authorization": f"Bearer {w['token']}", "X-Token": w["token"],
-                               "User-Agent": f"SkyWatch/{APP_VERSION}"})
+                               "User-Agent": f"Atmovio/{APP_VERSION}"})
     try:
         data = r.json()
     except ValueError:
@@ -1682,13 +1683,13 @@ def web_heartbeat(cfg, fs: dict, watcher_status: str, outages: dict) -> None:
     ai = cfg["ai"]
     urls = public_urls()
     try:
-        api = web_api_snapshot(cfg, fs, urls["skywatch"])
+        api = web_api_snapshot(cfg, fs, urls["atmovio"])
     except Exception as e:
         log(f"Web: data z API pro heartbeat se nepodařilo sestavit: {e}")
         api = None
     web_post(cfg, {
         "type": "heartbeat", "nvr": w.get("nvr_name") or "Raspberry Pi NVR", "version": APP_VERSION, "api": api,
-        "skywatch_url": urls["skywatch"], "frigate_url": urls["frigate"],
+        "atmovio_url": urls["atmovio"], "skywatch_url": urls["atmovio"], "frigate_url": urls["frigate"],  # skywatch_url = starý název pole (přijímače do 3.x)
         "status": {
             "frigate_online": "1" if fs["online"] else "0", "frigate_version": fs.get("version", ""),
             "storage_mode": storage_status()["mode"], "disk_pct": d.get("pct", 0), "disk_free": d.get("free_h", ""),
@@ -1762,7 +1763,7 @@ def image_brightness(img: bytes) -> float:
 
 # --------------------------------------------------------------------------- scheduler
 
-class SkyWatcher(threading.Thread):
+class AtmovioWatcher(threading.Thread):
     def __init__(self):
         super().__init__(daemon=True)
         self.last_check: dict[str, float] = {}
@@ -1782,7 +1783,7 @@ class SkyWatcher(threading.Thread):
         self._last_cleanup = 0.0
 
     def run(self):
-        log("SkyWatch smyčka spuštěna")
+        log("Atmovio smyčka spuštěna")
         while self.running:
             try:
                 self.tick()
@@ -1955,11 +1956,11 @@ class SkyWatcher(threading.Thread):
                 result["note"] = "odesílám…"
                 rid = self.record(result)
                 urls = public_urls()
-                link = f"{urls['skywatch']}/detection/{rid}" if urls["skywatch"] else ""
+                link = f"{urls['atmovio']}/detection/{rid}" if urls["atmovio"] else ""
                 try:
                     info = camera_info(cfg, cam)
                     title = cam_label(cfg, cam)
-                    subject = f"[SkyWatch] {title}: {labels} ({parsed['score']}/10)"
+                    subject = f"[Atmovio] {title}: {labels} ({parsed['score']}/10)"
                     body = (
                         f"Kamera: {title} ({info['ip'] or '?'}, {info['via']})\nČas: {now.strftime('%d.%m.%Y %H:%M')}\n"
                         f"Skóre: {parsed['score']}/10\nJev: {labels}\n\n{parsed['description']}\n\n"
@@ -2044,7 +2045,7 @@ class SkyWatcher(threading.Thread):
             else:
                 try:
                     deliver(cfg, "Nahrávání neběží – Frigate odmítl konfiguraci",
-                            f"Frigate běží v nouzovém režimu a nenahrává.\nChyba: {problem}\nOtevři SkyWatch → Systém → Opravit konfiguraci nahrávání.",
+                            f"Frigate běží v nouzovém režimu a nenahrává.\nChyba: {problem}\nOtevři Atmovio → Systém → Opravit konfiguraci nahrávání.",
                             kind="system")
                 except Exception as e:
                     log(f"Frigate: upozornění se nepodařilo odeslat: {e}")
@@ -2065,7 +2066,7 @@ class SkyWatcher(threading.Thread):
             log(f"VPN: kontrola tunelu selhala: {e}")
         if al.get("frigate", True):
             self.track_outage(cfg, "frigate", "Frigate (nahrávání)", fs["online"], now,
-                              "Frigate neběží nebo neodpovídá – kamery se nenahrávají. Zkontroluj SkyWatch → Systém.")
+                              "Frigate neběží nebo neodpovídá – kamery se nenahrávají. Zkontroluj Atmovio → Systém.")
         if al.get("storage", True):
             mode = storage_status()["mode"]
             self.track_outage(cfg, "storage", "Disk pro záznamy (HDD)", mode in ("recording", "legacy"), now,
@@ -2121,7 +2122,7 @@ class SkyWatcher(threading.Thread):
             return 0
         camera = key[4:] if key.startswith("cam:") else ""
         try:
-            deliver(cfg, f"[SkyWatch] {subject}", body, kind=kind, camera=camera)
+            deliver(cfg, f"[Atmovio] {subject}", body, kind=kind, camera=camera)
             return 1
         except Exception as e:
             log(f"Upozornění se nepodařilo odeslat: {e}")
@@ -2167,7 +2168,7 @@ def image_diff(a: bytes, b: bytes) -> float:
     return ImageStat.Stat(ImageChops.difference(ia, ib)).mean[0]
 
 
-watcher = SkyWatcher()
+watcher = AtmovioWatcher()
 
 
 # --------------------------------------------------------------------------- vyhledávání kamer
@@ -2384,7 +2385,7 @@ def discover_cameras(subnets: list, user: str, password: str) -> list:
 
 # --------------------------------------------------------------------------- web app – šablony
 
-# --------------------------------------------------------------------------- aktualizace SkyWatch z GitHub Releases
+# --------------------------------------------------------------------------- aktualizace Atmovio z GitHub Releases
 
 _update_lock = threading.Lock()
 _update_state: dict = {}
@@ -2424,7 +2425,7 @@ def check_for_update() -> dict:
     st = {"checked": dt.datetime.now().isoformat(timespec="seconds"), "error": ""}
     try:
         r = requests.get(f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest", timeout=15,
-                         headers={"Accept": "application/vnd.github+json", "User-Agent": f"SkyWatch/{APP_VERSION}"})
+                         headers={"Accept": "application/vnd.github+json", "User-Agent": f"Atmovio/{APP_VERSION}"})
         if r.status_code == 404:
             st.update({k: "" for k in keys})   # repozitář zatím nemá žádné vydání
         else:
@@ -2435,10 +2436,10 @@ def check_for_update() -> dict:
                 "latest": str(rel.get("tag_name") or "").lstrip("vV"), "tag": rel.get("tag_name") or "",
                 "name": rel.get("name") or "", "url": rel.get("html_url") or "", "published": (rel.get("published_at") or "")[:10],
                 "notes": (rel.get("body") or "").replace("\r", "")[:6000],
-                "script_url": assets.get("update-skywatch.sh") or "", "sums_url": assets.get("SHA256SUMS") or "",
+                "script_url": assets.get("update-atmovio.sh") or "", "sums_url": assets.get("SHA256SUMS") or "",
             })
         if st.get("latest") and version_tuple(st["latest"]) > version_tuple(APP_VERSION) and prev.get("latest") != st["latest"]:
-            log(f"K dispozici je nová verze SkyWatch {st['latest']} (běží {APP_VERSION}) – Nastavení → Systém → Aktualizace")
+            log(f"K dispozici je nová verze Atmovio {st['latest']} (běží {APP_VERSION}) – Nastavení → Systém → Aktualizace")
     except Exception as e:
         st.update({k: prev.get(k, "") for k in keys})
         st["error"] = f"{type(e).__name__}: {e}"[:300]
@@ -2460,33 +2461,33 @@ def update_log_tail(n: int = 80) -> str:
 
 
 def start_update() -> str:
-    """Stáhne update-skywatch.sh z vydání, ověří SHA-256 a spustí ho jako samostatnou systemd jednotku
-    (musí přežít zastavení skywatch.service, které aktualizátor sám provede). Vrací '' nebo text chyby."""
+    """Stáhne update-atmovio.sh z vydání, ověří SHA-256 a spustí ho jako samostatnou systemd jednotku
+    (musí přežít zastavení atmovio.service, které aktualizátor sám provede). Vrací '' nebo text chyby."""
     with _update_lock:
         st = update_state()
         if not st.get("available"):
             return "Žádná nová verze není k dispozici."
         if not st.get("script_url") or not st.get("sums_url"):
-            return "Vydání na GitHubu nemá přiložený update-skywatch.sh a SHA256SUMS – aktualizuj ručně přes SSH."
+            return "Vydání na GitHubu nemá přiložený update-atmovio.sh a SHA256SUMS – aktualizuj ručně přes SSH."
         if update_running():
             return "Aktualizace už běží."
         dl = APP_DIR / ".update-dl"
         shutil.rmtree(dl, ignore_errors=True)
         dl.mkdir(parents=True)
-        script = dl / "update-skywatch.sh"
+        script = dl / "update-atmovio.sh"
         try:
-            hdr = {"User-Agent": f"SkyWatch/{APP_VERSION}"}
+            hdr = {"User-Agent": f"Atmovio/{APP_VERSION}"}
             r = requests.get(st["script_url"], timeout=180, headers=hdr)
             r.raise_for_status()
             data = r.content
             r = requests.get(st["sums_url"], timeout=30, headers=hdr)
             r.raise_for_status()
             sums = {ln.split()[-1].lstrip("*"): ln.split()[0].lower() for ln in r.text.splitlines() if len(ln.split()) >= 2}
-            expected = sums.get("update-skywatch.sh", "")
+            expected = sums.get("update-atmovio.sh", "")
             if not expected or not secrets.compare_digest(expected, hashlib.sha256(data).hexdigest()):
                 return "Kontrolní součet staženého skriptu nesouhlasí – aktualizace zastavena."
-            if not data.startswith(b"#!/usr/bin/env bash") or b"SKY_DIR=/opt/nvr/skywatch" not in data[:2000]:
-                return "Stažený soubor nevypadá jako aktualizační skript SkyWatch."
+            if not data.startswith(b"#!/usr/bin/env bash") or b"SKY_DIR=/opt/nvr/atmovio" not in data[:2000]:
+                return "Stažený soubor nevypadá jako aktualizační skript Atmovio."
             script.write_bytes(data)
             script.chmod(0o700)
         except Exception as e:
@@ -2508,16 +2509,30 @@ def start_update() -> str:
 TEMPLATES = {}
 
 LOGO_SVG = """<svg class="logo" viewBox="0 0 64 64" width="34" height="34" aria-hidden="true">
-<defs><linearGradient id="lg-sun" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fcd34d"/><stop offset="1" stop-color="#f97316"/></linearGradient>
-<linearGradient id="lg-cloud" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#38bdf8"/><stop offset="1" stop-color="#1d4ed8"/></linearGradient>
-<clipPath id="lg-clip"><path d="M17.5 52h30a10 10 0 0 0 1.9-19.8A13.5 13.5 0 0 0 22 28.8 10.5 10.5 0 0 0 17.5 52z"/></clipPath></defs>
-<circle cx="45" cy="21.5" r="12" fill="url(#lg-sun)"/>
-<path d="M17.5 52h30a10 10 0 0 0 1.9-19.8A13.5 13.5 0 0 0 22 28.8 10.5 10.5 0 0 0 17.5 52z" fill="url(#lg-cloud)" stroke="#fff" stroke-width="2" paint-order="stroke" stroke-linejoin="round"/>
-<path d="M0 0h52L0 58z" fill="#bae6fd" opacity=".28" clip-path="url(#lg-clip)"/>
-<circle cx="33" cy="41.5" r="8" fill="#f0f9ff"/><circle cx="33" cy="41.5" r="5.5" fill="#0f172a"/><circle cx="33" cy="41.5" r="3" fill="#1e293b"/><circle cx="35" cy="39.4" r="1.6" fill="#fff"/>
+<defs>
+<linearGradient id="at-sky" x1="0" y1="0" x2="0.4" y2="1"><stop offset="0" stop-color="#0b2a6f"/><stop offset="0.55" stop-color="#1e63d6"/><stop offset="1" stop-color="#38bdf8"/></linearGradient>
+<linearGradient id="at-lens" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2f7de1"/><stop offset="1" stop-color="#0b2a6f"/></linearGradient>
+<linearGradient id="at-wave" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#7dd3fc"/><stop offset="1" stop-color="#2b7fe0"/></linearGradient>
+<clipPath id="at-clip"><circle cx="32" cy="32" r="30"/></clipPath>
+</defs>
+<circle cx="32" cy="32" r="30" fill="url(#at-sky)"/>
+<g clip-path="url(#at-clip)">
+<path d="M-2 40 C 14 22, 50 22, 66 40 L 66 70 L -2 70 Z" fill="#eaf5ff"/>
+<path d="M2 47a7 7 0 0 1 8-6 8 8 0 0 1 15-1 6 6 0 0 1 7 7H2z" fill="#bfe4ff"/>
+<path d="M36 46a6 6 0 0 1 8-5 8 8 0 0 1 14-1 6 6 0 0 1 8 6H36z" fill="#bfe4ff"/>
+<path d="M-2 52 C 18 44, 46 44, 66 56 L 66 70 L -2 70 Z" fill="url(#at-wave)"/>
+<path d="M-2 58 C 20 50, 44 52, 66 62 L 66 70 L -2 70 Z" fill="#1e63d6"/>
+</g>
+<path d="M46 12l1.2 3 3 1.2-3 1.2-1.2 3-1.2-3-3-1.2 3-1.2z" fill="#fff"/>
+<circle cx="52" cy="20" r="1.4" fill="#fff"/><circle cx="55.5" cy="26" r="1" fill="#fff"/>
+<circle cx="32" cy="34" r="11.5" fill="#0f172a"/>
+<circle cx="32" cy="34" r="9.5" fill="url(#at-lens)"/>
+<circle cx="32" cy="34" r="6" fill="#0b2a6f"/>
+<circle cx="32" cy="34" r="3.2" fill="#1e3a8a"/>
+<circle cx="28.5" cy="30.5" r="2.4" fill="#fff"/>
 </svg>"""
 
-BASE_CSS = ""  # vzhled je v static/skywatch.css (nad Pico CSS)
+BASE_CSS = ""  # vzhled je v static/atmovio.css (nad Pico CSS)
 
 NAV_PRIMARY = [("/", "Přehled", "⌂"), ("/live", "Kamery", "📷"), ("/storage", "Záznamy a disk", "💾"),
                ("/history", "Historie AI detekcí", "🖼"), ("/videos", "Videa ke stažení", "🎬")]
@@ -2531,16 +2546,16 @@ BOTTOM_NAV = ["/", "/live", "/history", "/videos"]
 TEMPLATES["base.html"] = """<!doctype html>
 <html lang="cs"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light dark"><meta name="theme-color" content="#0b1220">
-<title>SkyWatch – {{ title }}</title>
+<title>Atmovio – {{ title }}</title>
 <link rel="icon" href="data:image/svg+xml,{{ favicon }}">
 <link rel="stylesheet" href="{{ pico_css }}">
-<link rel="stylesheet" href="/static/skywatch.css?v={{ version }}">
-<script defer src="/static/skywatch.js?v={{ version }}"></script>
+<link rel="stylesheet" href="/static/atmovio.css?v={{ version }}">
+<script defer src="/static/atmovio.js?v={{ version }}"></script>
 <script defer src="{{ alpine_js }}"></script>
 </head><body>
 <div class="app" x-data='shell({settingsOpen: {{ "true" if settings_open else "false" }}, flashes: {{ flashes|tojson }}})'>
 <aside class="sidebar" :class="{open: menu}">
- <a class="brand" href="/">""" + LOGO_SVG + """<span>SkyWatch<small>NVR · hlídání oblohy</small></span></a>
+ <a class="brand" href="/">""" + LOGO_SVG + """<span>Atmovio<small>NVR · hlídání oblohy</small></span></a>
  <nav class="nav">
   {% for href,name,ic in nav_primary %}<a class="{% if active==href %}active{% endif %}" href="{{ href }}"><span class="ic">{{ ic }}</span>{{ name }}</a>{% endfor %}
   <button type="button" class="group" @click="settingsOpen=!settingsOpen"><span class="ic">🛠</span>Nastavení<span class="caret" :class="{open: settingsOpen}">▾</span></button>
@@ -2554,14 +2569,14 @@ TEMPLATES["base.html"] = """<!doctype html>
 </aside>
 <div class="scrim" :class="{open: menu}" @click="menu=false"></div>
 <div class="content">
-<header class="top"><button type="button" class="menu-btn" @click="menu=!menu" aria-label="Menu">☰</button><a class="brand" href="/">""" + LOGO_SVG + """<span>SkyWatch</span></a></header>
+<header class="top"><button type="button" class="menu-btn" @click="menu=!menu" aria-label="Menu">☰</button><a class="brand" href="/">""" + LOGO_SVG + """<span>Atmovio</span></a></header>
 <main class="page">
 {% if storage.mode not in ['recording', 'legacy'] %}<div class="flash warn"><span>⚠️</span><div><b>Režim bez záznamu.</b> {{ storage.reason }} <a href="/storage">Nastavit disk pro záznamy</a> · <a href="{{ frigate_ui }}" target="_blank">Živý náhled kamer ↗</a></div></div>{% endif %}
 {% if disk_warning[1] %}<div class="flash {{ disk_warning[0] }}"><span>💽</span><div><b>{% if disk_warning[0] == 'err' %}Disk selhává.{% else %}Disk hlásí vadné sektory – sleduji.{% endif %}</b> {{ disk_warning[1] }}. {% if disk_warning[0] == 'err' %}Zálohuj a disk vyměň.{% else %}Když počet zůstane stejný, není třeba nic dělat; když poroste, upozorním červeně.{% endif %} <a href="/system">Stav disků</a></div></div>{% endif %}
 {% if vpn_problem %}<div class="flash err"><span>⛔</span><div><b>VPN tunel zastaven pojistkou.</b> {{ vpn_problem }} <a href="/vpn">Síť a VPN</a></div></div>{% endif %}
 {% if frigate_problem %}<div class="flash err"><span>⛔</span><div><b>Nahrávání neběží – Frigate odmítl konfiguraci.</b> {{ frigate_problem }}
 <form method="post" action="/system/ctl" style="display:inline;margin-left:8px"><button class="btn small" name="action" value="fix_frigate">Opravit konfiguraci a restartovat nahrávání</button></form></div></div>{% endif %}
-{% if update_info and update_info.available and active in ['/', '/system'] and req_path != '/system/update' %}<div class="flash"><span>🆕</span><div><b>K dispozici je SkyWatch {{ update_info.latest }}</b> (běží {{ version }}). <a href="/system/update">Co je nového a aktualizace</a></div></div>{% endif %}
+{% if update_info and update_info.available and active in ['/', '/system'] and req_path != '/system/update' %}<div class="flash"><span>🆕</span><div><b>K dispozici je Atmovio {{ update_info.latest }}</b> (běží {{ version }}). <a href="/system/update">Co je nového a aktualizace</a></div></div>{% endif %}
 <div class="page-head"><div><h1>{{ title }}</h1>{% if subtitle %}<p class="sub">{{ subtitle }}</p>{% endif %}</div>{% block actions %}{% endblock %}</div>
 {% block content %}{% endblock %}
 </main>
@@ -2575,14 +2590,14 @@ TEMPLATES["base.html"] = """<!doctype html>
 <div id="busy" hidden><div class="busy-box"><span class="spin"></span><div><b id="busy-text">Zpracovávám…</b><div class="hint" id="busy-hint">Stránka se sama obnoví, až bude hotovo.</div></div></div></div>
 </body></html>"""
 
-TEMPLATES["login.html"] = """<!doctype html><html lang="cs"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>SkyWatch – přihlášení</title>
+TEMPLATES["login.html"] = """<!doctype html><html lang="cs"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Atmovio – přihlášení</title>
 <link rel="icon" href="data:image/svg+xml,{{ favicon }}">
-<link rel="stylesheet" href="{{ pico_css }}"><link rel="stylesheet" href="/static/skywatch.css?v={{ version }}">
+<link rel="stylesheet" href="{{ pico_css }}"><link rel="stylesheet" href="/static/atmovio.css?v={{ version }}">
 <style>body{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0b1220 radial-gradient(1200px 600px at 20% -10%,#1e3a5f 0%,transparent 60%)}
 .login{background:var(--pico-card-background-color);padding:1.8rem 1.7rem;border-radius:1.1rem;width:min(380px,92vw);border:1px solid var(--pico-card-border-color);box-shadow:0 20px 60px rgba(0,0,0,.45)}
 .login .brand{color:var(--pico-color);padding:0 0 .9rem;font-size:1.35rem;justify-content:center}.login .brand small{color:var(--pico-muted-color)}
 .e{color:var(--sw-err);margin:.4rem 0;font-weight:600}</style></head>
-<body><form class="login" method="post" action="/login"><div class="brand">""" + LOGO_SVG + """<span>SkyWatch<small>NVR · hlídání oblohy</small></span></div>
+<body><form class="login" method="post" action="/login"><div class="brand">""" + LOGO_SVG + """<span>Atmovio<small>NVR · hlídání oblohy</small></span></div>
 {% if error %}<div class="e">{{ error }}</div>{% endif %}
 <label>Heslo administrátora</label><input type="password" name="password" autofocus autocomplete="current-password"><button class="btn block" style="margin-top:.9rem">Přihlásit</button></form></body></html>"""
 
@@ -2634,7 +2649,7 @@ TEMPLATES["dashboard.html"] = """{% extends "base.html" %}{% block actions %}<di
 <div class="stats7" style="margin-top:.8rem"><table><thead><tr><th>Den</th><th>Dotazů</th><th>Zajímavé</th><th>Upozornění</th><th>Přeskočeno</th><th>Chyby</th></tr></thead><tbody>
 {% for d in stats7 %}<tr{% if loop.first %} class="today"{% endif %}><td>{{ d.label }} <span class="hint">{{ d.dow }}</span></td><td><b>{{ d.calls }}</b></td><td>{{ d.interesting }}</td><td>{% if d.notified %}<span class="badge ok">{{ d.notified }}</span>{% else %}0{% endif %}</td><td class="hint">{{ d.skipped }}</td><td>{% if d.errors %}<span class="badge err">{{ d.errors }}</span>{% else %}0{% endif %}</td></tr>{% endfor %}
 </tbody></table><div class="hint">Posledních 7 dní. Počty se ukládají zvlášť, takže mazání historie je nemění. „Přeskočeno“ = snímek se nezměnil, AI se neptalo.</div></div>
-{% else %}<p class="hint">Hlídání oblohy je vypnuté. <a href="/ai">Vlož klíč od Google (zdarma) a zapni ho</a> – SkyWatch pak sám hlásí červánky, bouřky, duhy a další jevy.</p>{% endif %}</div>
+{% else %}<p class="hint">Hlídání oblohy je vypnuté. <a href="/ai">Vlož klíč od Google (zdarma) a zapni ho</a> – Atmovio pak sám hlásí červánky, bouřky, duhy a další jevy.</p>{% endif %}</div>
 
 <div class="card"><div class="section-head"><h2>Raspberry Pi</h2><a class="btn small sec" href="/system">Systém</a></div>
 <div class="kpi">
@@ -2654,17 +2669,17 @@ TEMPLATES["dashboard.html"] = """{% extends "base.html" %}{% block actions %}<di
 
 <details class="card" id="guide" data-keep><summary>Nápověda – kam chodit a co kde najdu</summary>
 <div class="guide">
-<div><b>SkyWatch (tady)</b> je jediná administrace: kamery, disk, AI hlídání oblohy, upozornění, síť, systém. Když nic neměníš, nemusíš sem chodit. Když něco nefunguje, podívej se do <a href="/logs">Logů</a>.</div>
+<div><b>Atmovio (tady)</b> je jediná administrace: kamery, disk, AI hlídání oblohy, upozornění, síť, systém. Když nic neměníš, nemusíš sem chodit. Když něco nefunguje, podívej se do <a href="/logs">Logů</a>.</div>
 <div><b>Frigate</b> <a href="{{ frigate_ui }}" target="_blank" rel="noopener">{{ frigate_ui }} ↗</a> – přehrávání záznamů a <b>stažení videa od–do</b> (Review → Historie → Export). Uživatel <code>admin</code>, heslo stejné jako sem.</div>
-<div><b>Vlastní web (webhook)</b>{% if cfg.web.enabled and cfg.web.token %} <span class="badge ok">propojeno – {{ cfg.web.url|urlhost }}</span>{% else %} <span class="badge mut">nepropojeno – volitelné, nastav v <a href="/email">Upozornění</a></span>{% endif %} – SkyWatch umí posílat stav kamer a upozornění na libovolný web (ukázkový přijímač v PHP je v repozitáři). Web pak zprávy zobrazí nebo rozešle dál; RPi nemusí mít SMTP.</div>
+<div><b>Vlastní web (webhook)</b>{% if cfg.web.enabled and cfg.web.token %} <span class="badge ok">propojeno – {{ cfg.web.url|urlhost }}</span>{% else %} <span class="badge mut">nepropojeno – volitelné, nastav v <a href="/email">Upozornění</a></span>{% endif %} – Atmovio umí posílat stav kamer a upozornění na libovolný web (ukázkový přijímač v PHP je v repozitáři). Web pak zprávy zobrazí nebo rozešle dál; RPi nemusí mít SMTP.</div>
 <div><b>Cockpit</b> <a href="{{ cockpit_ui }}" target="_blank" rel="noopener">{{ cockpit_ui }} ↗</a> – servis systému (statická IP, aktualizace, disky). <b>Portainer</b> běžně nepotřebuješ.</div>
-<div>Aktualizace SkyWatch přes SSH: <code>sudo bash update-skywatch.sh</code>. Verze {{ version }}.</div>
+<div>Aktualizace Atmovio přes SSH: <code>sudo bash update-atmovio.sh</code>. Verze {{ version }}.</div>
 </div></details>
 {% endblock %}"""
 
 TEMPLATES["cameras.html"] = """{% extends "base.html" %}{% block content %}
 {% if not cams and not pre.main %}<div class="card" style="border-color:var(--ac)"><h2>Krok 1 · Najdi kamery v síti</h2>
-<p>Nejjednodušší cesta: klikni na tlačítko, zadej <b>uživatele a heslo kamery</b> (stejné, jakým se přihlašuješ do kamery) a SkyWatch kamery sám najde i s adresami videa. Pak jen potvrdíš název a klikneš <b>Přidat kameru</b>.</p>
+<p>Nejjednodušší cesta: klikni na tlačítko, zadej <b>uživatele a heslo kamery</b> (stejné, jakým se přihlašuješ do kamery) a Atmovio kamery sám najde i s adresami videa. Pak jen potvrdíš název a klikneš <b>Přidat kameru</b>.</p>
 <a class="btn" href="/discover">🔍 Vyhledat kamery v síti</a></div>{% endif %}
 <div class="card"><div class="section-head"><h2 style="margin:0">Nastavené kamery</h2><a class="btn small" href="/discover">🔍 Vyhledat kamery v síti</a></div>
 <div class="tw"><table><tr><th>Název</th><th>IP · cesta</th><th>Hlavní stream (záznam)</th><th>Substream (náhled)</th><th></th></tr>
@@ -2688,7 +2703,7 @@ TEMPLATES["cameras.html"] = """{% extends "base.html" %}{% block content %}
 <input type="text" name="sub" placeholder="rtsp://192.168.1.50:554/stream2" value="{{ pre.sub }}">
 <div class="hint">Adresy najdeš v návodu ke kameře nebo v jejím webovém rozhraní (hledej „RTSP“). Typické: Hikvision <code>/Streaming/Channels/101</code>, Dahua/Imou <code>/cam/realmonitor?channel=1&amp;subtype=0</code>, Reolink <code>/h264Preview_01_main</code>, Tapo <code>/stream1</code>.</div>
 <label class="check"><input type="checkbox" name="test" checked> Před uložením ověřit, že kamera odpovídá (cca 10 s)</label>
-{% if not pre.replace %}<label class="check"><input type="checkbox" name="skywatch" checked> Hlídat oblohu z této kamery pomocí AI</label>{% endif %}
+{% if not pre.replace %}<label class="check"><input type="checkbox" name="atmovio" checked> Hlídat oblohu z této kamery pomocí AI</label>{% endif %}
 <button class="btn">{% if pre.replace %}Uložit změny{% else %}Přidat kameru{% endif %}</button>
 <p class="hint">Kamera za VPN: použij její adresu ve vzdálené síti (např. <code>rtsp://10.10.10.4:554/…</code>) a raději nižší bitrate. Dostupnost ověříš v <a href="/vpn">Síť a VPN</a>.</p></form></details>
 {% endblock %}"""
@@ -2721,7 +2736,7 @@ Se zadaným přihlášením se z ONVIF vytáhnou RTSP adresy streamů a každá 
 <input type="hidden" name="main" value="{{ r.streams[0].uri }}">{% if r.streams|length > 1 %}<input type="hidden" name="sub" value="{{ r.streams[1].uri }}">{% endif %}<input type="hidden" name="test" value="on">
 <div style="flex:2"><label>Název kamery</label><input type="text" name="name" required value="{{ r.model or r.name or ('Kamera ' ~ r.ip) }}"></div>
 <input type="hidden" name="user" value="{{ user }}"><input type="hidden" name="password" value="{{ password }}">
-<div><label class="check" style="margin:0 0 8px"><input type="checkbox" name="skywatch" checked> hlídat oblohu (AI)</label></div>
+<div><label class="check" style="margin:0 0 8px"><input type="checkbox" name="atmovio" checked> hlídat oblohu (AI)</label></div>
 <div><button class="btn">➕ Přidat kameru</button> <button class="btn small sec" formaction="/cameras/prepare" formnovalidate>Upravit před přidáním</button></div>
 </form>
 <div class="hint">Hlavní stream {{ r.streams[0].res }}{% if r.streams|length > 1 %} + substream {{ r.streams[1].res }} pro náhled{% endif %}. Přidání ověří spojení (ffprobe) a restartuje Frigate.</div>
@@ -2742,7 +2757,7 @@ TEMPLATES["storage.html"] = """{% extends "base.html" %}{% block content %}
 {% if not ready %}
 <div class="card" style="border-color:var(--warn)"><h2>Disk pro záznamy není připojený</h2>
 {% if not disks %}<p>Nenašel jsem žádný externí disk. Zapoj HDD/SSD do <b>modrého USB 3.0 portu</b> Raspberry Pi a tuto stránku obnov. U 2,5" disků bez vlastního napájení použij originální 27W zdroj.</p>
-{% else %}<p>Našel jsem externí disk, ale ještě není připravený pro záznamy. Vyber ho níže – SkyWatch ho připojí (nebo naformátuje a připojí) a nahrávání se pak zapne samo.</p>{% endif %}</div>
+{% else %}<p>Našel jsem externí disk, ale ještě není připravený pro záznamy. Vyber ho níže – Atmovio ho připojí (nebo naformátuje a připojí) a nahrávání se pak zapne samo.</p>{% endif %}</div>
 {% endif %}
 <div class="card"><div class="section-head"><h2 style="margin:0">Disky</h2><a class="btn small sec" href="/storage">Obnovit</a></div>
 {% if not disks %}<p class="hint">Žádný externí disk nenalezen (systémový disk se nezobrazuje).</p>{% endif %}
@@ -2768,7 +2783,7 @@ TEMPLATES["storage.html"] = """{% extends "base.html" %}{% block content %}
 {% endif %}
 </div>
 {% endfor %}
-<p class="hint">Po připojení disku se nahrávání zapne samo do minuty (hlídač disku ho ověří třemi zápisy). Disk se nikdy neuspává. Když ho odpojíš, SkyWatch přejde na živý náhled bez záznamu a po připojení zpět nahrávání obnoví.</p></div>
+<p class="hint">Po připojení disku se nahrávání zapne samo do minuty (hlídač disku ho ověří třemi zápisy). Disk se nikdy neuspává. Když ho odpojíš, Atmovio přejde na živý náhled bez záznamu a po připojení zpět nahrávání obnoví.</p></div>
 <div class="grid">
 {% if ready %}<div class="card"><h2>Záznamy na disku</h2>
 <div class="big">{{ disk.used_h }} <span class="hint">z {{ disk.total_h }}</span></div>
@@ -2870,7 +2885,7 @@ TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block content %}
 </details>
 </div>
 <div class="card"><div class="section-head"><h2 style="margin:0">4 · Video automaticky</h2>{% if ai.auto_export.enabled and ai.auto_export.cameras %}<span class="badge ok">zapnuto · {{ ai.auto_export.cameras|length }} {{ 'kamera' if ai.auto_export.cameras|length == 1 else ('kamery' if ai.auto_export.cameras|length < 5 else 'kamer') }}</span>{% else %}<span class="badge mut">vypnuto</span>{% endif %}</div>
-<p>Když nejsi doma a přijde upozornění, SkyWatch může video kolem snímku vystřihnout sám – najdeš ho pak ve <a href="/videos">Videích</a> a nemusíš se bát, že se záznam mezitím smaže.</p>
+<p>Když nejsi doma a přijde upozornění, Atmovio může video kolem snímku vystřihnout sám – najdeš ho pak ve <a href="/videos">Videích</a> a nemusíš se bát, že se záznam mezitím smaže.</p>
 <label class="check"><input type="checkbox" name="ax_enabled" {% if ai.auto_export.enabled %}checked{% endif %}> Po každém odeslaném upozornění automaticky vytvořit video</label>
 <div class="row">
 <div><label>Minut před snímkem</label><input type="number" name="ax_before" min="0" max="60" value="{{ ai.auto_export.before_min }}"></div>
@@ -2899,10 +2914,10 @@ TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block content %}
 TEMPLATES["email.html"] = """{% extends "base.html" %}{% block content %}
 <div class="card"><div class="section-head"><h2 style="margin:0">Kam chodí upozornění: vlastní web (webhook)</h2>{% if web_ok %}<span class="badge ok">propojeno</span>{% elif web.enabled %}<span class="badge warn">chybí token</span>{% else %}<span class="badge mut">vypnuto</span>{% endif %}</div>
 <form method="post" action="/web">
-<p>SkyWatch může posílat upozornění (se snímkem) a každou minutu stav kamer na <b>libovolný web</b> – třeba tvůj vlastní, kde se pak dají prohlížet z internetu nebo rozesílat e-mailem. Formát zpráv je popsaný v dokumentaci (<code>docs/webhook.md</code>); ukázkový přijímač v PHP je ve složce <code>examples/webhook-php</code> repozitáře.</p>
+<p>Atmovio může posílat upozornění (se snímkem) a každou minutu stav kamer i všechna data REST API (detekce, videa, události) na <b>libovolný web</b> – třeba tvůj vlastní, kde se pak dají prohlížet z internetu nebo rozesílat e-mailem. Formát zpráv je popsaný v dokumentaci (<code>docs/webhook.md</code>); ukázkový přijímač v PHP je ve složce <code>examples/webhook-php</code> repozitáře.</p>
 {% if not web_ok %}<ol class="steps"><li>Na svůj web nahraj přijímač (nebo napiš vlastní podle dokumentace) a nastav v něm tajný token.</li><li>Sem vlož adresu přijímače a stejný token.</li><li>Klikni <b>Uložit a otestovat spojení</b> – přijde testovací upozornění.</li></ol>{% endif %}
-<label class="check"><input type="checkbox" name="enabled" {% if web.enabled %}checked{% endif %}> Posílat upozornění a stav kamer na web</label>
-<div class="row"><div><label>Adresa přijímače (webhook URL)</label><input type="text" name="url" value="{{ web.url }}" placeholder="https://muj-web.cz/skywatch/webhook.php"></div>
+<label class="check"><input type="checkbox" name="enabled" {% if web.enabled %}checked{% endif %}> Posílat upozornění, stav kamer a data API na web</label>
+<div class="row"><div><label>Adresa přijímače (webhook URL)</label><input type="text" name="url" value="{{ web.url }}" placeholder="https://muj-web.cz/atmovio/webhook.php"></div>
 <div><label>Token (stejný jako v přijímači)</label><input type="password" name="token" value="{{ web.token }}" autocomplete="off" placeholder="dlouhý náhodný řetězec"></div></div>
 <details><summary>Pokročilé</summary>
 <div><label>Jak se má tento záznamník na webu jmenovat</label><input type="text" name="nvr_name" value="{{ web.nvr_name }}"></div>
@@ -2959,46 +2974,47 @@ PublicKey = ...
 Endpoint = router.example.cz:51820
 AllowedIPs = 10.10.10.0/24
 PersistentKeepalive = 25">{{ conf }}</textarea>
-<p class="hint">V routeru vytvoř nového klienta WireGuard, zkopíruj jeho konfiguraci a vlož ji sem <b>celou, tak jak je</b>. SkyWatch si ji sám upraví: řádky, které RPi nepotřebuje (DNS, skripty), vynechá a <code>AllowedIPs = 0.0.0.0/0</code> nahradí jen vzdálenou sítí, aby tunelem chodil pouze provoz ke kameře. Nejdřív nahoře vyplň a ověř IP adresu vzdálené kamery – podle ní se síť pozná.</p>
+<p class="hint">V routeru vytvoř nového klienta WireGuard, zkopíruj jeho konfiguraci a vlož ji sem <b>celou, tak jak je</b>. Atmovio si ji sám upraví: řádky, které RPi nepotřebuje (DNS, skripty), vynechá a <code>AllowedIPs = 0.0.0.0/0</code> nahradí jen vzdálenou sítí, aby tunelem chodil pouze provoz ke kameře. Nejdřív nahoře vyplň a ověř IP adresu vzdálené kamery – podle ní se síť pozná.</p>
 <button class="btn">Uložit a aktivovat</button></form></div></div></details>
 {% endblock %}"""
 
 TEMPLATES["system.html"] = """{% extends "base.html" %}{% block content %}
-<div class="grid">
+<div class="grid-wide">
 <div class="card"><h2>Raspberry Pi</h2>
-<div class="tw"><table class="kv"><tr><td>Název v síti</td><td>{{ s.hostname }}</td></tr><tr><td>IP adresa</td><td>{{ s.ip }}</td></tr><tr><td>Teplota</td><td>{{ s.temp }}</td></tr><tr><td>Zátěž</td><td>{{ s.load }}</td></tr><tr><td>Paměť</td><td>{{ s.mem }}</td></tr><tr><td>Běží od restartu</td><td>{{ s.uptime }}</td></tr><tr><td>Systémový disk</td><td>{{ s.rootfs }}</td></tr><tr><td>SkyWatch</td><td>verze {{ version }}</td></tr></table></div>
+<div class="tw"><table class="kv"><tr><td>Název v síti</td><td>{{ s.hostname }}</td></tr><tr><td>IP adresa</td><td>{{ s.ip }}</td></tr><tr><td>Teplota</td><td>{{ s.temp }}</td></tr><tr><td>Zátěž</td><td>{{ s.load }}</td></tr><tr><td>Paměť</td><td>{{ s.mem }}</td></tr><tr><td>Běží od restartu</td><td>{{ s.uptime }}</td></tr><tr><td>Systémový disk</td><td>{{ s.rootfs }}</td></tr><tr><td>Atmovio</td><td>verze {{ version }}</td></tr></table></div>
 <form method="post" action="/system/ctl" style="display:inline"><button class="btn small" name="action" value="restart_frigate">Restartovat nahrávání</button> <button class="btn small sec" name="action" value="fix_frigate">Opravit konfiguraci nahrávání</button> <button class="btn small danger" name="action" value="reboot" onclick="return confirm('Restartovat celé Raspberry Pi? Nahrávání se na minutu přeruší.')">Restartovat Raspberry Pi</button></form>
 <p class="hint" style="margin-top:10px">Když něco nefunguje, zkus nejdřív restart nahrávání; restart celého RPi až potom.</p></div>
 <div class="card"><h2>Zdraví disků (S.M.A.R.T.)</h2>
-{% if not disks_health %}<p class="hint">Zatím žádné měření – první proběhne do hodiny po startu SkyWatch.</p>{% endif %}
+{% if not disks_health %}<p class="hint">Zatím žádné měření – první proběhne do hodiny po startu Atmovio.</p>{% endif %}
 {% for d in disks_health %}<div style="display:flex;gap:.6rem;align-items:flex-start;margin-bottom:.7rem"><span class="dot {{ d.level }}" style="margin-top:.45rem;width:10px;height:10px;border-radius:50%;flex:none"></span>
 <div><b>{{ d.role }}</b> · {{ d.model or d.dev }}{% if d.temp %} · {{ d.temp }} °C{% endif %}
 <div class="hint">{% if d.level == 'ok' %}bez vadných sektorů, stav {{ 'OK' if d.healthy else '?' }}{% else %}nečitelné {{ d.pending or 0 }} · přemapované {{ d.reallocated or 0 }} · neopravitelné {{ d.uncorrectable or 0 }}<br>{{ d.trend }}{% endif %} <span class="mut">· měřeno {{ d.ts[8:10] }}. {{ d.ts[5:7]|int }}. {{ d.ts[11:16] }}</span></div></div></div>{% endfor %}
-<p class="hint">Měří se každou hodinu. Nečitelné (pending) sektory jsou místa, která disk nedokázal přečíst – když jejich počet zůstane stejný, jde o jednorázovou chybu (typicky tvrdé vypnutí); když roste, disk končí a je čas ho vyměnit. SkyWatch to sleduje a lišta nahoře zčervená jen při růstu nebo selhání.</p></div>
+<p class="hint">Měří se každou hodinu. Nečitelné (pending) sektory jsou místa, která disk nedokázal přečíst – když jejich počet zůstane stejný, jde o jednorázovou chybu (typicky tvrdé vypnutí); když roste, disk končí a je čas ho vyměnit. Atmovio to sleduje a lišta nahoře zčervená jen při růstu nebo selhání.</p></div>
 <div class="card"><h2>Heslo do přehrávače záznamů (Frigate)</h2>
-<p class="hint">Přehrávač má vlastní přihlášení: uživatel <b>admin</b>, heslo stejné jako do SkyWatch (nastaví se při instalaci i při každé změně hesla níže). Když se rozejdou, nech si vygenerovat nové – zobrazí se tady.</p>
+<p class="hint">Přehrávač má vlastní přihlášení: uživatel <b>admin</b>, heslo stejné jako do Atmovio (nastaví se při instalaci i při každé změně hesla níže). Když se rozejdou, nech si vygenerovat nové – zobrazí se tady.</p>
 <form method="post" action="/system/ctl"><button class="btn small sec" name="action" value="frigate_pw" onclick="return confirm('Vygenerovat nové heslo pro přehrávač? Trvá cca 30 s, nahrávání se krátce restartuje.')">Vygenerovat nové heslo</button></form>
 {% if frigate_pw %}<pre>Uživatel: admin
 Heslo:    {{ frigate_pw }}</pre>{% endif %}</div>
 <div class="card" id="api"><h2>API pro jiné systémy</h2>
 <p class="hint">Jen čtení: stav, kamery, snímky, detekce, videa (<code>/api/v1/…</code>, popis v <code>docs/api.md</code>). Hodí se pro Home Assistant, vlastní web nebo skripty. Klíč pošli v hlavičce <code>Authorization: Bearer &lt;klíč&gt;</code>.</p>
+<div class="flash" style="font-weight:400"><span>📤</span><div><b>Odesílání na tvůj web</b> (každou minutu stav + stejná data jako API, plus upozornění se snímkem) se nastavuje v <a href="/email">Upozornění → vlastní web (webhook)</a>{% if web_ok %} – <span class="badge ok">propojeno</span>{% else %} – <span class="badge warn">nenastaveno</span>{% endif %}. Tam se zadává adresa a token; API klíč níže slouží jen pro čtení <i>z</i> RPi.</div></div>
 {% if new_api_key %}<div class="flash"><span>🔑</span><div><b>Nový klíč (zobrazí se jen teď):</b><pre id="apikey" style="margin:.3rem 0 0;user-select:all">{{ new_api_key }}</pre><button type="button" class="btn small sec" onclick="swCopy('apikey', this)">Kopírovat</button></div></div>{% endif %}
 {% if api_keys %}<div class="tw"><table><tr><th>Název</th><th>Klíč</th><th>Vytvořen</th><th></th></tr>{% for k in api_keys %}<tr><td>{{ k.name }}</td><td><code>{{ k.hint }}</code></td><td class="hint">{{ k.created|czdt }}</td><td><form method="post" action="/system/api_key/delete" onsubmit="return confirm('Zrušit klíč {{ k.name }}? Co ho používá, přestane fungovat.')"><input type="hidden" name="hint" value="{{ k.hint }}"><button class="btn small sec">Zrušit</button></form></td></tr>{% endfor %}</table></div>{% endif %}
 <form method="post" action="/system/api_key" class="row" style="align-items:end;margin-top:.5rem"><div><label>Název nového klíče</label><input type="text" name="name" placeholder="např. Home Assistant" maxlength="40"></div><div style="flex:0"><button class="btn small">Vytvořit klíč</button></div></form>
 <div class="hint" style="margin-top:.4rem">Zkus: <code>curl -H "Authorization: Bearer KLÍČ" http://{{ s.ip.split(' ')[0] }}/api/v1/status</code></div></div>
-<div class="card" id="update"><h2>Aktualizace SkyWatch</h2>
+<div class="card" id="update"><h2>Aktualizace Atmovio</h2>
 <div class="tw"><table class="kv"><tr><td>Nainstalováno</td><td>verze {{ version }}</td></tr><tr><td>Nejnovější vydání</td><td>{% if update_info.latest %}verze {{ update_info.latest }}{% elif update_info.checked %}zatím žádné{% else %}ještě nezjištěno{% endif %}{% if update_info.checked %} <span class="hint">· zjištěno {{ update_info.checked|czdt }}</span>{% endif %}</td></tr></table></div>
 {% if update_info.available %}<div class="flash"><span>🆕</span><div><b>K dispozici je verze {{ update_info.latest }}.</b></div></div>{% elif update_info.error %}<div class="flash warn"><span>⚠️</span><div>Kontrola se nepovedla: {{ update_info.error }}</div></div>{% endif %}
 <a class="btn small{% if not update_info.available %} sec{% endif %}" href="/system/update">{% if update_info.available %}Co je nového a aktualizovat{% else %}Kontrola a novinky{% endif %}</a>
 <p class="hint" style="margin-top:10px">Nové verze se berou z GitHubu ({{ github_repo }}). Instaluje se jen na kliknutí, původní verze se zálohuje a při chybě se sama vrátí.</p></div>
-<div class="card"><h2>Heslo do SkyWatch</h2>
+<div class="card"><h2>Heslo do Atmovio</h2>
 <form method="post" action="/system/password"><label>Nové heslo (min. 12 znaků)</label><input type="password" name="pw1" required minlength="12" autocomplete="new-password"><label>Znovu</label><input type="password" name="pw2" required minlength="12" autocomplete="new-password"><button class="btn">Změnit heslo</button></form></div>
 </div>
 <details><summary>Pro pokročilé: služby, aktualizace, logy</summary>
 <pre>{{ docker }}</pre>
 <form method="post" action="/system/ctl" style="display:inline"><button class="btn small sec" name="action" value="restart_portainer">Restart Portainer</button> <button class="btn small sec" name="action" value="update" onclick="return confirm('Stáhnout verze z docker-compose.yml a restartovat kontejnery?')">Aktualizovat kontejnery</button></form>
-<p class="hint">Aktualizace systému, síť, uživatelé a disky: <a href="{{ cockpit_ui }}" target="_blank" rel="noopener">Cockpit ↗</a>. Kontejnery: <a href="{{ portainer_ui }}" target="_blank" rel="noopener">Portainer ↗</a>. Aktualizace SkyWatch: karta výše, nebo ručně přes SSH <code>sudo bash update-skywatch.sh</code>.</p>
-<p class="hint">Logy všech částí (SkyWatch, disk, VPN, nahrávání, systém) najdeš v sekci <a href="/logs">Logy</a>.</p></details>
+<p class="hint">Aktualizace systému, síť, uživatelé a disky: <a href="{{ cockpit_ui }}" target="_blank" rel="noopener">Cockpit ↗</a>. Kontejnery: <a href="{{ portainer_ui }}" target="_blank" rel="noopener">Portainer ↗</a>. Aktualizace Atmovio: karta výše, nebo ručně přes SSH <code>sudo bash update-atmovio.sh</code>.</p>
+<p class="hint">Logy všech částí (Atmovio, disk, VPN, nahrávání, systém) najdeš v sekci <a href="/logs">Logy</a>.</p></details>
 {% endblock %}"""
 
 TEMPLATES["update.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small sec" href="/system">← Systém</a></div>{% endblock %}{% block content %}
@@ -3007,9 +3023,9 @@ TEMPLATES["update.html"] = """{% extends "base.html" %}{% block actions %}<div c
 <div class="card"><h2>Verze</h2>
 <div class="tw"><table class="kv"><tr><td>Nainstalováno</td><td>verze {{ version }}</td></tr><tr><td>Nejnovější vydání</td><td>{% if st.latest %}verze {{ st.latest }}{% if st.published %} <span class="hint">· vydáno {{ st.published }}</span>{% endif %}{% elif st.checked %}zatím žádné vydání{% else %}ještě nezjištěno{% endif %}</td></tr><tr><td>Naposledy zjištěno</td><td>{% if st.checked %}{{ st.checked|czdt }}{% else %}–{% endif %}</td></tr></table></div>
 {% if st.error %}<div class="flash warn"><span>⚠️</span><div>Kontrola se nepovedla: {{ st.error }}<br><span class="hint">RPi potřebuje přístup na api.github.com a github.com.</span></div></div>{% endif %}
-{% if running %}<div class="flash"><span>⏳</span><div><b>Aktualizace probíhá…</b> Web se na chvíli odmlčí, až se SkyWatch restartuje. Nech stránku otevřenou, sama ukáže výsledek.</div></div>
-{% elif st.available %}<div class="flash"><span>🆕</span><div><b>K dispozici je verze {{ st.latest }}.</b> Trvá to zhruba 2–4 minuty; nahrávání kamer běží dál, jen web SkyWatch je chvíli nedostupný. Původní verze se zálohuje a při chybě se sama vrátí.</div></div>
-<form method="post" action="/system/update/start" data-nobusy><button class="btn" :disabled="running" onclick="return confirm('Nainstalovat SkyWatch {{ st.latest }}? Web bude asi minutu nedostupný.')">Nainstalovat verzi {{ st.latest }}</button></form>
+{% if running %}<div class="flash"><span>⏳</span><div><b>Aktualizace probíhá…</b> Web se na chvíli odmlčí, až se Atmovio restartuje. Nech stránku otevřenou, sama ukáže výsledek.</div></div>
+{% elif st.available %}<div class="flash"><span>🆕</span><div><b>K dispozici je verze {{ st.latest }}.</b> Trvá to zhruba 2–4 minuty; nahrávání kamer běží dál, jen web Atmovio je chvíli nedostupný. Původní verze se zálohuje a při chybě se sama vrátí.</div></div>
+<form method="post" action="/system/update/start" data-nobusy><button class="btn" :disabled="running" onclick="return confirm('Nainstalovat Atmovio {{ st.latest }}? Web bude asi minutu nedostupný.')">Nainstalovat verzi {{ st.latest }}</button></form>
 {% elif st.checked %}<p class="hint">Máš nejnovější verzi.</p>{% else %}<p class="hint">Klikni na Zkontrolovat teď.</p>{% endif %}
 <form method="post" action="/system/update/check" style="margin-top:.6rem"><button class="btn small sec" :disabled="running" data-busy="Ptám se GitHubu">Zkontrolovat teď</button></form>
 <form method="post" action="/system/update/auto" data-nobusy style="margin-top:.8rem"><label><input type="checkbox" name="auto_check" value="1" {% if auto_check %}checked{% endif %} onchange="this.form.submit()"> Kontrolovat nové verze automaticky (1× denně jen dotaz na GitHub; nic se neinstaluje samo)</label></form>
@@ -3021,7 +3037,7 @@ TEMPLATES["update.html"] = """{% extends "base.html" %}{% block actions %}<div c
 <div class="card" x-show="running || log" x-cloak>
  <h2>Průběh aktualizace</h2>
  <div class="flash" x-show="phase=='run'"><span>⏳</span><div>Připravuji novou verzi (stažení knihoven, kontrola)…</div></div>
- <div class="flash" x-show="phase=='restart'"><span>⏳</span><div>SkyWatch se restartuje, čekám na odpověď…</div></div>
+ <div class="flash" x-show="phase=='restart'"><span>⏳</span><div>Atmovio se restartuje, čekám na odpověď…</div></div>
  <div class="flash" x-show="phase=='done'"><span>✅</span><div><b>Hotovo.</b> Běží verze <span x-text="newVersion"></span>. <a href="/system/update">Obnovit stránku</a></div></div>
  <div class="flash err" x-show="phase=='failed'"><span>⛔</span><div><b>Aktualizace selhala</b>, původní verze byla obnovena. Podrobnosti v záznamu níže.</div></div>
  <pre style="max-height:24rem;overflow:auto;font-size:.8rem;white-space:pre-wrap" x-text="log"></pre>
@@ -3265,7 +3281,7 @@ async def lifespan(_app):
         await run_in_threadpool(watcher.join, 5)
 
 
-app = FastAPI(title="SkyWatch", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+app = FastAPI(title="Atmovio", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 (APP_DIR / "static" / "vendor").mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
 _cfg0 = load_config()
@@ -3282,7 +3298,7 @@ SUBTITLES = {
     "/vpn": "Je vzdálená kamera dostupná? Síťové údaje RPi.",
     "/logs": "Co se v systému děje: hlídání oblohy, kamery, disk, VPN, nahrávání.",
     "/system": "Stav Raspberry Pi, restart, hesla, aktualizace.",
-    "/system/update": "Nové verze SkyWatch z GitHubu: kontrola, co je nového, instalace jedním tlačítkem.",
+    "/system/update": "Nové verze Atmovio z GitHubu: kontrola, co je nového, instalace jedním tlačítkem.",
     "/videos": "Videa vystřižená ze záznamů – ke stažení, s náhledem. Sama se mažou po nastavené době.",
 }
 
@@ -3526,7 +3542,7 @@ async def auth_middleware(request: Request, call_next):
 
 # SessionMiddleware musí být přidán až PO auth middleware (poslední přidaný je nejvíc vnější)
 app.add_middleware(SessionMiddleware, secret_key=_cfg0["secret"], max_age=60 * 60 * 24 * 14,
-                   same_site="lax", https_only=os.environ.get("SKYWATCH_HTTPS") == "1")
+                   same_site="lax", https_only=os.environ.get("ATMOVIO_HTTPS") == "1")
 
 
 # --------------------------------------------------------------------------- REST API v1 (jen čtení; klíč v Nastavení → Systém) – docs/api.md
@@ -3667,7 +3683,7 @@ def api_events(limit: int = 20):
 
 @app.post("/system/api_key")
 def api_key_create(request: Request, name: str = Form("")):
-    key = "sw_" + secrets.token_urlsafe(30)
+    key = "at_" + secrets.token_urlsafe(30)   # do 3.x "sw_"; staré klíče platí dál (ověřuje se jen hash)
     with edit_config() as cfg:
         keys = cfg.setdefault("api_keys", [])
         keys.append({"name": " ".join(name.split())[:40] or f"klíč {len(keys) + 1}", "hash": hashlib.sha256(key.encode()).hexdigest(),
@@ -4053,7 +4069,7 @@ def go2rtc_probe(cfg, url: str, timeout: int = 15) -> dict | None | bool:
     """Ověří stream tak, jak ho uvidí Frigate – přes go2rtc (dočasný stream + ffprobe restreamu).
     Vrací dict (video ok), None (go2rtc video nedostal), False (go2rtc nedostupný – nelze rozhodnout)."""
     api = cfg.get("go2rtc_url", "http://127.0.0.1:1984").rstrip("/") + "/api/streams"
-    name = f"skywatch_test_{secrets.token_hex(4)}"
+    name = f"atmovio_test_{secrets.token_hex(4)}"
     try:
         r = requests.put(api, params={"name": name, "src": url}, timeout=5)
         if r.status_code >= 400:
@@ -4135,7 +4151,7 @@ def _back_url(back: str, default: str = "/cameras") -> str:
 @app.post("/cameras/add")
 @frigate_transaction
 def cameras_add(request: Request, name: str = Form(...), main: str = Form(...), sub: str = Form(""),
-                test: str = Form(""), skywatch: str = Form(""), user: str = Form(""), password: str = Form(""),
+                test: str = Form(""), atmovio: str = Form(""), user: str = Form(""), password: str = Form(""),
                 replace: str = Form(""), back: str = Form("")):
     cfg = load_config()
     back = _back_url(back)
@@ -4229,7 +4245,7 @@ def cameras_add(request: Request, name: str = Form(...), main: str = Form(...), 
             names.pop(replace, None)
             current["ai"]["cameras"] = [name if c == replace else c for c in current["ai"]["cameras"]]
         names[name] = label
-        if not replace and skywatch and name not in current["ai"]["cameras"]:
+        if not replace and atmovio and name not in current["ai"]["cameras"]:
             current["ai"]["cameras"].append(name)
     rc, out = frigate_restart()
     verb = "upravena" if replace else "přidána"
@@ -4817,7 +4833,7 @@ def frigate_exports(cfg) -> dict:
 
 
 def export_thumb_path(cfg, rec: dict, fr: dict | None) -> Path | None:
-    """Náhled videa: nejdřív ten od Frigate, jinak si ho SkyWatch vyrobí ffmpegem (a uloží na HDD)."""
+    """Náhled videa: nejdřív ten od Frigate, jinak si ho Atmovio vyrobí ffmpegem (a uloží na HDD)."""
     if fr and fr.get("thumb_path"):
         p = frigate_media_path(fr["thumb_path"])
         if p and p.is_file():
@@ -4889,7 +4905,7 @@ def cleanup_exports(cfg):
 
 @app.get("/clip/{camera}.mp4")
 def clip_proxy(request: Request, camera: str, start: float, end: float):
-    """Přehrání úseku záznamu přímo ve SkyWatch – proxy na Frigate (bez hesla, jen pro přihlášené)."""
+    """Přehrání úseku záznamu přímo ve Atmovio – proxy na Frigate (bez hesla, jen pro přihlášené)."""
     if not re.fullmatch(r"[a-zA-Z0-9_]{1,64}", camera) or end <= start or end - start > 3600:
         return JSONResponse({"error": "bad range"}, status_code=400)
     cfg = load_config()
@@ -5224,7 +5240,7 @@ async def web_test(request: Request):
         if not cfg["web"]["token"]:
             raise ValueError("Chybí token.")
         resp = await run_in_threadpool(web_post, cfg, {"type": "ping"})
-        await run_in_threadpool(web_event, cfg, "test", "Test spojení SkyWatch",
+        await run_in_threadpool(web_event, cfg, "test", "Test spojení Atmovio",
                                 f"Spojení RPi → web funguje. Server: {resp.get('nvr', '')}, čas serveru {resp.get('server_time', '')}.")
         watcher.web_error = ""
         watcher._last_watchdog = 0
@@ -5269,7 +5285,7 @@ async def email_save(request: Request):
 async def email_test(request: Request):
     try:
         em = await run_in_threadpool(save_email_form, await request.form())
-        await run_in_threadpool(send_email, em, "[SkyWatch] Testovací e-mail", "Pokud čteš tento e-mail, odesílání z Raspberry Pi funguje.\n")
+        await run_in_threadpool(send_email, em, "[Atmovio] Testovací e-mail", "Pokud čteš tento e-mail, odesílání z Raspberry Pi funguje.\n")
         flash(request, f"Testovací e-mail odeslán na {em['to']}.")
     except Exception as e:
         flash(request, f"Odeslání selhalo: {e}", "err")
@@ -5459,7 +5475,7 @@ def normalize_wg_config(conf: str, previous: str = "", remote_ip: str = "") -> t
                     hosts = [f"{ip}/{net.max_prefixlen}" for ip in inside]
                     narrowed.extend(h for h in hosts if h not in narrowed)
                     notes.append(f"AllowedIPs {net} jsem zúžil jen na kamery ({', '.join(str(ip) for ip in inside)}) – ostatní zařízení "
-                                 "z VPN (třeba telefon) pak vidí RPi i na domácí adrese. Další kameru na chatě stačí přidat ve SkyWatch a VPN znovu uložit.")
+                                 "z VPN (třeba telefon) pak vidí RPi i na domácí adrese. Další kameru na chatě stačí přidat ve Atmovio a VPN znovu uložit.")
                 else:
                     narrowed.append(network)
             keep = narrowed
@@ -5616,7 +5632,7 @@ def vpn_ping(request: Request, test_ip: str = Form("")):
 # ---- logs
 
 LOG_SOURCES = [
-    ("skywatch", "SkyWatch", "Hlídání oblohy (AI), kamery, upozornění, e-maily, změny nastavení – vše, co dělá SkyWatch."),
+    ("atmovio", "Atmovio", "Hlídání oblohy (AI), kamery, upozornění, e-maily, změny nastavení – vše, co dělá Atmovio."),
     ("storage", "Disk a nahrávání", "Správce HDD: připojení disku, přepínání živý režim / nahrávání."),
     ("vpn", "VPN", "Tunel WireGuard: start, stop a důvody, proč se nespojil."),
     ("frigate", "Frigate", "Přehrávač a nahrávání záznamů (kontejner Frigate): chyby kamer, streamů a disku."),
@@ -5640,15 +5656,15 @@ def _journal(args: list[str], n: int, since: str) -> str:
 def read_log_source(src: str, n: int = 300) -> str:
     n = max(20, min(int(n), 5000))
     since = log_since(src)
-    if src == "skywatch":
+    if src == "atmovio":
         try:
             lines = LOG_FILE.read_text(encoding="utf-8", errors="replace").splitlines()
         except Exception:
             lines = []
-        journal = _journal(["-u", "skywatch", "-p", "warning"], 40, since)
+        journal = _journal(["-u", "atmovio", "-p", "warning"], 40, since)
         text = "\n".join(lines[-n:])
         if journal:
-            text += "\n\n# Služba skywatch (varování ze systemd):\n" + journal
+            text += "\n\n# Služba atmovio (varování ze systemd):\n" + journal
         return text
     if src == "storage":
         return _journal(["-u", "nvr-storage"], n, since)
@@ -5684,15 +5700,15 @@ def log_summary(text: str) -> list[tuple[str, str]]:
 
 
 @app.get("/logs", response_class=HTMLResponse)
-def logs_page(request: Request, src: str = "skywatch", n: int = 300, q: str = "", raw: str = ""):
+def logs_page(request: Request, src: str = "atmovio", n: int = 300, q: str = "", raw: str = ""):
     keys = [k for k, _n, _d in LOG_SOURCES]
     if src not in keys:
-        src = "skywatch"
+        src = "atmovio"
     n = n if n in (100, 300, 1000) else 300
     text = read_log_source(src, n)
     q = q.strip()[:80]
     if src == "frigate" and not raw:
-        # Provozní řádky webserveru (každou minutu dotaz SkyWatche a kontrola živosti) nejsou chyby – schovej je.
+        # Provozní řádky webserveru (každou minutu dotaz Atmovioe a kontrola živosti) nejsou chyby – schovej je.
         text = "\n".join(line for line in text.splitlines()
                          if not re.search(r'request_time=|" 400 0 "-"|s6-rc: info:', line))
     if q:
@@ -5703,11 +5719,11 @@ def logs_page(request: Request, src: str = "skywatch", n: int = 300, q: str = ""
 
 
 @app.post("/logs/clear")
-def logs_clear(request: Request, src: str = Form("skywatch")):
+def logs_clear(request: Request, src: str = Form("atmovio")):
     keys = [k for k, _n, _d in LOG_SOURCES]
     if src not in keys:
-        src = "skywatch"
-    if src == "skywatch":
+        src = "atmovio"
+    if src == "atmovio":
         try:
             for h in _logger.handlers:
                 h.acquire()
@@ -5721,22 +5737,22 @@ def logs_clear(request: Request, src: str = Form("skywatch")):
                 Path(f"{LOG_FILE}.{i}").unlink(missing_ok=True)
         except Exception as e:
             flash(request, f"Log se nepodařilo vymazat: {e}", "err")
-            return RedirectResponse("/logs?src=skywatch", status_code=303)
-        log("Log SkyWatch vymazán uživatelem")
+            return RedirectResponse("/logs?src=atmovio", status_code=303)
+        log("Log Atmovio vymazán uživatelem")
     cfg = load_config()
     cfg.setdefault("log_since", {})[src] = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     save_config(cfg)
-    flash(request, "Log vymazán – zobrazují se jen nové záznamy." if src != "skywatch" else "Log SkyWatch vymazán.")
+    flash(request, "Log vymazán – zobrazují se jen nové záznamy." if src != "atmovio" else "Log Atmovio vymazán.")
     return RedirectResponse(f"/logs?src={src}", status_code=303)
 
 
 @app.get("/logs/download")
-def logs_download(request: Request, src: str = "skywatch"):
+def logs_download(request: Request, src: str = "atmovio"):
     keys = [k for k, _n, _d in LOG_SOURCES]
     if src not in keys:
-        src = "skywatch"
+        src = "atmovio"
     text = read_log_source(src, 5000)
-    name = f"skywatch-log-{src}-{dt.datetime.now().strftime('%Y%m%d-%H%M')}.txt"
+    name = f"atmovio-log-{src}-{dt.datetime.now().strftime('%Y%m%d-%H%M')}.txt"
     return Response(text, media_type="text/plain; charset=utf-8", headers={"Content-Disposition": f"attachment; filename={name}"})
 
 
@@ -5746,7 +5762,7 @@ def logs_download(request: Request, src: str = "skywatch"):
 def system_page(request: Request):
     _rc, docker = run("docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'", timeout=15)
     cfg = load_config()
-    return render(request, "system.html", "Systém", s=sys_info(), docker=docker, version=APP_VERSION,
+    return render(request, "system.html", "Systém", s=sys_info(), docker=docker, version=APP_VERSION, web_ok=web_ready(cfg),
                   frigate_pw=request.session.pop("frigate_pw", None), disks_health=disk_health(),
                   new_api_key=request.session.pop("new_api_key", None), api_keys=cfg.get("api_keys") or [])
 
@@ -5791,7 +5807,7 @@ def system_ctl(request: Request, action: str = Form(...)):
 @app.get("/system/update", response_class=HTMLResponse)
 def update_page(request: Request):
     cfg = load_config()
-    return render(request, "update.html", "Aktualizace SkyWatch", st=update_state(), running=update_running(),
+    return render(request, "update.html", "Aktualizace Atmovio", st=update_state(), running=update_running(),
                   log_text=update_log_tail(), auto_check=bool((cfg.get("update") or {}).get("auto_check", True)))
 
 
@@ -5843,9 +5859,9 @@ def system_password(request: Request, pw1: str = Form(...), pw2: str = Form(...)
         request.session["auth"] = hashlib.sha256(cfg["admin_password_hash"].encode()).hexdigest()
         if frigate_set_admin_password(cfg, pw1):
             note = "" if storage_ready() else " (Frigate běží bez HDD; po připojení disku s dřívější databází může platit heslo z něj.)"
-            flash(request, "Heslo změněno – platí pro SkyWatch i Frigate (admin)." + note)
+            flash(request, "Heslo změněno – platí pro Atmovio i Frigate (admin)." + note)
         else:
-            flash(request, "Heslo SkyWatch změněno, ale Frigate ho nepřevzal (neběží?). Nové mu vygeneruješ tlačítkem výše.", "err")
+            flash(request, "Heslo Atmovio změněno, ale Frigate ho nepřevzal (neběží?). Nové mu vygeneruješ tlačítkem výše.", "err")
     return RedirectResponse("/system", status_code=303)
 
 
@@ -5870,9 +5886,9 @@ def on_startup():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("SKYWATCH_PORT", "80")))
-SKYWATCH_APP_EOF
-cat > "$SKY_DIR/storage_guard.py" <<'SKYWATCH_STORAGE_EOF'
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("ATMOVIO_PORT", "80")))
+ATMOVIO_APP_EOF
+cat > "$SKY_DIR/storage_guard.py" <<'ATMOVIO_STORAGE_EOF'
 #!/usr/bin/env python3
 """Hlídání HDD a přepínání Frigate mezi nahráváním a živým náhledem.
 
@@ -5895,10 +5911,10 @@ import time
 from ruamel.yaml import YAML
 
 NVR = Path(os.environ.get('NVR_DIR', '/opt/nvr'))
-SKY = NVR / 'skywatch'
+SKY = NVR / 'atmovio'
 MOUNT = Path('/mnt/nvr')
 # Stav se zapisuje každé 2 s – patří do RAM (/run), ne na SSD.
-STATUS = Path('/run/skywatch/storage-status.json')
+STATUS = Path('/run/atmovio/storage-status.json')
 COMPOSE = NVR / 'docker-compose.yml'
 LIVE_CONFIG = NVR / 'frigate/config/config.live.yml'
 SOURCE_CONFIG = NVR / 'frigate/config/config.yml'
@@ -5977,7 +5993,7 @@ def probe_disk():
     if not MOUNT.is_mount() or MOUNT.stat().st_dev == Path('/').stat().st_dev:
         return False
     # Ověřit právě prostor záznamů, ne pouze jiný adresář na témže disku.
-    directories = ('frigate', 'frigate/recordings', 'skywatch', 'skywatch/snapshots')
+    directories = ('frigate', 'frigate/recordings', 'atmovio', 'atmovio/snapshots')
     if any((MOUNT / name).is_symlink() for name in directories):
         return False
     for name in directories:
@@ -5986,10 +6002,10 @@ def probe_disk():
         if directory.stat().st_dev != MOUNT.stat().st_dev:
             return False
     # Bez zápisu nelze rozlišit připojený disk od read-only / vadného HDD.
-    fd, name = tempfile.mkstemp(prefix='.skywatch-probe-', dir=MOUNT / 'frigate/recordings')
+    fd, name = tempfile.mkstemp(prefix='.atmovio-probe-', dir=MOUNT / 'frigate/recordings')
     try:
         with os.fdopen(fd, 'wb') as out:
-            out.write(b'SkyWatch storage check\n')
+            out.write(b'Atmovio storage check\n')
             out.flush()
             os.fsync(out.fileno())
     finally:
@@ -6031,7 +6047,7 @@ _last_publish = {'key': None, 'at': 0.0}
 
 
 def publish(mode, reason):
-    """Zapíše stav jen při změně nebo nejpozději po 10 s (SkyWatch bere stav za čerstvý 15 s)."""
+    """Zapíše stav jen při změně nebo nejpozději po 10 s (Atmovio bere stav za čerstvý 15 s)."""
     now = time.time()
     if _last_publish['key'] == (mode, reason) and now - _last_publish['at'] < 10:
         return
@@ -6119,7 +6135,7 @@ def install():
         raise RuntimeError('Správce vyžaduje databázi Frigate na SSD uvnitř /config.')
     backup = SKY / 'backups' / ('storage-' + dt.datetime.now().strftime('%Y%m%d%H%M%S'))
     backup.mkdir(parents=True, exist_ok=True)
-    files = [COMPOSE, SYSTEMD / 'skywatch.service',
+    files = [COMPOSE, SYSTEMD / 'atmovio.service',
              SYSTEMD / 'docker.service.d/nvr-storage.conf',
              SYSTEMD / 'nvr-storage.service']
     for index, path in enumerate(files):
@@ -6191,9 +6207,9 @@ def main():
 
 if __name__ == '__main__':
     raise SystemExit(main())
-SKYWATCH_STORAGE_EOF
+ATMOVIO_STORAGE_EOF
 
-cat > "$SKY_DIR/requirements.txt" <<'SKYWATCH_REQUIREMENTS_EOF'
+cat > "$SKY_DIR/requirements.txt" <<'ATMOVIO_REQUIREMENTS_EOF'
 # Přímé závislosti ověřené lokálními testy; Python 3.11+.
 fastapi==0.141.1
 uvicorn==0.52.4
@@ -6204,13 +6220,13 @@ requests==2.34.2
 pillow==12.3.0
 ruamel.yaml==0.18.17
 astral==3.2
-SKYWATCH_REQUIREMENTS_EOF
+ATMOVIO_REQUIREMENTS_EOF
 
 # --- statické soubory (CSS/JS) a knihovny Pico CSS + Alpine.js (offline kopie)
 write_static() {  # $1 = cílový adresář
   mkdir -p "$1/vendor"
-  cat > "$1/skywatch.css" <<'SKYWATCH_CSS_EOF'
-/* SkyWatch – vlastní vzhled nad Pico CSS 2 (světlý i tmavý režim). */
+  cat > "$1/atmovio.css" <<'ATMOVIO_CSS_EOF'
+/* Atmovio – vlastní vzhled nad Pico CSS 2 (světlý i tmavý režim). */
 
 :root {
   --pico-font-size: 94%;
@@ -6363,6 +6379,8 @@ header.top { display: none; }
 .section-head h2 { margin: 0; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; }
 .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1rem; }
+.grid-wide { display: grid; grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); gap: 1.2rem; }
+@media (max-width: 560px) { .grid-wide { grid-template-columns: 1fr; } }
 .row { display: flex; gap: .9rem; flex-wrap: wrap; }
 .row > * { flex: 1; min-width: 160px; }
 
@@ -6578,9 +6596,9 @@ pre { background: var(--pico-card-sectioning-background-color, var(--pico-backgr
   .toasts { left: .75rem; right: .75rem; top: auto; bottom: 4.6rem; max-width: none; }
   th, td { padding: .45rem .4rem; font-size: .85rem; }
 }
-SKYWATCH_CSS_EOF
-  cat > "$1/skywatch.js" <<'SKYWATCH_JS_EOF'
-/* SkyWatch – interakce (Alpine.js komponenty + pomocné funkce). */
+ATMOVIO_CSS_EOF
+  cat > "$1/atmovio.js" <<'ATMOVIO_JS_EOF'
+/* Atmovio – interakce (Alpine.js komponenty + pomocné funkce). */
 (function () {
   'use strict';
 
@@ -6652,7 +6670,7 @@ SKYWATCH_CSS_EOF
       };
     });
 
-    // Průběh aktualizace SkyWatch (/system/update): každé 3 s se ptá /system/update/status.
+    // Průběh aktualizace Atmovio (/system/update): každé 3 s se ptá /system/update/status.
     // Během restartu služby dotaz selže – to je normální fáze "restart"; hotovo = odpověď s jinou verzí.
     Alpine.data('updater', function (running, version, log) {
       return {
@@ -6850,7 +6868,7 @@ SKYWATCH_CSS_EOF
   function boot() { installBusy(); installSnapshots(); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
-SKYWATCH_JS_EOF
+ATMOVIO_JS_EOF
 }
 fetch_vendor() {  # $1 = cílový adresář static
   local d="$1/vendor" ok=1
@@ -6863,44 +6881,44 @@ fetch_vendor() {  # $1 = cílový adresář static
     curl -fsSL --max-time 60 -o "$d/alpine.min.js.tmp" "https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js" \
       && mv "$d/alpine.min.js.tmp" "$d/alpine.min.js" || { rm -f "$d/alpine.min.js.tmp"; ok=0; }
   fi
-  [[ $ok -eq 1 ]] || echo "! Knihovny Pico CSS / Alpine.js se nepodařilo stáhnout – SkyWatch je načte z internetu (CDN), dokud se to nepovede při dalším updatu."
+  [[ $ok -eq 1 ]] || echo "! Knihovny Pico CSS / Alpine.js se nepodařilo stáhnout – Atmovio je načte z internetu (CDN), dokud se to nepovede při dalším updatu."
 }
 write_static "$SKY_DIR/static"
 fetch_vendor "$SKY_DIR/static"
 if [[ ! -x "$SKY_DIR/venv/bin/python" ]]; then python3 -m venv "$SKY_DIR/venv"; fi
 "$SKY_DIR/venv/bin/pip" install -q --upgrade pip
-"$SKY_DIR/venv/bin/pip" install -q -r "$SKY_DIR/requirements.txt" || die "Instalace Python balíčků pro SkyWatch selhala"
+"$SKY_DIR/venv/bin/pip" install -q -r "$SKY_DIR/requirements.txt" || die "Instalace Python balíčků pro Atmovio selhala"
 
 # počáteční konfigurace (heslo, pásmo, retence)
-SKYWATCH_DIR=$SKY_DIR SKYWATCH_ADMIN_PASSWORD="$ADMIN_PW" SMTP_HOST="$SMTP_HOST" SMTP_PORT="$SMTP_PORT" SMTP_SEC="$SMTP_SEC" \
+ATMOVIO_DIR=$SKY_DIR ATMOVIO_ADMIN_PASSWORD="$ADMIN_PW" SMTP_HOST="$SMTP_HOST" SMTP_PORT="$SMTP_PORT" SMTP_SEC="$SMTP_SEC" \
   SMTP_USER="$SMTP_USER" SMTP_PASS="$SMTP_PASS" MAIL_FROM="$MAIL_FROM" MAIL_TO="$MAIL_TO" "$SKY_DIR/venv/bin/python" - <<EOF
 import json, os, sys
 sys.path.insert(0, "$SKY_DIR")
-os.environ["SKYWATCH_DIR"] = "$SKY_DIR"
+os.environ["ATMOVIO_DIR"] = "$SKY_DIR"
 import app
 cfg = app.load_config()
-cfg["admin_password_hash"] = app.hash_pw(os.environ["SKYWATCH_ADMIN_PASSWORD"])
+cfg["admin_password_hash"] = app.hash_pw(os.environ["ATMOVIO_ADMIN_PASSWORD"])
 cfg["tz"] = "$TZONE"
 cfg["frigate_config_path"] = "$FRIGATE_CFG_DIR/config.yml"
 cfg["recordings_path"] = "$DATA_MNT/frigate/recordings"
-cfg["snapshot_dir"] = "$DATA_MNT/skywatch/snapshots"
+cfg["snapshot_dir"] = "$DATA_MNT/atmovio/snapshots"
 cfg["email"].update({"host": os.environ.get("SMTP_HOST", ""), "port": int(os.environ.get("SMTP_PORT", "587") or 587),
     "security": os.environ.get("SMTP_SEC", "starttls"), "user": os.environ.get("SMTP_USER", ""),
     "password": os.environ.get("SMTP_PASS", ""), "from": os.environ.get("MAIL_FROM", ""), "to": os.environ.get("MAIL_TO", "")})
 app.save_config(cfg)
-print("SkyWatch config OK")
+print("Atmovio config OK")
 EOF
 
-cat > /etc/systemd/system/skywatch.service <<EOF
+cat > /etc/systemd/system/atmovio.service <<EOF
 [Unit]
-Description=SkyWatch – NVR administrace a AI hlídání oblohy
+Description=Atmovio – NVR administrace a AI hlídání oblohy
 After=network-online.target docker.service
 Wants=network-online.target
 
 [Service]
 UMask=0077
-Environment=SKYWATCH_DIR=$SKY_DIR
-Environment=SKYWATCH_PORT=80
+Environment=ATMOVIO_DIR=$SKY_DIR
+Environment=ATMOVIO_PORT=80
 WorkingDirectory=$SKY_DIR
 ExecStart=$SKY_DIR/venv/bin/python $SKY_DIR/app.py
 Restart=always
@@ -6911,15 +6929,15 @@ WantedBy=multi-user.target
 EOF
 systemctl daemon-reload
 "$SKY_DIR/venv/bin/python" "$SKY_DIR/storage_guard.py" --install
-chmod 644 /etc/systemd/system/skywatch.service /etc/systemd/system/nvr-storage.service 2>/dev/null || true
+chmod 644 /etc/systemd/system/atmovio.service /etc/systemd/system/nvr-storage.service 2>/dev/null || true
 systemctl daemon-reload
-systemctl enable --now skywatch.service
+systemctl enable --now atmovio.service
 sleep 3
-systemctl is-active --quiet skywatch.service || { journalctl -u skywatch -n 30 --no-pager; die "SkyWatch se nespustil"; }
-ok "SkyWatch běží na portu 80"
+systemctl is-active --quiet atmovio.service || { journalctl -u atmovio -n 30 --no-pager; die "Atmovio se nespustil"; }
+ok "Atmovio běží na portu 80"
 
 # ----------------------------------------------------------------------------- 7. Frigate heslo
-step "Čekám na start Frigate a nastavuji heslo admin (stejné jako SkyWatch, až 3 minuty)"
+step "Čekám na start Frigate a nastavuji heslo admin (stejné jako Atmovio, až 3 minuty)"
 # Port 5000 je jen na localhostu a bez přihlášení – heslo se nastaví přímo přes API,
 # nezávisle na tom, co Frigate vypíše do logu.
 FRIGATE_PW_NOTE=""
@@ -6937,31 +6955,31 @@ if [[ $FRIGATE_UP -eq 1 ]]; then
   PW_JSON=$(jq -cn --arg p "$ADMIN_PW" '{password:$p}')
   if curl -fsS -m 10 -X PUT http://127.0.0.1:5000/api/users/admin/password \
        -H 'Content-Type: application/json' -d "$PW_JSON" >/dev/null 2>&1; then
-    ok "Heslo Frigate (admin) nastaveno stejné jako pro SkyWatch"
+    ok "Heslo Frigate (admin) nastaveno stejné jako pro Atmovio"
   else
     warn "Heslo Frigate se nepodařilo nastavit přes API"
-    FRIGATE_PW_NOTE="(nepodařilo se nastavit – nové vygeneruješ v SkyWatch → Systém → Vygenerovat nové heslo)"
+    FRIGATE_PW_NOTE="(nepodařilo se nastavit – nové vygeneruješ v Atmovio → Systém → Vygenerovat nové heslo)"
   fi
 else
   warn "Frigate nenaběhl do 3 minut – heslo nenastaveno"
-  FRIGATE_PW_NOTE="(Frigate nenaběhl – zkontroluj 'sudo docker logs frigate'; heslo pak nastavíš v SkyWatch → Systém)"
+  FRIGATE_PW_NOTE="(Frigate nenaběhl – zkontroluj 'sudo docker logs frigate'; heslo pak nastavíš v Atmovio → Systém)"
 fi
 
 # ----------------------------------------------------------------------------- 7b. test e-mailu
-MAIL_NOTE="zatím nenastaven – doplň v SkyWatch → E-mail (příjemce $MAIL_TO je předvyplněný)"
+MAIL_NOTE="zatím nenastaven – doplň v Atmovio → E-mail (příjemce $MAIL_TO je předvyplněný)"
 if [[ -n "$SMTP_HOST" ]]; then
   step "Testovací e-mail na $MAIL_TO"
   IP_NOW=$(hostname -I | awk '{print $1}')
-  if SKYWATCH_DIR=$SKY_DIR NVR_IP="$IP_NOW" "$SKY_DIR/venv/bin/python" - <<'PYEOF'
+  if ATMOVIO_DIR=$SKY_DIR NVR_IP="$IP_NOW" "$SKY_DIR/venv/bin/python" - <<'PYEOF'
 import os, sys
-sys.path.insert(0, os.environ["SKYWATCH_DIR"])
+sys.path.insert(0, os.environ["ATMOVIO_DIR"])
 import app
 cfg = app.load_config()
-app.send_email(cfg["email"], "[SkyWatch] Instalace dokončena",
-    "Raspberry Pi NVR je nainstalováno a odesílání e-mailů funguje.\n\nSkyWatch: http://%s\n" % os.environ["NVR_IP"])
+app.send_email(cfg["email"], "[Atmovio] Instalace dokončena",
+    "Raspberry Pi NVR je nainstalováno a odesílání e-mailů funguje.\n\nAtmovio: http://%s\n" % os.environ["NVR_IP"])
 PYEOF
   then ok "Testovací e-mail odeslán na $MAIL_TO"; MAIL_NOTE="funkční, testovací e-mail odeslán na $MAIL_TO"
-  else warn "Testovací e-mail se nepodařilo odeslat (nejspíš špatné heslo k SMTP). Instalace pokračuje – heslo opravíš a otestuješ v SkyWatch → E-mail."; MAIL_NOTE="NEFUNKČNÍ – oprav heslo k SMTP v SkyWatch → E-mail a klikni na test"
+  else warn "Testovací e-mail se nepodařilo odeslat (nejspíš špatné heslo k SMTP). Instalace pokračuje – heslo opravíš a otestuješ v Atmovio → E-mail."; MAIL_NOTE="NEFUNKČNÍ – oprav heslo k SMTP v Atmovio → E-mail a klikni na test"
   fi
 fi
 
@@ -6971,15 +6989,15 @@ HOSTN=$(hostname)
 {
 echo "==================== RPi 5 NVR – přístupy ($(date '+%d.%m.%Y %H:%M')) ===================="
 echo
-echo "  SkyWatch (administrace – funguje i na mobilu)     : http://$IP        (nebo http://$HOSTN.local)"
+echo "  Atmovio (administrace – funguje i na mobilu)     : http://$IP        (nebo http://$HOSTN.local)"
 echo "      heslo: to, které jsi zadal při instalaci"
 echo
 echo "  Frigate (živý náhled, záznamy, export videa)      : https://$IP:8971"
 echo "      uživatel: admin"
-echo "      heslo:    stejné jako SkyWatch $FRIGATE_PW_NOTE"
+echo "      heslo:    stejné jako Atmovio $FRIGATE_PW_NOTE"
 echo
 echo "  Portainer (Docker kontejnery)                     : https://$IP:9443"
-echo "      uživatel: admin      heslo: stejné jako SkyWatch"
+echo "      uživatel: admin      heslo: stejné jako Atmovio"
 echo
 echo "  Cockpit (systém, síť/statická IP, disky, updaty)  : https://$IP:9090"
 echo "      přihlášení systémovým uživatelem (${SUDO_USER:-pi}) a jeho heslem"

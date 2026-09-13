@@ -4,18 +4,18 @@
 
 Kameru jinde (chata, u rodičů, dílna) může Pi doma nahrávat, když se dostane do její sítě. Dvě možnosti:
 
-1. **Řeší to router** (VPN mezi routery, nebo vzdálený router je dostupný). Pak jen přidáš kameru s její vzdálenou adresou – ve SkyWatch se nic nenastavuje.
+1. **Řeší to router** (VPN mezi routery, nebo vzdálený router je dostupný). Pak jen přidáš kameru s její vzdálenou adresou – ve Atmovio se nic nenastavuje.
 2. **Pi je samo WireGuard klientem** vzdáleného routeru. Na to je **Nastavení → Síť a VPN**.
 
 ## Nastavení varianty 2
 
 1. Na *vzdáleném* routeru (Mikrotik, OpenWrt, Fritz!Box, UniFi, Teltonika, …) vytvoř **WireGuard peer/klienta** pro Pi
    a stáhni vygenerovanou konfiguraci klienta (`[Interface] … [Peer] …`). Neupravuj ji.
-2. SkyWatch → Síť a VPN → *Pro pokročilé: WireGuard tunel* – vlož **celou konfiguraci** a klikni **Uložit a aktivovat**.
+2. Atmovio → Síť a VPN → *Pro pokročilé: WireGuard tunel* – vlož **celou konfiguraci** a klikni **Uložit a aktivovat**.
 3. Zadej IP vzdálené kamery do *Ověřit* (ping) – měla by odpovědět. Pak kameru přidej přes **Vyhledat kamery** se vzdálenou
    podsítí (např. `10.10.10.0/24`) nebo ručně `rtsp://10.10.10.4:554/…`.
 
-SkyWatch je záměrně **split tunnel**: tunelem jde jen provoz ke vzdálené kameře; e-mail, AI, webhook i domácí síť jedou
+Atmovio je záměrně **split tunnel**: tunelem jde jen provoz ke vzdálené kameře; e-mail, AI, webhook i domácí síť jedou
 normálně. Vloženou konfiguraci si proto upraví:
 
 - vynechá `DNS`, `PreUp/PostUp/PreDown/PostDown`, `Table`, `SaveConfig`, `FwMark` (a řekne to);
