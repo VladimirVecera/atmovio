@@ -1,0 +1,14 @@
+.DS_Store
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+config.json
+*.db
+*.db-*
+*.log*
+*.bak*
+INSTALL-INFO.txt
+.portainer_pw
+_private/
+examples/webhook-php/data/
