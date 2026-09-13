@@ -5,6 +5,7 @@
 </p>
 
 <p align="center">
+  <a href="https://www.atmovio.com/"><b>atmovio.com</b></a> ·
   <a href="README.cs.md">🇨🇿 Česky</a> ·
   <a href="docs/install.md">Install</a> ·
   <a href="docs/hardware.md">Hardware</a> ·
@@ -13,7 +14,8 @@
   <a href="docs/webhook.md">Webhook</a> ·
   <a href="docs/api.md">REST API</a> ·
   <a href="docs/vpn.md">VPN</a> ·
-  <a href="docs/faq.md">FAQ</a>
+  <a href="docs/faq.md">FAQ</a> ·
+  <a href="https://www.atmovio.com/donate/">♥ Support</a>
 </p>
 
 Atmovio turns a **Raspberry Pi 5** with a USB hard drive into a home video recorder for IP cameras
@@ -56,11 +58,14 @@ Details, sizing table and a tested setup: [docs/hardware.md](docs/hardware.md).
 ## Quick start
 
 ```sh
-# on your computer
-scp install.sh pi@<RPI-IP>:
-ssh pi@<RPI-IP>
+curl -fsSL -o install.sh https://github.com/VladimirVecera/atmovio/releases/latest/download/install.sh
 sudo bash install.sh
 ```
+
+The installer is downloaded from the [latest release](https://github.com/VladimirVecera/atmovio/releases/latest) and must run
+from an interactive terminal (it asks questions, so `curl | bash` is refused on purpose).
+Prefer `git clone`? `install.sh` is in the repository root too: `git clone https://github.com/VladimirVecera/atmovio.git && cd atmovio && sudo bash install.sh`
+(`main` may be work in progress; releases are always tested).
 
 The installer asks for an admin password (min. 12 characters), retention, time zone, optional SMTP and
 which disk to use for recordings (existing ext4 is reused, formatting requires typing `SMAZAT`). It installs
@@ -68,7 +73,7 @@ Docker, Frigate 0.17, Portainer, Cockpit and Atmovio. Then open `http://<RPI-IP>
 4-step checklist on the dashboard: add cameras → disk → alerts → AI key.
 
 Updating later: the web UI tells you when a new release exists and installs it on one click
-(Nastavení → Systém → Aktualizace); or `scp update-atmovio.sh pi@<RPI-IP>: && ssh pi@<RPI-IP> sudo bash update-atmovio.sh`.
+(Nastavení → Systém → Aktualizace); or over SSH: `curl -fsSL -o update-atmovio.sh https://github.com/VladimirVecera/atmovio/releases/latest/download/update-atmovio.sh && sudo bash update-atmovio.sh`.
 Either way it backs up, verifies and rolls back on failure.
 
 Full guide: [docs/install.md](docs/install.md).
@@ -122,6 +127,12 @@ examples/webhook-php/   drop-in PHP receiver + status page for the webhook
 Development: `bash src/build.sh` after any change in `src/`, `bash src/build.sh --check` verifies that the built
 scripts match. Run `python3 -m py_compile src/atmovio/app.py`; a lightweight local run is possible with
 `ATMOVIO_DIR=/tmp/sw ATMOVIO_PORT=8099 ATMOVIO_ADMIN_PASSWORD=… python3 src/atmovio/app.py` (Frigate features will show as offline).
+
+## Support the project
+
+Atmovio is free and has no paid tier. If it saves you time, you can support the server costs and further development –
+any amount, by QR payment or bank transfer: **[atmovio.com/donate](https://www.atmovio.com/donate/)**.
+A ⭐ on this repository and reports of which cameras work help just as much.
 
 ## Contributing
 

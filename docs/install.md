@@ -15,16 +15,16 @@
 
 ## Install
 
-1. Download `install.sh` from [Releases](https://github.com/VladimirVecera/atmovio/releases) (or from the repository root).
-2. Copy it to the Pi and run it as root **from an interactive terminal** (it asks questions; `curl | bash` is refused):
+1. On the Pi (over SSH), download `install.sh` from the latest release and run it as root **from an interactive terminal** (it asks questions; `curl | bash` is refused):
 
    ```sh
-   scp install.sh pi@192.168.1.20:
-   ssh pi@192.168.1.20
+   curl -fsSL -o install.sh https://github.com/VladimirVecera/atmovio/releases/latest/download/install.sh
    sudo bash install.sh
    ```
+   Or clone the repository (`install.sh` is in its root): `git clone https://github.com/VladimirVecera/atmovio.git && cd atmovio && sudo bash install.sh`.
+   (No internet on the Pi? Download `install.sh` from [Releases](https://github.com/VladimirVecera/atmovio/releases) on your computer and `scp install.sh pi@192.168.1.20:`.)
 
-3. Answer the questions:
+2. Answer the questions:
 
    | Question | Notes |
    |---|---|
@@ -34,9 +34,9 @@
    | SMTP server | Enter = skip. You can set e-mail later in the web UI, or use the webhook instead. |
    | Disk for recordings | Lists USB disks that are not the system disk. An existing ext4 file system is used as is; formatting the whole disk requires typing `SMAZAT` (erase). `0` = continue without recording. |
 
-4. Wait. Docker, Frigate (`0.17.2`), Portainer, Cockpit and Atmovio are installed and started (5–15 minutes depending on the internet connection).
-5. At the end the script prints the addresses. Credentials are also stored in `/opt/nvr/INSTALL-INFO.txt` (root only).
-6. Open `http://<IP>` and log in. The dashboard shows a **4-step checklist**: cameras → disk → alerts → AI key.
+3. Wait. Docker, Frigate (`0.17.2`), Portainer, Cockpit and Atmovio are installed and started (5–15 minutes depending on the internet connection).
+4. At the end the script prints the addresses. Credentials are also stored in `/opt/nvr/INSTALL-INFO.txt` (root only).
+5. Open `http://<IP>` and log in. The dashboard shows a **4-step checklist**: cameras → disk → alerts → AI key.
 
 ## After install
 
@@ -74,10 +74,10 @@ the web UI is unavailable for about a minute. The daily check can be turned off 
 **Manually over SSH** (same script, same result – useful when the Pi has no internet access):
 
 ```sh
-scp update-atmovio.sh pi@192.168.1.20:
-ssh pi@192.168.1.20
+curl -fsSL -o update-atmovio.sh https://github.com/VladimirVecera/atmovio/releases/latest/download/update-atmovio.sh
 sudo bash update-atmovio.sh
 ```
+(Without internet on the Pi: download `update-atmovio.sh` from Releases and `scp` it over.)
 
 The updater builds a new Python environment, verifies the app imports, backs up the old app + config + environment
 into `/opt/nvr/atmovio/backups/<stamp>/`, switches, and checks the HTTP health endpoint. If anything fails it rolls

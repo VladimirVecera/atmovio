@@ -15,16 +15,16 @@
 
 ## Instalace
 
-1. Stáhni `install.sh` z [Releases](https://github.com/VladimirVecera/atmovio/releases) (nebo z kořene repozitáře).
-2. Zkopíruj ho na Pi a spusť jako root **v interaktivním terminálu** (skript se ptá; `curl | bash` odmítne):
+1. Na Pi (přes SSH) stáhni `install.sh` z posledního vydání a spusť ho jako root **v interaktivním terminálu** (skript se ptá; `curl | bash` odmítne):
 
    ```sh
-   scp install.sh pi@192.168.1.20:
-   ssh pi@192.168.1.20
+   curl -fsSL -o install.sh https://github.com/VladimirVecera/atmovio/releases/latest/download/install.sh
    sudo bash install.sh
    ```
+   Nebo naklonuj repozitář (`install.sh` je v jeho kořeni): `git clone https://github.com/VladimirVecera/atmovio.git && cd atmovio && sudo bash install.sh`.
+   (Pi bez internetu? Stáhni `install.sh` z [Releases](https://github.com/VladimirVecera/atmovio/releases) na svém počítači a `scp install.sh pi@192.168.1.20:`.)
 
-3. Odpověz na otázky:
+2. Odpověz na otázky:
 
    | Otázka | Poznámka |
    |---|---|
@@ -34,9 +34,9 @@
    | SMTP server | Enter = přeskočit. E-mail nastavíš později ve webu, nebo použij webhook. |
    | Disk na záznamy | Nabídne USB disky mimo systémový. Existující ext4 se použije beze změny; formátování celého disku vyžaduje napsat `SMAZAT`. `0` = pokračovat bez nahrávání. |
 
-4. Počkej. Nainstaluje se Docker, Frigate (`0.17.2`), Portainer, Cockpit a Atmovio (5–15 minut podle připojení).
-5. Na konci skript vypíše adresy. Přístupy jsou také v `/opt/nvr/INSTALL-INFO.txt` (jen root).
-6. Otevři `http://<IP>` a přihlas se. Přehled ukáže **4 kroky**: kamery → disk → upozornění → klíč k AI.
+3. Počkej. Nainstaluje se Docker, Frigate (`0.17.2`), Portainer, Cockpit a Atmovio (5–15 minut podle připojení).
+4. Na konci skript vypíše adresy. Přístupy jsou také v `/opt/nvr/INSTALL-INFO.txt` (jen root).
+5. Otevři `http://<IP>` a přihlas se. Přehled ukáže **4 kroky**: kamery → disk → upozornění → klíč k AI.
 
 ## Po instalaci
 
@@ -74,10 +74,10 @@ nedostupný. Denní kontrolu jde na téže stránce vypnout.
 **Ručně přes SSH** (stejný skript, stejný výsledek – hodí se, když RPi nemá přístup na internet):
 
 ```sh
-scp update-atmovio.sh pi@192.168.1.20:
-ssh pi@192.168.1.20
+curl -fsSL -o update-atmovio.sh https://github.com/VladimirVecera/atmovio/releases/latest/download/update-atmovio.sh
 sudo bash update-atmovio.sh
 ```
+(Bez internetu na Pi: stáhni `update-atmovio.sh` z Releases a pošli ho přes `scp`.)
 
 Aktualizátor připraví nové prostředí Pythonu, ověří import aplikace, zazálohuje starou aplikaci + konfiguraci + prostředí do
 `/opt/nvr/atmovio/backups/<čas>/`, přepne a zkontroluje HTTP health endpoint. Když cokoli selže, vrátí se sám zpět. Drží se

@@ -5,6 +5,7 @@
 </p>
 
 <p align="center">
+  <a href="https://www.atmovio.com/cs/"><b>atmovio.com</b></a> ·
   <a href="README.md">🇬🇧 English</a> ·
   <a href="docs/cs/instalace.md">Instalace</a> ·
   <a href="docs/cs/hardware.md">Hardware</a> ·
@@ -13,7 +14,8 @@
   <a href="docs/cs/webhook.md">Webhook</a> ·
   <a href="docs/cs/api.md">REST API</a> ·
   <a href="docs/cs/vpn.md">VPN</a> ·
-  <a href="docs/cs/faq.md">Časté dotazy</a>
+  <a href="docs/cs/faq.md">Časté dotazy</a> ·
+  <a href="https://www.atmovio.com/cs/podpora/">♥ Podpořit</a>
 </p>
 
 Atmovio udělá z **Raspberry Pi 5** s USB diskem domácí záznamník IP kamer (o nahrávání se stará
@@ -53,11 +55,14 @@ Podrobnosti, tabulka velikostí disku a otestovaná sestava: [docs/cs/hardware.m
 ## Rychlý start
 
 ```sh
-# na svém počítači
-scp install.sh pi@<IP-RPI>:
-ssh pi@<IP-RPI>
+curl -fsSL -o install.sh https://github.com/VladimirVecera/atmovio/releases/latest/download/install.sh
 sudo bash install.sh
 ```
+
+Instalátor se stáhne z [posledního vydání](https://github.com/VladimirVecera/atmovio/releases/latest) a musí běžet
+v interaktivním terminálu (ptá se, proto `curl | bash` záměrně odmítne).
+Raději `git clone`? `install.sh` je i v kořeni repozitáře: `git clone https://github.com/VladimirVecera/atmovio.git && cd atmovio && sudo bash install.sh`
+(`main` může být rozpracovaný; vydání jsou vždy otestovaná).
 
 Instalátor se zeptá na heslo správce (min. 12 znaků), retenci, časové pásmo, volitelně SMTP a který disk
 použít na záznamy (existující ext4 se použije bez mazání, formátování vyžaduje napsat `SMAZAT`). Nainstaluje
@@ -65,7 +70,7 @@ Docker, Frigate 0.17, Portainer, Cockpit a Atmovio. Pak otevři `http://<IP-RPI>
 Přehledu: kamery → disk → upozornění → klíč k AI.
 
 Aktualizace: web sám hlásí, když vyšla nová verze, a nainstaluje ji na jedno kliknutí (Nastavení → Systém → Aktualizace);
-nebo `scp update-atmovio.sh pi@<IP-RPI>: && ssh pi@<IP-RPI> sudo bash update-atmovio.sh`.
+nebo přes SSH: `curl -fsSL -o update-atmovio.sh https://github.com/VladimirVecera/atmovio/releases/latest/download/update-atmovio.sh && sudo bash update-atmovio.sh`.
 V obou případech se zálohuje, ověří a při chybě vrátí.
 
 Podrobně: [docs/cs/instalace.md](docs/cs/instalace.md).
@@ -120,6 +125,12 @@ Vývoj: po každé změně v `src/` spusť `bash src/build.sh`; `bash src/build.
 skripty odpovídají zdrojům. `python3 -m py_compile src/atmovio/app.py` zkontroluje syntaxi; aplikaci jde
 spustit i lokálně: `ATMOVIO_DIR=/tmp/sw ATMOVIO_PORT=8099 ATMOVIO_ADMIN_PASSWORD=… python3 src/atmovio/app.py`
 (funkce závislé na Frigate se ukážou jako offline).
+
+## Podpořte projekt
+
+Atmovio je zdarma a nemá placenou verzi. Když vám šetří čas, můžete podpořit provoz serveru a další vývoj –
+libovolnou částkou, QR platbou nebo převodem: **[atmovio.com/cs/podpora](https://www.atmovio.com/cs/podpora/)**.
+Stejně pomůže ⭐ tomuto repozitáři a hlášení, které kamery fungují.
 
 ## Přispívání
 
