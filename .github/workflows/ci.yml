@@ -38,4 +38,4 @@ jobs:
       - name: PHP example syntax
         run: |
           sudo apt-get install -y -q php-cli >/dev/null
-          for f in examples/webhook-php/*.php; do php -l "$f"; done
+          for f in examples/*/*.php; do php -l "$f"; done

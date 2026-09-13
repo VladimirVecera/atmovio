@@ -1,0 +1,60 @@
+# Atmovio → Home Assistant (built-in REST integration, no custom component needed)
+# Replace 192.168.1.20 with your Pi and at_XXX… with an API key from Nastavení → Systém → API.
+# Merge into your configuration.yaml (or split with !include), then restart Home Assistant.
+
+rest:
+  # NVR status: AI quota, disk, temperature, version, recording state
+  - resource: http://192.168.1.20/api/v1/status
+    headers:
+      Authorization: "Bearer at_XXXXXXXXXXXXXXXXXXXXXXXX"
+    scan_interval: 60
+    sensor:
+      - name: Atmovio AI requests today
+        value_template: "{{ value_json.ai.used_today }}"
+        icon: mdi:weather-sunset
+      - name: Atmovio disk used
+        value_template: "{{ value_json.storage.disk_pct }}"
+        unit_of_measurement: "%"
+        icon: mdi:harddisk
+      - name: Atmovio temperature
+        value_template: "{{ value_json.system.temp | replace(' °C','') }}"
+        unit_of_measurement: "°C"
+        device_class: temperature
+      - name: Atmovio version
+        value_template: "{{ value_json.version }}"
+        json_attributes: ["update"]
+    binary_sensor:
+      - name: Atmovio recording
+        value_template: "{{ value_json.frigate.online and value_json.storage.mode in ['recording','legacy'] }}"
+        device_class: running
+      - name: Atmovio daytime
+        value_template: "{{ value_json.ai.daytime }}"
+        device_class: light
+
+  # camera online state (name = camera id in Atmovio)
+  - resource: http://192.168.1.20/api/v1/cameras
+    headers:
+      Authorization: "Bearer at_XXXXXXXXXXXXXXXXXXXXXXXX"
+    scan_interval: 60
+    binary_sensor:
+      - name: Garden camera online
+        value_template: "{{ (value_json.cameras | selectattr('name','eq','zahrada') | first).online }}"
+        device_class: connectivity
+
+  # latest alert as a sensor – the id attribute changes with every new detection
+  - resource: http://192.168.1.20/api/v1/detections?limit=1
+    headers:
+      Authorization: "Bearer at_XXXXXXXXXXXXXXXXXXXXXXXX"
+    scan_interval: 60
+    sensor:
+      - name: Atmovio last sky alert
+        value_template: "{{ value_json.detections[0].phenomenon if value_json.detections else 'none' }}"
+        json_attributes_path: "$.detections[0]"
+        json_attributes: ["id", "ts", "score", "camera_label", "description", "image_url", "detail_url"]
+
+# live picture of a camera (one entry per camera)
+camera:
+  - platform: generic
+    name: Garden sky
+    still_image_url: http://192.168.1.20/api/v1/cameras/zahrada/snapshot.jpg?h=720&api_key=at_XXXXXXXXXXXXXXXXXXXXXXXX
+    verify_ssl: false

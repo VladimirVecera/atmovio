@@ -1,0 +1,19 @@
+# Atmovio – push a phone notification with the picture for every alert ≥ 7/10
+# (needs the sensors from configuration.yaml)
+
+- alias: Atmovio – sky alert
+  trigger:
+    - platform: state
+      entity_id: sensor.atmovio_last_sky_alert
+      attribute: id
+  condition:
+    - condition: template
+      value_template: "{{ state_attr('sensor.atmovio_last_sky_alert','score') | int >= 7 }}"
+  action:
+    - service: notify.mobile_app_my_phone
+      data:
+        title: "{{ states('sensor.atmovio_last_sky_alert') }} · {{ state_attr('sensor.atmovio_last_sky_alert','score') }}/10"
+        message: "{{ state_attr('sensor.atmovio_last_sky_alert','description') }}"
+        data:
+          image: "{{ state_attr('sensor.atmovio_last_sky_alert','image_url') }}?api_key=at_XXXXXXXXXXXXXXXXXXXXXXXX"
+          url: "{{ state_attr('sensor.atmovio_last_sky_alert','detail_url') }}"

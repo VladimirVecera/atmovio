@@ -117,7 +117,15 @@ Parametry: `limit` (1–200), `camera`, `notified` (1 = jen s upozorněním, vý
 | `subject`, `message` | předmět a text upozornění tak, jak šly e-mailem/webhookem |
 | `emailed` | 1 když upozornění odešlo e-mailem/webhookem |
 
-Příklady odpovědí a ukázka pro Home Assistant jsou v [anglické verzi](../api.md#examples) – pole jsou stejná.
+Příklady odpovědí jsou v [anglické verzi](../api.md#examples) – pole jsou stejná.
+
+## Hotové příklady
+
+| | |
+|---|---|
+| [`examples/api-php`](../../examples/api-php) | PHP klient + skripty: stav, živý přehled kamer, galerie detekcí, proxy na obrázky, stažení videí, poller pro cron reagující na nové detekce |
+| [`examples/home-assistant`](../../examples/home-assistant) | `configuration.yaml` (senzory, binární senzory, entita kamery, senzor poslední detekce) + `automations.yaml` (notifikace do telefonu s obrázkem) – bez vlastní komponenty, stačí vestavěná REST integrace |
+| [`examples/webhook-php`](../../examples/webhook-php) | přijímač [webhooku](webhook.md), když váš server na Pi nedosáhne |
 
 ## Chyby
 

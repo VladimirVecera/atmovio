@@ -15,7 +15,12 @@
   <a href="docs/cs/api.md">REST API</a> ·
   <a href="docs/cs/vpn.md">VPN</a> ·
   <a href="docs/cs/faq.md">Časté dotazy</a> ·
+  <a href="examples/">Příklady</a> ·
   <a href="https://www.atmovio.com/cs/podpora/">♥ Podpořit</a>
+</p>
+<p align="center">
+  <a href="https://www.atmovio.com/cs/podpora/"><img src="https://img.shields.io/badge/%E2%99%A5_Podpo%C5%99it_Atmovio-p%C5%99isp%C4%9Bt-e0245e?style=for-the-badge" alt="Podpořit Atmovio"></a>
+  <a href="https://github.com/VladimirVecera/atmovio/releases/latest"><img src="https://img.shields.io/github/v/release/VladimirVecera/atmovio?style=for-the-badge&label=verze&color=2563eb" alt="Poslední verze"></a>
 </p>
 
 Atmovio udělá z **Raspberry Pi 5** s USB diskem domácí záznamník IP kamer (o nahrávání se stará
@@ -37,7 +42,7 @@ a instalátor se ptá jen na to, co opravdu potřebuje.
 | **Videa** | Vystřihnout úsek kolem detekce (−N/+M minut) nebo to nechat udělat **automaticky po každém upozornění**; přehrát v prohlížeči až 120×, stáhnout MP4, volitelně timelapse 25×. |
 | **Stránka kamery** | Vše o jedné kameře na jednom místě: živý obraz, stav, AI přepínače, detekce, videa, adresy streamů. |
 | **Provoz bez stresu** | Zdraví disku (SMART) srozumitelně, hlídač úložiště, který udrží systém při životě i bez HDD, logy s hledáním, aktualizace jedním souborem s automatickým návratem při chybě. |
-| **Napojení** | Read-only **REST API** s API klíči (Home Assistant, dashboardy, skripty) a dokumentovaný odchozí webhook. |
+| **Napojení** | Read-only **REST API** s API klíči (Home Assistant, dashboardy, skripty) a dokumentovaný odchozí webhook. Hotové příklady: [PHP skripty](examples/api-php), [Home Assistant YAML](examples/home-assistant), [přijímač webhooku](examples/webhook-php). |
 
 ## Hardware
 
@@ -74,6 +79,8 @@ nebo přes SSH: `curl -fsSL -o update-atmovio.sh https://github.com/VladimirVece
 V obou případech se zálohuje, ověří a při chybě vrátí.
 
 Podrobně: [docs/cs/instalace.md](docs/cs/instalace.md).
+
+> ♥ **Atmovio je a zůstane zdarma.** Pokud vám šetří čas, [podpořte projekt](https://www.atmovio.com/cs/podpora/) – libovolnou částkou, QR platbou nebo převodem, bez registrace.
 
 ## Služby po instalaci
 
@@ -118,7 +125,10 @@ src/
     storage_guard.py    hlídač HDD / přepínání Frigate živě vs. nahrávání
     static/             CSS + JS (Pico CSS a Alpine.js se stáhnou při instalaci)
 docs/                   dokumentace anglicky, docs/cs česky
-examples/webhook-php/   hotový PHP přijímač + stavová stránka pro webhook
+examples/
+  api-php/              PHP klient + skripty pro REST API (stav, kamery, detekce, videa, poller pro cron)
+  home-assistant/       configuration.yaml + automations.yaml (REST integrace)
+  webhook-php/          hotový PHP přijímač + stavová stránka pro webhook
 ```
 
 Vývoj: po každé změně v `src/` spusť `bash src/build.sh`; `bash src/build.sh --check` ověří, že sestavené

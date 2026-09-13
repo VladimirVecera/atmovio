@@ -15,7 +15,12 @@
   <a href="docs/api.md">REST API</a> ·
   <a href="docs/vpn.md">VPN</a> ·
   <a href="docs/faq.md">FAQ</a> ·
+  <a href="examples/">Examples</a> ·
   <a href="https://www.atmovio.com/donate/">♥ Support</a>
+</p>
+<p align="center">
+  <a href="https://www.atmovio.com/donate/"><img src="https://img.shields.io/badge/%E2%99%A5_Support_Atmovio-donate-e0245e?style=for-the-badge" alt="Support Atmovio"></a>
+  <a href="https://github.com/VladimirVecera/atmovio/releases/latest"><img src="https://img.shields.io/github/v/release/VladimirVecera/atmovio?style=for-the-badge&label=release&color=2563eb" alt="Latest release"></a>
 </p>
 
 Atmovio turns a **Raspberry Pi 5** with a USB hard drive into a home video recorder for IP cameras
@@ -40,7 +45,7 @@ and the installer asks only what it really needs.
 | **Videos** | Cut a clip around any detection (−N/+M minutes) or let Atmovio do it **automatically after each alert**; watch it in the browser at up to 120×, download MP4, optional 25× timelapse export. |
 | **Per-camera page** | Everything about one camera in one place: live view, status, AI toggles, detections, videos, stream settings. |
 | **Ops for humans** | Disk health (SMART) with plain-language warnings, storage guard that keeps the system alive when the HDD disappears, logs with search, one-file updater with automatic rollback. |
-| **Integrations** | Read-only **REST API** with API keys (Home Assistant, dashboards, scripts) and a documented outbound webhook. |
+| **Integrations** | Read-only **REST API** with API keys (Home Assistant, dashboards, scripts) and a documented outbound webhook. Ready-to-run examples: [PHP scripts](examples/api-php), [Home Assistant YAML](examples/home-assistant), [webhook receiver](examples/webhook-php). |
 
 ## Hardware
 
@@ -77,6 +82,8 @@ Updating later: the web UI tells you when a new release exists and installs it o
 Either way it backs up, verifies and rolls back on failure.
 
 Full guide: [docs/install.md](docs/install.md).
+
+> ♥ **Atmovio is free and stays free.** If it saves you time, [support the project](https://www.atmovio.com/donate/) – any amount, QR payment or bank transfer, no registration.
 
 ## Services after install
 
@@ -121,7 +128,10 @@ src/
     storage_guard.py    HDD watchdog / Frigate live-vs-recording switch
     static/             CSS + JS (Pico CSS, Alpine.js vendored at install time)
 docs/                   documentation (en) and docs/cs (Czech)
-examples/webhook-php/   drop-in PHP receiver + status page for the webhook
+examples/
+  api-php/              PHP client + scripts for the REST API (status, cameras, detections, videos, cron poller)
+  home-assistant/       configuration.yaml + automations.yaml (REST integration)
+  webhook-php/          drop-in PHP receiver + status page for the webhook
 ```
 
 Development: `bash src/build.sh` after any change in `src/`, `bash src/build.sh --check` verifies that the built

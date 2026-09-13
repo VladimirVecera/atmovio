@@ -144,7 +144,15 @@ Query parameters: `limit` (1–200), `camera`, `notified` (1 = alerts only, defa
 | `subject`, `message` | the alert subject and body as sent by e-mail/webhook |
 | `emailed` | 1 when an e-mail/webhook alert went out |
 
-## Home Assistant example
+## Ready-to-run examples
+
+| | |
+|---|---|
+| [`examples/api-php`](../examples/api-php) | PHP client class + scripts: status, live camera overview, detections gallery, image proxy, videos download, cron poller that reacts to new alerts |
+| [`examples/home-assistant`](../examples/home-assistant) | `configuration.yaml` (sensors, binary sensors, camera entity, last-alert sensor) + `automations.yaml` (phone notification with the picture) |
+| [`examples/webhook-php`](../examples/webhook-php) | receiver for the [webhook](webhook.md) when your server cannot reach the Pi |
+
+Home Assistant needs no custom component – the built-in REST integration reads the endpoints above:
 
 ```yaml
 rest:
@@ -160,13 +168,15 @@ rest:
         unit_of_measurement: "%"
     binary_sensor:
       - name: Atmovio recording
-        value_template: "{{ value_json.frigate.online and value_json.storage.mode == 'recording' }}"
+        value_template: "{{ value_json.frigate.online and value_json.storage.mode in ['recording','legacy'] }}"
 
 camera:
   - platform: generic
     name: Zahrada
-    still_image_url: http://192.168.1.20/api/v1/cameras/zahrada/snapshot.jpg?api_key=at_…
+    still_image_url: http://192.168.1.20/api/v1/cameras/zahrada/snapshot.jpg?h=720&api_key=at_…
 ```
+
+The full version with the last-alert sensor and the notification automation is in [`examples/home-assistant`](../examples/home-assistant).
 
 ## Errors
 
