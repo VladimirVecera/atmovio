@@ -12,6 +12,7 @@
   <a href="docs/cs/kamery.md">Kamery</a> ·
   <a href="docs/cs/ai.md">AI obloha</a> ·
   <a href="docs/cs/webhook.md">Webhook</a> ·
+  <a href="#home-assistant-a-rest-api">🏠 Home Assistant</a> ·
   <a href="docs/cs/api.md">REST API</a> ·
   <a href="docs/cs/vpn.md">VPN</a> ·
   <a href="docs/cs/faq.md">Časté dotazy</a> ·
@@ -21,6 +22,8 @@
 <p align="center">
   <a href="https://www.atmovio.com/cs/podpora/"><img src="https://img.shields.io/badge/%E2%99%A5_Podpo%C5%99it_Atmovio-p%C5%99isp%C4%9Bt-e0245e?style=for-the-badge" alt="Podpořit Atmovio"></a>
   <a href="https://github.com/VladimirVecera/atmovio/releases/latest"><img src="https://img.shields.io/github/v/release/VladimirVecera/atmovio?style=for-the-badge&label=verze&color=2563eb" alt="Poslední verze"></a>
+  <a href="#home-assistant-a-rest-api"><img src="https://img.shields.io/badge/Home_Assistant-REST_integrace-41bdf5?style=for-the-badge&logo=homeassistant&logoColor=white" alt="Home Assistant"></a>
+  <a href="docs/cs/api.md"><img src="https://img.shields.io/badge/REST_API-JSON_%2B_API_kl%C3%AD%C4%8De-0f172a?style=for-the-badge" alt="REST API"></a>
 </p>
 
 Atmovio udělá z **Raspberry Pi 5** s USB diskem domácí záznamník IP kamer (o nahrávání se stará
@@ -93,6 +96,36 @@ Podrobně: [docs/cs/instalace.md](docs/cs/instalace.md).
 
 Atmovio běží záměrně na obyčejném HTTP – provozuj ho v domácí síti nebo přes VPN routeru. **Port 80 nikdy
 nevystavuj do internetu.** Pro sledování odjinud použij [webhook](docs/cs/webhook.md) (posílá na tvůj web) nebo VPN.
+
+## Home Assistant a REST API
+
+Atmovio není uzavřená krabička. Vše, co ví – stav, kamery, živé snímky, AI detekce, videa, události – je jeden `GET`
+daleko, s API klíči, které si vytvoříte v administraci. **Home Assistant nepotřebuje žádnou vlastní komponentu**: stačí
+vestavěná REST integrace.
+
+```yaml
+rest:
+  - resource: http://192.168.1.20/api/v1/status
+    headers: {Authorization: "Bearer at_…"}
+    sensor:
+      - name: Atmovio AI požadavky dnes
+        value_template: "{{ value_json.ai.used_today }}"
+    binary_sensor:
+      - name: Atmovio nahrává
+        value_template: "{{ value_json.frigate.online }}"
+camera:
+  - platform: generic
+    name: Zahrada obloha
+    still_image_url: http://192.168.1.20/api/v1/cameras/zahrada/snapshot.jpg?api_key=at_…
+```
+
+| | |
+|---|---|
+| 🏠 **Home Assistant** | [`examples/home-assistant`](examples/home-assistant) – senzory, entita kamery, senzor poslední detekce a notifikace do telefonu s obrázkem |
+| 🔌 **REST API** | [`docs/cs/api.md`](docs/cs/api.md) – všechny endpointy a pole; [`examples/api-php`](examples/api-php) – funkční PHP skripty (stav, kamery, galerie detekcí, videa, poller pro cron) |
+| 📤 **Webhook** | [`docs/cs/webhook.md`](docs/cs/webhook.md) – Atmovio posílá stav + upozornění na váš web; [`examples/webhook-php`](examples/webhook-php) – hotový přijímač |
+
+Více na webu: [atmovio.com/cs/api](https://www.atmovio.com/cs/api/).
 
 ## Jak funguje AI část
 

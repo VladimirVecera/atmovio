@@ -14,3 +14,4 @@ INSTALL-INFO.txt
 _private/
 examples/webhook-php/data/
 _to_delete/
+Claude outputs/

@@ -12,6 +12,7 @@
   <a href="docs/cameras.md">Cameras</a> ·
   <a href="docs/ai.md">AI sky watching</a> ·
   <a href="docs/webhook.md">Webhook</a> ·
+  <a href="#home-assistant--rest-api">🏠 Home Assistant</a> ·
   <a href="docs/api.md">REST API</a> ·
   <a href="docs/vpn.md">VPN</a> ·
   <a href="docs/faq.md">FAQ</a> ·
@@ -21,6 +22,8 @@
 <p align="center">
   <a href="https://www.atmovio.com/donate/"><img src="https://img.shields.io/badge/%E2%99%A5_Support_Atmovio-donate-e0245e?style=for-the-badge" alt="Support Atmovio"></a>
   <a href="https://github.com/VladimirVecera/atmovio/releases/latest"><img src="https://img.shields.io/github/v/release/VladimirVecera/atmovio?style=for-the-badge&label=release&color=2563eb" alt="Latest release"></a>
+  <a href="#home-assistant--rest-api"><img src="https://img.shields.io/badge/Home_Assistant-REST_integration-41bdf5?style=for-the-badge&logo=homeassistant&logoColor=white" alt="Home Assistant"></a>
+  <a href="docs/api.md"><img src="https://img.shields.io/badge/REST_API-JSON_%2B_API_keys-0f172a?style=for-the-badge" alt="REST API"></a>
 </p>
 
 Atmovio turns a **Raspberry Pi 5** with a USB hard drive into a home video recorder for IP cameras
@@ -96,6 +99,36 @@ Full guide: [docs/install.md](docs/install.md).
 
 Atmovio uses plain HTTP on purpose – run it in your LAN or behind your router's VPN. **Never expose port 80 to the internet.**
 For remote viewing use the [webhook](docs/webhook.md) (push to your website) or a VPN.
+
+## Home Assistant & REST API
+
+Atmovio is not a closed box. Everything it knows – status, cameras, live snapshots, AI detections, videos, events – is a
+`GET` away, with API keys you create in the admin. **Home Assistant needs no custom component**: the built-in REST
+integration is enough.
+
+```yaml
+rest:
+  - resource: http://192.168.1.20/api/v1/status
+    headers: {Authorization: "Bearer at_…"}
+    sensor:
+      - name: Atmovio AI requests today
+        value_template: "{{ value_json.ai.used_today }}"
+    binary_sensor:
+      - name: Atmovio recording
+        value_template: "{{ value_json.frigate.online }}"
+camera:
+  - platform: generic
+    name: Garden sky
+    still_image_url: http://192.168.1.20/api/v1/cameras/zahrada/snapshot.jpg?api_key=at_…
+```
+
+| | |
+|---|---|
+| 🏠 **Home Assistant** | [`examples/home-assistant`](examples/home-assistant) – sensors, camera entity, last-alert sensor and a phone notification with the picture |
+| 🔌 **REST API** | [`docs/api.md`](docs/api.md) – every endpoint and field; [`examples/api-php`](examples/api-php) – working PHP scripts (status, cameras, detections gallery, videos, cron poller) |
+| 📤 **Webhook** | [`docs/webhook.md`](docs/webhook.md) – Atmovio pushes status + alerts to your website; [`examples/webhook-php`](examples/webhook-php) – drop-in receiver |
+
+More on the web: [atmovio.com/api](https://www.atmovio.com/api/).
 
 ## How the AI part works
 
