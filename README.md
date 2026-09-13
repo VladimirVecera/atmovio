@@ -56,8 +56,9 @@ which disk to use for recordings (existing ext4 is reused, formatting requires t
 Docker, Frigate 0.17, Portainer, Cockpit and SkyWatch. Then open `http://<RPI-IP>` and follow the
 4-step checklist on the dashboard: add cameras → disk → alerts → AI key.
 
-Updating later: `scp update-skywatch.sh pi@<RPI-IP>: && ssh pi@<RPI-IP> sudo bash update-skywatch.sh`
-(backs up, verifies, rolls back on failure).
+Updating later: the web UI tells you when a new release exists and installs it on one click
+(Nastavení → Systém → Aktualizace); or `scp update-skywatch.sh pi@<RPI-IP>: && ssh pi@<RPI-IP> sudo bash update-skywatch.sh`.
+Either way it backs up, verifies and rolls back on failure.
 
 Full guide: [docs/install.md](docs/install.md).
 

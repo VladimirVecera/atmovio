@@ -56,7 +56,11 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "skywatch.db"
 LOG_FILE = APP_DIR / "skywatch.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "3.1"
+APP_VERSION = "3.2"
+GITHUB_REPO = "VladimirVecera/skywatch"          # odkud se berou nové verze (GitHub Releases)
+UPDATE_STATE_FILE = APP_DIR / "update-state.json"
+UPDATE_LOG_FILE = APP_DIR / "update.log"
+UPDATE_UNIT = "skywatch-update"                  # transientní systemd jednotka, ve které běží update-skywatch.sh
 
 # Katalog jevů: id, název, popis pro AI. Uživatel si vybírá, na které chce upozornit.
 PHENOMENA = [
@@ -154,6 +158,7 @@ DEFAULT_CONFIG = {
     "vpn": {"iface": "wg-remote", "test_ip": ""},
     "api_keys": [],
     "log_since": {},
+    "update": {"auto_check": True},
     "web": {
         "enabled": False,
         "url": "",
@@ -1327,6 +1332,14 @@ class SkyWatcher(threading.Thread):
                 cleanup_exports(cfg)
             except Exception as e:
                 log(f"Úklid videí selhal: {e}")
+        if time.time() - getattr(self, "_last_update_check", 0) > 1800 and (cfg.get("update") or {}).get("auto_check", True):
+            self._last_update_check = time.time()
+            try:
+                last = update_state().get("checked") or ""
+                if not last or (dt.datetime.now() - dt.datetime.fromisoformat(last)).total_seconds() > 86400 - 600:
+                    check_for_update()
+            except Exception as e:
+                log(f"Kontrola aktualizací selhala: {e}")
         if not storage_ready():
             self.status = "HDD nedostupný – AI se snímky pozastavena, živý náhled zůstává dostupný"
             return
@@ -1899,6 +1912,127 @@ def discover_cameras(subnets: list, user: str, password: str) -> list:
 
 # --------------------------------------------------------------------------- web app – šablony
 
+# --------------------------------------------------------------------------- aktualizace SkyWatch z GitHub Releases
+
+_update_lock = threading.Lock()
+_update_state: dict = {}
+
+
+def version_tuple(v) -> tuple:
+    return tuple(int(x) for x in re.findall(r"\d+", str(v or "")))
+
+
+def update_state() -> dict:
+    """Poslední známý stav kontroly (v paměti + v souboru, aby přežil restart služby)."""
+    global _update_state
+    if not _update_state and UPDATE_STATE_FILE.exists():
+        try:
+            _update_state = json.loads(UPDATE_STATE_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            _update_state = {}
+    st = dict(_update_state)
+    st["current"] = APP_VERSION
+    st["available"] = bool(st.get("latest")) and version_tuple(st["latest"]) > version_tuple(APP_VERSION)
+    return st
+
+
+def _save_update_state(st: dict):
+    global _update_state
+    _update_state = st
+    try:
+        atomic_write(UPDATE_STATE_FILE, json.dumps(st, ensure_ascii=False, indent=1))
+    except Exception as e:
+        log(f"Aktualizace: stav se nepodařilo uložit: {e}")
+
+
+def check_for_update() -> dict:
+    """Zeptá se GitHubu na poslední vydání (jen dotaz, nic se neinstaluje). Chyba se uloží do state['error']."""
+    keys = ("latest", "tag", "name", "url", "published", "notes", "script_url", "sums_url")
+    prev = update_state()
+    st = {"checked": dt.datetime.now().isoformat(timespec="seconds"), "error": ""}
+    try:
+        r = requests.get(f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest", timeout=15,
+                         headers={"Accept": "application/vnd.github+json", "User-Agent": f"SkyWatch/{APP_VERSION}"})
+        if r.status_code == 404:
+            st.update({k: "" for k in keys})   # repozitář zatím nemá žádné vydání
+        else:
+            r.raise_for_status()
+            rel = r.json()
+            assets = {a.get("name"): a.get("browser_download_url") for a in rel.get("assets") or []}
+            st.update({
+                "latest": str(rel.get("tag_name") or "").lstrip("vV"), "tag": rel.get("tag_name") or "",
+                "name": rel.get("name") or "", "url": rel.get("html_url") or "", "published": (rel.get("published_at") or "")[:10],
+                "notes": (rel.get("body") or "").replace("\r", "")[:6000],
+                "script_url": assets.get("update-skywatch.sh") or "", "sums_url": assets.get("SHA256SUMS") or "",
+            })
+        if st.get("latest") and version_tuple(st["latest"]) > version_tuple(APP_VERSION) and prev.get("latest") != st["latest"]:
+            log(f"K dispozici je nová verze SkyWatch {st['latest']} (běží {APP_VERSION}) – Nastavení → Systém → Aktualizace")
+    except Exception as e:
+        st.update({k: prev.get(k, "") for k in keys})
+        st["error"] = f"{type(e).__name__}: {e}"[:300]
+    _save_update_state(st)
+    return update_state()
+
+
+def update_running() -> bool:
+    _rc, out = run(["systemctl", "is-active", f"{UPDATE_UNIT}.service"], timeout=10)
+    return out.strip() in ("active", "activating", "deactivating")
+
+
+def update_log_tail(n: int = 80) -> str:
+    try:
+        lines = UPDATE_LOG_FILE.read_text(encoding="utf-8", errors="replace").splitlines()
+        return "\n".join(lines[-n:])
+    except Exception:
+        return ""
+
+
+def start_update() -> str:
+    """Stáhne update-skywatch.sh z vydání, ověří SHA-256 a spustí ho jako samostatnou systemd jednotku
+    (musí přežít zastavení skywatch.service, které aktualizátor sám provede). Vrací '' nebo text chyby."""
+    with _update_lock:
+        st = update_state()
+        if not st.get("available"):
+            return "Žádná nová verze není k dispozici."
+        if not st.get("script_url") or not st.get("sums_url"):
+            return "Vydání na GitHubu nemá přiložený update-skywatch.sh a SHA256SUMS – aktualizuj ručně přes SSH."
+        if update_running():
+            return "Aktualizace už běží."
+        dl = APP_DIR / ".update-dl"
+        shutil.rmtree(dl, ignore_errors=True)
+        dl.mkdir(parents=True)
+        script = dl / "update-skywatch.sh"
+        try:
+            hdr = {"User-Agent": f"SkyWatch/{APP_VERSION}"}
+            r = requests.get(st["script_url"], timeout=180, headers=hdr)
+            r.raise_for_status()
+            data = r.content
+            r = requests.get(st["sums_url"], timeout=30, headers=hdr)
+            r.raise_for_status()
+            sums = {ln.split()[-1].lstrip("*"): ln.split()[0].lower() for ln in r.text.splitlines() if len(ln.split()) >= 2}
+            expected = sums.get("update-skywatch.sh", "")
+            if not expected or not secrets.compare_digest(expected, hashlib.sha256(data).hexdigest()):
+                return "Kontrolní součet staženého skriptu nesouhlasí – aktualizace zastavena."
+            if not data.startswith(b"#!/usr/bin/env bash") or b"SKY_DIR=/opt/nvr/skywatch" not in data[:2000]:
+                return "Stažený soubor nevypadá jako aktualizační skript SkyWatch."
+            script.write_bytes(data)
+            script.chmod(0o700)
+        except Exception as e:
+            return f"Stažení se nepovedlo: {e}"
+        UPDATE_LOG_FILE.write_text(f"== {dt.datetime.now().isoformat(timespec='seconds')} aktualizace {APP_VERSION} → {st['latest']}\n",
+                                   encoding="utf-8")
+        run(["systemctl", "reset-failed", f"{UPDATE_UNIT}.service"], timeout=10)
+        rc, out = run(["systemd-run", "--unit", UPDATE_UNIT, "--collect", "--quiet",
+                       "-p", f"StandardOutput=append:{UPDATE_LOG_FILE}", "-p", f"StandardError=append:{UPDATE_LOG_FILE}",
+                       "/bin/bash", str(script)], timeout=30)
+        if rc != 0:
+            return f"Aktualizaci se nepodařilo spustit: {out[-400:]}"
+        log(f"Aktualizace {APP_VERSION} → {st['latest']} spuštěna z webu")
+        return ""
+
+
+# --------------------------------------------------------------------------- šablony
+
 TEMPLATES = {}
 
 LOGO_SVG = """<svg class="logo" viewBox="0 0 64 64" width="34" height="34" aria-hidden="true">
@@ -1955,6 +2089,7 @@ TEMPLATES["base.html"] = """<!doctype html>
 {% if vpn_problem %}<div class="flash err"><span>⛔</span><div><b>VPN tunel zastaven pojistkou.</b> {{ vpn_problem }} <a href="/vpn">Síť a VPN</a></div></div>{% endif %}
 {% if frigate_problem %}<div class="flash err"><span>⛔</span><div><b>Nahrávání neběží – Frigate odmítl konfiguraci.</b> {{ frigate_problem }}
 <form method="post" action="/system/ctl" style="display:inline;margin-left:8px"><button class="btn small" name="action" value="fix_frigate">Opravit konfiguraci a restartovat nahrávání</button></form></div></div>{% endif %}
+{% if update_info and update_info.available and active in ['/', '/system'] and req_path != '/system/update' %}<div class="flash"><span>🆕</span><div><b>K dispozici je SkyWatch {{ update_info.latest }}</b> (běží {{ version }}). <a href="/system/update">Co je nového a aktualizace</a></div></div>{% endif %}
 <div class="page-head"><div><h1>{{ title }}</h1>{% if subtitle %}<p class="sub">{{ subtitle }}</p>{% endif %}</div>{% block actions %}{% endblock %}</div>
 {% block content %}{% endblock %}
 </main>
@@ -2379,14 +2514,47 @@ Heslo:    {{ frigate_pw }}</pre>{% endif %}</div>
 {% if api_keys %}<div class="tw"><table><tr><th>Název</th><th>Klíč</th><th>Vytvořen</th><th></th></tr>{% for k in api_keys %}<tr><td>{{ k.name }}</td><td><code>{{ k.hint }}</code></td><td class="hint">{{ k.created|czdt }}</td><td><form method="post" action="/system/api_key/delete" onsubmit="return confirm('Zrušit klíč {{ k.name }}? Co ho používá, přestane fungovat.')"><input type="hidden" name="hint" value="{{ k.hint }}"><button class="btn small sec">Zrušit</button></form></td></tr>{% endfor %}</table></div>{% endif %}
 <form method="post" action="/system/api_key" class="row" style="align-items:end;margin-top:.5rem"><div><label>Název nového klíče</label><input type="text" name="name" placeholder="např. Home Assistant" maxlength="40"></div><div style="flex:0"><button class="btn small">Vytvořit klíč</button></div></form>
 <div class="hint" style="margin-top:.4rem">Zkus: <code>curl -H "Authorization: Bearer KLÍČ" http://{{ s.ip.split(' ')[0] }}/api/v1/status</code></div></div>
+<div class="card" id="update"><h2>Aktualizace SkyWatch</h2>
+<div class="tw"><table class="kv"><tr><td>Nainstalováno</td><td>verze {{ version }}</td></tr><tr><td>Nejnovější vydání</td><td>{% if update_info.latest %}verze {{ update_info.latest }}{% elif update_info.checked %}zatím žádné{% else %}ještě nezjištěno{% endif %}{% if update_info.checked %} <span class="hint">· zjištěno {{ update_info.checked|czdt }}</span>{% endif %}</td></tr></table></div>
+{% if update_info.available %}<div class="flash"><span>🆕</span><div><b>K dispozici je verze {{ update_info.latest }}.</b></div></div>{% elif update_info.error %}<div class="flash warn"><span>⚠️</span><div>Kontrola se nepovedla: {{ update_info.error }}</div></div>{% endif %}
+<a class="btn small{% if not update_info.available %} sec{% endif %}" href="/system/update">{% if update_info.available %}Co je nového a aktualizovat{% else %}Kontrola a novinky{% endif %}</a>
+<p class="hint" style="margin-top:10px">Nové verze se berou z GitHubu ({{ github_repo }}). Instaluje se jen na kliknutí, původní verze se zálohuje a při chybě se sama vrátí.</p></div>
 <div class="card"><h2>Heslo do SkyWatch</h2>
 <form method="post" action="/system/password"><label>Nové heslo (min. 12 znaků)</label><input type="password" name="pw1" required minlength="12" autocomplete="new-password"><label>Znovu</label><input type="password" name="pw2" required minlength="12" autocomplete="new-password"><button class="btn">Změnit heslo</button></form></div>
 </div>
 <details><summary>Pro pokročilé: služby, aktualizace, logy</summary>
 <pre>{{ docker }}</pre>
 <form method="post" action="/system/ctl" style="display:inline"><button class="btn small sec" name="action" value="restart_portainer">Restart Portainer</button> <button class="btn small sec" name="action" value="update" onclick="return confirm('Stáhnout verze z docker-compose.yml a restartovat kontejnery?')">Aktualizovat kontejnery</button></form>
-<p class="hint">Aktualizace systému, síť, uživatelé a disky: <a href="{{ cockpit_ui }}" target="_blank" rel="noopener">Cockpit ↗</a>. Kontejnery: <a href="{{ portainer_ui }}" target="_blank" rel="noopener">Portainer ↗</a>. Aktualizace SkyWatch: přes SSH <code>sudo bash update-skywatch.sh</code>.</p>
+<p class="hint">Aktualizace systému, síť, uživatelé a disky: <a href="{{ cockpit_ui }}" target="_blank" rel="noopener">Cockpit ↗</a>. Kontejnery: <a href="{{ portainer_ui }}" target="_blank" rel="noopener">Portainer ↗</a>. Aktualizace SkyWatch: karta výše, nebo ručně přes SSH <code>sudo bash update-skywatch.sh</code>.</p>
 <p class="hint">Logy všech částí (SkyWatch, disk, VPN, nahrávání, systém) najdeš v sekci <a href="/logs">Logy</a>.</p></details>
+{% endblock %}"""
+
+TEMPLATES["update.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small sec" href="/system">← Systém</a></div>{% endblock %}{% block content %}
+<div x-data="updater({{ 'true' if running else 'false' }}, {{ version|tojson }}, {{ log_text|tojson }})">
+<div class="grid">
+<div class="card"><h2>Verze</h2>
+<div class="tw"><table class="kv"><tr><td>Nainstalováno</td><td>verze {{ version }}</td></tr><tr><td>Nejnovější vydání</td><td>{% if st.latest %}verze {{ st.latest }}{% if st.published %} <span class="hint">· vydáno {{ st.published }}</span>{% endif %}{% elif st.checked %}zatím žádné vydání{% else %}ještě nezjištěno{% endif %}</td></tr><tr><td>Naposledy zjištěno</td><td>{% if st.checked %}{{ st.checked|czdt }}{% else %}–{% endif %}</td></tr></table></div>
+{% if st.error %}<div class="flash warn"><span>⚠️</span><div>Kontrola se nepovedla: {{ st.error }}<br><span class="hint">RPi potřebuje přístup na api.github.com a github.com.</span></div></div>{% endif %}
+{% if running %}<div class="flash"><span>⏳</span><div><b>Aktualizace probíhá…</b> Web se na chvíli odmlčí, až se SkyWatch restartuje. Nech stránku otevřenou, sama ukáže výsledek.</div></div>
+{% elif st.available %}<div class="flash"><span>🆕</span><div><b>K dispozici je verze {{ st.latest }}.</b> Trvá to zhruba 2–4 minuty; nahrávání kamer běží dál, jen web SkyWatch je chvíli nedostupný. Původní verze se zálohuje a při chybě se sama vrátí.</div></div>
+<form method="post" action="/system/update/start" data-nobusy><button class="btn" :disabled="running" onclick="return confirm('Nainstalovat SkyWatch {{ st.latest }}? Web bude asi minutu nedostupný.')">Nainstalovat verzi {{ st.latest }}</button></form>
+{% elif st.checked %}<p class="hint">Máš nejnovější verzi.</p>{% else %}<p class="hint">Klikni na Zkontrolovat teď.</p>{% endif %}
+<form method="post" action="/system/update/check" style="margin-top:.6rem"><button class="btn small sec" :disabled="running" data-busy="Ptám se GitHubu">Zkontrolovat teď</button></form>
+<form method="post" action="/system/update/auto" data-nobusy style="margin-top:.8rem"><label><input type="checkbox" name="auto_check" value="1" {% if auto_check %}checked{% endif %} onchange="this.form.submit()"> Kontrolovat nové verze automaticky (1× denně jen dotaz na GitHub; nic se neinstaluje samo)</label></form>
+</div>
+<div class="card"><h2>Co je nového{% if st.latest %} ve verzi {{ st.latest }}{% endif %}</h2>
+{% if st.notes %}<pre style="white-space:pre-wrap;max-height:22rem;overflow:auto">{{ st.notes }}</pre>{% else %}<p class="hint">Popis vydání se zobrazí po kontrole.</p>{% endif %}
+{% if st.url %}<a href="{{ st.url }}" target="_blank" rel="noopener">Vydání na GitHubu ↗</a>{% endif %}</div>
+</div>
+<div class="card" x-show="running || log" x-cloak>
+ <h2>Průběh aktualizace</h2>
+ <div class="flash" x-show="phase=='run'"><span>⏳</span><div>Připravuji novou verzi (stažení knihoven, kontrola)…</div></div>
+ <div class="flash" x-show="phase=='restart'"><span>⏳</span><div>SkyWatch se restartuje, čekám na odpověď…</div></div>
+ <div class="flash" x-show="phase=='done'"><span>✅</span><div><b>Hotovo.</b> Běží verze <span x-text="newVersion"></span>. <a href="/system/update">Obnovit stránku</a></div></div>
+ <div class="flash err" x-show="phase=='failed'"><span>⛔</span><div><b>Aktualizace selhala</b>, původní verze byla obnovena. Podrobnosti v záznamu níže.</div></div>
+ <pre style="max-height:24rem;overflow:auto;font-size:.8rem;white-space:pre-wrap" x-text="log"></pre>
+</div>
+</div>
 {% endblock %}"""
 
 TEMPLATES["logs.html"] = """{% extends "base.html" %}{% block content %}
@@ -2641,7 +2809,8 @@ SUBTITLES = {
     "/email": "Kam chodí upozornění a kdy se hlásí výpadky.",
     "/vpn": "Je vzdálená kamera dostupná? Síťové údaje RPi.",
     "/logs": "Co se v systému děje: hlídání oblohy, kamery, disk, VPN, nahrávání.",
-    "/system": "Stav Raspberry Pi, restart, hesla.",
+    "/system": "Stav Raspberry Pi, restart, hesla, aktualizace.",
+    "/system/update": "Nové verze SkyWatch z GitHubu: kontrola, co je nového, instalace jedním tlačítkem.",
     "/videos": "Videa vystřižená ze záznamů – ke stažení, s náhledem. Sama se mažou po nastavené době.",
 }
 
@@ -2677,7 +2846,8 @@ def render(request: Request, tpl: str, title: str, **ctx) -> HTMLResponse:
         active=active, favicon=FAVICON, side=side, flashes=flashes, **static_assets(),
         frigate_ui=f"https://{host}:8971", cockpit_ui=f"https://{host}:9090", portainer_ui=f"https://{host}:9443",
         flash=flash, flash_kind=flash_kind, csrf_token=csrf_token(request), storage=st,
-        frigate_problem=watcher.frigate_problem, vpn_problem=watcher.vpn_problem, disk_warning=disk_health_warning(), **ctx,
+        frigate_problem=watcher.frigate_problem, vpn_problem=watcher.vpn_problem, disk_warning=disk_health_warning(),
+        update_info=update_state(), req_path=path, github_repo=GITHUB_REPO, **ctx,
     )
     return HTMLResponse(html)
 
@@ -2908,6 +3078,7 @@ def api_status(request: Request):
     st = storage_status()
     d = disk_info(cfg["recordings_path"]) if st["mode"] in ("recording", "legacy") else {}
     sysi = sys_info()
+    upd = update_state()
     return {
         "ok": True, "version": APP_VERSION, "time": now.isoformat(timespec="seconds"),
         "frigate": {"online": fs["online"], "version": fs.get("version", "")},
@@ -2919,6 +3090,7 @@ def api_status(request: Request):
         "system": {"hostname": sysi.get("hostname"), "temp": sysi.get("temp"), "uptime": sysi.get("uptime"), "load": sysi.get("load"),
                    "ip": sysi.get("ip"), "ip_vpn": sysi.get("ip_vpn"), "mem": sysi.get("mem")},
         "outages": {k: int(v) for k, v in watcher.outage_state().items() if v is not None},
+        "update": {"latest": upd.get("latest") or None, "available": upd["available"], "checked": upd.get("checked") or None},
     }
 
 
@@ -5123,6 +5295,50 @@ def system_ctl(request: Request, action: str = Form(...)):
         else:
             flash(request, "Heslo se nepodařilo vyčíst z logu – zkus 'docker logs frigate | grep -i password'.", "err")
     return RedirectResponse("/system", status_code=303)
+
+
+@app.get("/system/update", response_class=HTMLResponse)
+def update_page(request: Request):
+    cfg = load_config()
+    return render(request, "update.html", "Aktualizace SkyWatch", st=update_state(), running=update_running(),
+                  log_text=update_log_tail(), auto_check=bool((cfg.get("update") or {}).get("auto_check", True)))
+
+
+@app.get("/system/update/status")
+def update_status():
+    return {"running": update_running(), "version": APP_VERSION, "log": update_log_tail(), "state": update_state()}
+
+
+@app.post("/system/update/check")
+def update_check(request: Request):
+    st = check_for_update()
+    if st.get("error"):
+        flash(request, "Kontrola se nepovedla: " + st["error"], "err")
+    elif st["available"]:
+        flash(request, f"K dispozici je verze {st['latest']}.")
+    elif st.get("latest"):
+        flash(request, f"Máš nejnovější verzi ({APP_VERSION}).")
+    else:
+        flash(request, "Na GitHubu zatím není žádné vydání.")
+    return RedirectResponse("/system/update", status_code=303)
+
+
+@app.post("/system/update/start")
+def update_start(request: Request):
+    err = start_update()
+    if err:
+        flash(request, err, "err")
+    else:
+        flash(request, "Aktualizace spuštěna – průběh je níže.")
+    return RedirectResponse("/system/update", status_code=303)
+
+
+@app.post("/system/update/auto")
+def update_auto(request: Request, auto_check: str = Form("")):
+    with edit_config() as cfg:
+        cfg.setdefault("update", {})["auto_check"] = bool(auto_check)
+    flash(request, "Automatická kontrola zapnuta." if auto_check else "Automatická kontrola vypnuta.")
+    return RedirectResponse("/system/update", status_code=303)
 
 
 @app.post("/system/password")

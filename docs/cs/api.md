@@ -22,7 +22,7 @@ API běží na obyčejném HTTP v LAN/VPN – nevystavuj ho do internetu.
 
 | Metoda + cesta | Vrací |
 |---|---|
-| `GET /api/v1/status` | stav NVR: verze, Frigate, úložiště, využití AI, slunce, systém, aktuální výpadky |
+| `GET /api/v1/status` | stav NVR: verze, Frigate, úložiště, využití AI, slunce, systém, aktuální výpadky, dostupná aktualizace (`update`) |
 | `GET /api/v1/cameras` | seznam kamer: online/fps/IP/cesta, AI příznaky, URL snímku |
 | `GET /api/v1/cameras/{name}/snapshot.jpg?h=720` | aktuální JPEG (výška 120–1080) |
 | `GET /api/v1/detections?limit=20&camera=&notified=1&min_score=0` | poslední detekce AI (výchozí jen s upozorněním; `notified=0` = všechna vyhodnocení) |

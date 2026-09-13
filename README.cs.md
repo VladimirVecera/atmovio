@@ -53,8 +53,9 @@ použít na záznamy (existující ext4 se použije bez mazání, formátování
 Docker, Frigate 0.17, Portainer, Cockpit a SkyWatch. Pak otevři `http://<IP-RPI>` a projdi 4 kroky na
 Přehledu: kamery → disk → upozornění → klíč k AI.
 
-Aktualizace: `scp update-skywatch.sh pi@<IP-RPI>: && ssh pi@<IP-RPI> sudo bash update-skywatch.sh`
-(zálohuje, ověří, při chybě se vrátí).
+Aktualizace: web sám hlásí, když vyšla nová verze, a nainstaluje ji na jedno kliknutí (Nastavení → Systém → Aktualizace);
+nebo `scp update-skywatch.sh pi@<IP-RPI>: && ssh pi@<IP-RPI> sudo bash update-skywatch.sh`.
+V obou případech se zálohuje, ověří a při chybě vrátí.
 
 Podrobně: [docs/cs/instalace.md](docs/cs/instalace.md).
 

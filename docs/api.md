@@ -22,7 +22,7 @@ The API is served over plain HTTP inside your LAN/VPN – do not expose it to th
 
 | Method + path | Returns |
 |---|---|
-| `GET /api/v1/status` | NVR status: version, Frigate, storage, AI usage, sun times, system, current outages |
+| `GET /api/v1/status` | NVR status: version, Frigate, storage, AI usage, sun times, system, current outages, available update (`update`) |
 | `GET /api/v1/cameras` | list of cameras with online/fps/IP/path, AI flags and snapshot URL |
 | `GET /api/v1/cameras/{name}/snapshot.jpg?h=720` | current JPEG frame (height 120–1080) |
 | `GET /api/v1/detections?limit=20&camera=&notified=1&min_score=0` | latest AI detections (notified only by default; `notified=0` = all evaluations) |
@@ -45,13 +45,14 @@ curl -s -H "Authorization: Bearer sw_…" http://192.168.1.20/api/v1/cameras/zah
 
 ```json
 {
-  "ok": true, "version": "3.1", "time": "2026-09-13T19:12:00+02:00",
+  "ok": true, "version": "3.2", "time": "2026-09-13T19:12:00+02:00",
   "frigate": {"online": true, "version": "0.17.2"},
   "storage": {"mode": "recording", "reason": "", "disk_pct": 41, "disk_free": "1.2 TB", "disk_total": "1.8 TB", "retain_days": 14},
   "ai": {"enabled": true, "status": "běží, …", "used_today": 84, "daily_limit": 500, "cameras": ["zahrada"], "daytime": true},
   "sun": {"dawn": "05:04", "sunrise": "06:17", "sunset": "19:09", "dusk": "20:21"},
   "system": {"hostname": "rpi5", "temp": "52 °C", "uptime": "3 d 4 h", "load": "0.4 0.3 0.3", "ip": "192.168.1.20", "ip_vpn": "10.10.10.5", "mem": "1.1Gi / 7.9Gi"},
-  "outages": {"cam:chata": 340}
+  "outages": {"cam:chata": 340},
+  "update": {"latest": "3.2", "available": false, "checked": "2026-09-13T06:10:00"}
 }
 ```
 

@@ -2,6 +2,15 @@
 
 All notable changes to SkyWatch. Versions correspond to `APP_VERSION` in `src/skywatch/app.py`.
 
+## 3.2 – 2026-09
+
+- Update from the web UI: SkyWatch checks GitHub Releases once a day (can be turned off), shows a banner when a
+  newer version exists, and installs it on one click (Nastavení → Systém → Aktualizace) – downloads
+  `update-skywatch.sh` from the release, verifies SHA-256 against `SHA256SUMS`, runs it as a separate systemd unit
+  and shows progress/result; the existing automatic rollback applies.
+- `GET /api/v1/status` reports `update.latest` / `update.available`.
+- Release workflow: pushing a `v*` tag builds a GitHub release with `install.sh`, `update-skywatch.sh` and `SHA256SUMS`.
+
 ## 3.1 – 2026-09
 
 - Open-source release: generic webhook (any website), example PHP receiver, read-only REST API with API keys,

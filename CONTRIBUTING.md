@@ -31,6 +31,8 @@ non-technical person can install and understand. Every change should keep it tha
 4. Test on a real Raspberry Pi 5 if the change touches the installer, Frigate config, disks or VPN.
    For UI-only changes a local run is fine: `SKYWATCH_DIR=/tmp/sw SKYWATCH_PORT=8099 SKYWATCH_ADMIN_PASSWORD=… python3 src/skywatch/app.py`.
 5. Bump `APP_VERSION` in `app.py` for user-visible changes and add a line to `CHANGELOG.md`.
+   (Maintainer: a release is a tag `v<APP_VERSION>` on `main` – the Release workflow attaches `install.sh`,
+   `update-skywatch.sh` and `SHA256SUMS`; installed SkyWatch instances offer that release in the web UI.)
 6. Open a pull request. Describe *what the user will notice*, not only what the code does.
    Screenshots of UI changes are very welcome.
 

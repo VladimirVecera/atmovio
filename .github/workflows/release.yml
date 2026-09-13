@@ -1,0 +1,40 @@
+name: Release
+
+# Vydání = tag v<verze> (např. v3.2). K release se přiloží install.sh, update-skywatch.sh a SHA256SUMS;
+# SkyWatch na RPi si z něj bere aktualizace (Nastavení → Systém → Aktualizace).
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Built scripts match sources
+        run: bash src/build.sh --check
+      - name: Tag matches APP_VERSION
+        run: |
+          v=$(sed -n 's/^APP_VERSION = "\([^"]*\)".*/\1/p' src/skywatch/app.py)
+          [ "v$v" = "$GITHUB_REF_NAME" ] || { echo "APP_VERSION=$v, tag=$GITHUB_REF_NAME – must match"; exit 1; }
+      - name: Checksums
+        run: sha256sum install.sh update-skywatch.sh > SHA256SUMS && cat SHA256SUMS
+      - name: Release notes from CHANGELOG
+        run: |
+          python3 - "${GITHUB_REF_NAME#v}" > notes.md <<'PY'
+          import re, sys
+          ver = sys.argv[1]
+          text = open("CHANGELOG.md", encoding="utf-8").read()
+          m = re.search(r"^## " + re.escape(ver) + r"\b[^\n]*\n(.*?)(?=^## |\Z)", text, re.S | re.M)
+          body = (m.group(1).strip() if m else "") or f"SkyWatch {ver}"
+          print(body)
+          print("\n---\nUpdate: Nastavení → Systém → Aktualizace in the web UI, or `scp update-skywatch.sh pi@IP: && ssh pi@IP sudo bash update-skywatch.sh`.")
+          PY
+          cat notes.md
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" install.sh update-skywatch.sh SHA256SUMS --title "SkyWatch ${GITHUB_REF_NAME#v}" --notes-file notes.md

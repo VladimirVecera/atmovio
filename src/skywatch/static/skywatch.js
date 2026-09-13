@@ -69,6 +69,30 @@
         }
       };
     });
+
+    // Průběh aktualizace SkyWatch (/system/update): každé 3 s se ptá /system/update/status.
+    // Během restartu služby dotaz selže – to je normální fáze "restart"; hotovo = odpověď s jinou verzí.
+    Alpine.data('updater', function (running, version, log) {
+      return {
+        running: !!running, version: version, log: log || '', phase: running ? 'run' : '', newVersion: '', idle: 0,
+        init: function () { if (this.running) this.poll(); },
+        later: function () { var self = this; setTimeout(function () { self.poll(); }, 3000); },
+        poll: function () {
+          var self = this;
+          fetch('/system/update/status', { credentials: 'same-origin', cache: 'no-store' })
+            .then(function (r) { if (!r.ok || r.redirected) throw new Error('nedostupné'); return r.json(); })
+            .then(function (s) {
+              if (s.log) self.log = s.log;
+              if (s.version && s.version !== self.version) { self.phase = 'done'; self.newVersion = s.version; self.running = false; return; }
+              if (s.running) { self.phase = 'run'; self.idle = 0; self.later(); return; }
+              // Jednotka skončila a verze je stejná: buď rollback (poznáme z logu), nebo se ještě nerozběhla.
+              if (/selhala|obnovuji|rollback/i.test(self.log) || ++self.idle > 10) { self.phase = 'failed'; self.running = false; return; }
+              self.phase = 'run'; self.later();
+            })
+            .catch(function () { self.phase = 'restart'; self.later(); });
+        }
+      };
+    });
   });
 
   // ---------- Odeslání formuláře: zablokovat tlačítko a ukázat, co se děje ----------
@@ -79,6 +103,7 @@
     ['/ai/test', 'Beru snímek z kamery a posílám ho AI – do půl minuty.'],
     ['/ai/check', 'Ověřuji klíč u poskytovatele AI.'],
     ['/system/ctl', 'Provádím akci; služby se restartují.'],
+    ['/system/update/check', 'Ptám se GitHubu na poslední vydání.'],
   ];
   function installBusy() {
     var busy = document.getElementById('busy');

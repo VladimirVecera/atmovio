@@ -64,6 +64,15 @@ Logs: **Logy** page in SkyWatch; `journalctl -u skywatch`, `journalctl -u nvr-st
 
 ## Update
 
+**From the web UI (recommended):** SkyWatch checks [GitHub Releases](https://github.com/VladimirVecera/skywatch/releases)
+once a day (a single request; nothing is installed automatically) and shows a banner on the dashboard when a newer
+version exists. Open **Nastavení → Systém → Aktualizace**, read what is new and click **Nainstalovat**. SkyWatch downloads
+`update-skywatch.sh` from the release, verifies its SHA-256 against the release's `SHA256SUMS`, and runs it as a separate
+systemd unit (so it survives the restart of SkyWatch itself); the page shows progress and the result. Recording keeps running;
+the web UI is unavailable for about a minute. The daily check can be turned off on the same page.
+
+**Manually over SSH** (same script, same result – useful when the Pi has no internet access):
+
 ```sh
 scp update-skywatch.sh pi@192.168.1.20:
 ssh pi@192.168.1.20

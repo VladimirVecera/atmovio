@@ -64,6 +64,15 @@ Logy: stránka **Logy** ve SkyWatch; `journalctl -u skywatch`, `journalctl -u nv
 
 ## Aktualizace
 
+**Z webu (doporučeno):** SkyWatch se jednou denně zeptá [GitHub Releases](https://github.com/VladimirVecera/skywatch/releases)
+(jeden dotaz; nic se neinstaluje samo) a když existuje novější verze, ukáže lištu na Přehledu. Otevři
+**Nastavení → Systém → Aktualizace**, přečti si, co je nového, a klikni na **Nainstalovat**. SkyWatch stáhne
+`update-skywatch.sh` z vydání, ověří jeho SHA-256 proti `SHA256SUMS` z vydání a spustí ho jako samostatnou systemd
+jednotku (přežije restart samotného SkyWatch); stránka ukazuje průběh a výsledek. Nahrávání běží dál, web je asi minutu
+nedostupný. Denní kontrolu jde na téže stránce vypnout.
+
+**Ručně přes SSH** (stejný skript, stejný výsledek – hodí se, když RPi nemá přístup na internet):
+
 ```sh
 scp update-skywatch.sh pi@192.168.1.20:
 ssh pi@192.168.1.20
