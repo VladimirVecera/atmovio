@@ -15,7 +15,7 @@
 
 ## Instalace
 
-1. Stáhni `install.sh` ze stránky **Releases** tohoto repozitáře (nebo z kořene repozitáře).
+1. Stáhni `install.sh` z [Releases](https://github.com/VladimirVecera/skywatch/releases) (nebo z kořene repozitáře).
 2. Zkopíruj ho na Pi a spusť jako root **v interaktivním terminálu** (skript se ptá; `curl | bash` odmítne):
 
    ```sh

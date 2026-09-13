@@ -125,7 +125,7 @@ h1{font-size:1.5rem;margin:.2rem 0}
       <b><?= $h($e['subject']) ?></b> <span class="hint"><?= $h($e['message']) ?></span></div>
   <?php if ($shown >= 20) break; endforeach; if ($shown === 0): ?><p class="hint">Zatím žádné.</p><?php endif; ?>
 </div>
-<p class="hint">Stránku generuje ukázkový přijímač z projektu <a href="https://github.com/">SkyWatch</a>. Obnovuje se ručně; záznamník posílá stav každou minutu.</p>
+<p class="hint">Stránku generuje ukázkový přijímač z projektu <a href="https://github.com/VladimirVecera/skywatch">SkyWatch</a>. Obnovuje se ručně; záznamník posílá stav každou minutu.</p>
 </main>
 <div class="lb" id="lb" onclick="this.classList.remove('open')"><img id="lbi" alt=""></div>
 <script>function lb(s){document.getElementById('lbi').src=s;document.getElementById('lb').classList.add('open')}</script>
