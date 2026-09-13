@@ -61,6 +61,22 @@ Expected response: `{"ok": true, "nvr": "name to display", "server_time": "2026-
 `storage_mode`: `recording` | `legacy` | `live` (no disk) | other values = not ready. `via`: `LAN` | `VPN` | `?`.
 `thumb` is omitted when thumbnails are disabled or the camera is offline.
 
+Since 3.3 the heartbeat also carries **`api`** – a snapshot of everything the [REST API](api.md) returns, with identical
+fields, so a website that cannot reach the Pi (LAN/VPN only) can still show it:
+
+```json
+"api": {
+  "status":     { … same as GET /api/v1/status … },
+  "cameras":    [ … same as GET /api/v1/cameras … ],
+  "detections": [ … same as GET /api/v1/detections?limit=30 (notified only) …, "thumb": "<base64 JPEG, height 240 px>" ],
+  "videos":     [ … same as GET /api/v1/videos …, "thumb": "<base64 JPEG>" ],
+  "events":     [ … same as GET /api/v1/events?limit=30 … ]
+}
+```
+`thumb` is sent only for detections/videos the Pi has not sent yet since it started (max. 3 + 3 per heartbeat), so store
+them on your side keyed by `id`; items that disappear from the lists were deleted on the Pi. `api` is `null` when the
+snapshot could not be built. All `*_url` links point to the Pi and work only at home / over VPN.
+
 ### `event`
 
 ```json

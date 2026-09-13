@@ -2,6 +2,12 @@
 
 All notable changes to SkyWatch. Versions correspond to `APP_VERSION` in `src/skywatch/app.py`.
 
+## 3.3 – 2026-09
+
+- Webhook heartbeat carries `api`: a snapshot of everything the REST API returns (status, cameras, notified
+  detections, videos, events – identical fields) plus thumbnails of new detections/videos, so a website that
+  cannot reach the Pi can show the same data. `status.ai.threshold` added to the API.
+
 ## 3.2 – 2026-09
 
 - Update from the web UI: SkyWatch checks GitHub Releases once a day (can be turned off), shows a banner when a

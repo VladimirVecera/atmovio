@@ -33,7 +33,8 @@ jobs:
           PY
       - name: No personal data in sources
         run: |
-          ! grep -rniE "vladimir-vecera|@gmail\.com|password *= *['\"][^'\"]{4,}" src/ --include=*.py --include=*.sh --include=*.js --include=*.css
+          # heslo zapsané natvrdo (ne odkaz na proměnnou jako PASSWORD="$ADMIN_PW")
+          ! grep -rniE "vladimir-vecera|@gmail\.com|password *= *['\"][^'\"$]{4,}" src/ --include=*.py --include=*.sh --include=*.js --include=*.css
       - name: PHP example syntax
         run: |
           sudo apt-get install -y -q php-cli >/dev/null

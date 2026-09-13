@@ -33,6 +33,9 @@ Odpověď musí být JSON. `{"ok": true}` = přijato. Cokoli jiného (nebo ne-2x
 Timeouty: 20 s (ping), 30 s (heartbeat), 40 s (událost). Tělo do ~3 MB (obrázky jsou base64 JPEG).
 
 Formát zpráv `ping`, `heartbeat` a `event` včetně příkladů je v [anglické verzi](../webhook.md#protocol) – pole jsou stejná.
+Od verze 3.3 nese heartbeat i klíč `api` – snímek všeho, co vrací [REST API](api.md) (status, kamery, detekce, videa,
+události, stejná pole) plus náhledy nových detekcí a videí, takže web, který se na RPi nedostane, může zobrazit totéž
+co SkyWatch.
 Identifikátory jevů: `cervanky, shelf, mammatus, beranci, bourka, blesk, duha, halo, paprsky, lentikularni, mlha, tornado,
 wallcloud, rollcloud, asperitas, kroupy, prehanka, virga, dest, snezeni, jine`.
 

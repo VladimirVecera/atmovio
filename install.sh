@@ -474,7 +474,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "skywatch.db"
 LOG_FILE = APP_DIR / "skywatch.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "3.2"
+APP_VERSION = "3.3"
 GITHUB_REPO = "VladimirVecera/skywatch"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -1610,6 +1610,55 @@ def deliver(cfg, subject: str, body: str, image: bytes | None = None, image_name
     return ", ".join(channels)
 
 
+_web_sent: dict[str, set] = {"det": set(), "vid": set()}   # id, jejichž náhled už web dostal (po restartu se pošlou znovu – neškodí)
+
+
+def small_jpeg_b64(data: bytes, height: int = 240, max_bytes: int = 120_000) -> str | None:
+    """Zmenšený JPEG pro web (base64) – aby heartbeat zůstal malý."""
+    try:
+        im = Image.open(io.BytesIO(data))
+        im.thumbnail((height * 4, height))
+        buf = io.BytesIO()
+        im.convert("RGB").save(buf, "JPEG", quality=72, optimize=True)
+        out = buf.getvalue()
+        return base64.b64encode(out).decode() if len(out) <= max_bytes else None
+    except Exception:
+        return None
+
+
+def web_api_snapshot(cfg, fs: dict, base: str) -> dict:
+    """Vše, co nabízí REST API (stejná pole), pro stránku IP kamery na webu – web se na RPi nedostane, tak mu to RPi posílá.
+    Náhledy detekcí a videí jdou jen k novým položkám (max. 3 + 3 za minutu)."""
+    detections = api_detections_data(cfg, base, limit=30) if storage_ready() else []
+    videos = api_videos_data(cfg, base) if storage_ready() else []
+    sent = 0
+    snap_dir = Path(cfg["snapshot_dir"])
+    with db() as con:
+        for d in detections:
+            if sent >= 3 or d["id"] in _web_sent["det"]:
+                continue
+            row = con.execute("SELECT image FROM evaluations WHERE id=?", (d["id"],)).fetchone()
+            f = snap_dir / str(row["image"]) if row and row["image"] else None
+            if f and f.is_file():
+                b64 = small_jpeg_b64(f.read_bytes())
+                if b64:
+                    d["thumb"] = b64; sent += 1
+            _web_sent["det"].add(d["id"])
+    sent = 0
+    thumbs = {v["id"]: v.get("thumb_path") for v in list_videos(cfg)} if videos else {}
+    for v in videos:
+        if sent >= 3 or v["id"] in _web_sent["vid"] or not v["ready"]:
+            continue
+        f = Path(thumbs.get(v["id"]) or "")
+        if f.is_file():
+            b64 = small_jpeg_b64(f.read_bytes())
+            if b64:
+                v["thumb"] = b64; sent += 1
+        _web_sent["vid"].add(v["id"])
+    return {"status": api_status_data(cfg, fs), "cameras": api_cameras_data(cfg, base, fs),
+            "detections": detections, "videos": videos, "events": api_events_data(30)}
+
+
 def web_heartbeat(cfg, fs: dict, watcher_status: str, outages: dict) -> None:
     """Stav NVR + kamer + náhledy pro přehled na webu (1× za minutu)."""
     w = cfg["web"]
@@ -1632,8 +1681,13 @@ def web_heartbeat(cfg, fs: dict, watcher_status: str, outages: dict) -> None:
         cameras.append(entry)
     ai = cfg["ai"]
     urls = public_urls()
+    try:
+        api = web_api_snapshot(cfg, fs, urls["skywatch"])
+    except Exception as e:
+        log(f"Web: data z API pro heartbeat se nepodařilo sestavit: {e}")
+        api = None
     web_post(cfg, {
-        "type": "heartbeat", "nvr": w.get("nvr_name") or "Raspberry Pi NVR", "version": APP_VERSION,
+        "type": "heartbeat", "nvr": w.get("nvr_name") or "Raspberry Pi NVR", "version": APP_VERSION, "api": api,
         "skywatch_url": urls["skywatch"], "frigate_url": urls["frigate"],
         "status": {
             "frigate_online": "1" if fs["online"] else "0", "frigate_version": fs.get("version", ""),
@@ -3477,8 +3531,11 @@ app.add_middleware(SessionMiddleware, secret_key=_cfg0["secret"], max_age=60 * 6
 
 # --------------------------------------------------------------------------- REST API v1 (jen čtení; klíč v Nastavení → Systém) – docs/api.md
 
-def _api_detection(cfg, e: dict, request: Request) -> dict:
-    base = str(request.base_url).rstrip("/")
+def _api_base(request: Request) -> str:
+    return str(request.base_url).rstrip("/")
+
+
+def _api_detection(cfg, e: dict, base: str) -> dict:
     return {
         "id": e["id"], "ts": e["ts"], "camera": e["camera"], "camera_label": cam_label(cfg, e["camera"]),
         "score": e.get("score"), "phenomenon": e.get("phenomenon"), "phenomena": [x for x in (e.get("phenomena") or "").split(",") if x],
@@ -3488,11 +3545,9 @@ def _api_detection(cfg, e: dict, request: Request) -> dict:
     }
 
 
-@app.get("/api/v1/status")
-def api_status(request: Request):
-    cfg = load_config()
+def api_status_data(cfg, fs: dict | None = None) -> dict:
     now = dt.datetime.now(ZoneInfo(cfg["tz"]))
-    fs = frigate_status(cfg)
+    fs = fs or frigate_status(cfg)
     st = storage_status()
     d = disk_info(cfg["recordings_path"]) if st["mode"] in ("recording", "legacy") else {}
     sysi = sys_info()
@@ -3503,7 +3558,8 @@ def api_status(request: Request):
         "storage": {"mode": st["mode"], "reason": st.get("reason", ""), "disk_pct": d.get("pct"), "disk_free": d.get("free_h"), "disk_total": d.get("total_h"),
                     "retain_days": retain_days(cfg) if d else None},
         "ai": {"enabled": bool(cfg["ai"].get("enabled")), "status": watcher.status, "used_today": watcher.calls_today(cfg, now),
-               "daily_limit": int(cfg["ai"].get("daily_limit", 0) or 0), "cameras": list(cfg["ai"]["cameras"]), "daytime": is_daytime(cfg, now)},
+               "daily_limit": int(cfg["ai"].get("daily_limit", 0) or 0), "cameras": list(cfg["ai"]["cameras"]), "daytime": is_daytime(cfg, now),
+               "threshold": int(cfg["ai"].get("threshold", 7) or 7)},
         "sun": sun_times(cfg, now),
         "system": {"hostname": sysi.get("hostname"), "temp": sysi.get("temp"), "uptime": sysi.get("uptime"), "load": sysi.get("load"),
                    "ip": sysi.get("ip"), "ip_vpn": sysi.get("ip_vpn"), "mem": sysi.get("mem")},
@@ -3512,13 +3568,10 @@ def api_status(request: Request):
     }
 
 
-@app.get("/api/v1/cameras")
-def api_cameras(request: Request):
-    cfg = load_config()
-    fs = frigate_status(cfg)
+def api_cameras_data(cfg, base: str, fs: dict | None = None) -> list:
+    fs = fs or frigate_status(cfg)
     out_state = watcher.outage_state()
     ax = cfg["ai"].get("auto_export") or {}
-    base = str(request.base_url).rstrip("/")
     cams = []
     for c in frigate_cameras(cfg):
         st = fs["cameras"].get(c) or {}
@@ -3528,17 +3581,10 @@ def api_cameras(request: Request):
                      "fps": round(fps, 1), "outage_s": (int(out_state.get(f"cam:{c}")) if out_state.get(f"cam:{c}") is not None else None),
                      "ai": c in cfg["ai"]["cameras"], "auto_video": bool(ax.get("enabled")) and c in (ax.get("cameras") or []),
                      "snapshot_url": f"{base}/api/v1/cameras/{c}/snapshot.jpg"})
-    return {"ok": True, "cameras": cams}
+    return cams
 
 
-@app.get("/api/v1/cameras/{camera}/snapshot.jpg")
-def api_snapshot(camera: str, h: int = 720):
-    return live_thumbnail(camera, h)
-
-
-@app.get("/api/v1/detections")
-def api_detections(request: Request, camera: str = "", limit: int = 20, notified: int = 1, min_score: int = 0):
-    cfg = load_config()
+def api_detections_data(cfg, base: str, camera: str = "", limit: int = 20, notified: int = 1, min_score: int = 0) -> list:
     q = "SELECT e.*, (SELECT COUNT(*) FROM exports x WHERE x.detection_id=e.id) AS exported FROM evaluations e WHERE skipped=0 AND error IS NULL AND image IS NOT NULL"
     args: list = []
     if notified:
@@ -3550,7 +3596,39 @@ def api_detections(request: Request, camera: str = "", limit: int = 20, notified
     q += " ORDER BY id DESC LIMIT ?"; args.append(max(1, min(200, limit)))
     with db() as con:
         rows = [dict(r) for r in con.execute(q, args)]
-    return {"ok": True, "detections": [_api_detection(cfg, e, request) for e in rows]}
+    return [_api_detection(cfg, e, base) for e in rows]
+
+
+def api_videos_data(cfg, base: str) -> list:
+    return [{"id": v["id"], "name": v["name"], "camera": v["camera"], "camera_label": cam_label(cfg, v["camera"]), "detection_id": v.get("detection_id"),
+             "start_ts": v["start_ts"], "end_ts": v["end_ts"], "created": v["created"], "ready": v["ready"], "in_progress": v["in_progress"],
+             "auto": bool(v.get("auto")), "size": v.get("size_h"), "duration": v.get("duration_h"), "range": v.get("range_h"),
+             "thumb_url": f"{base}/videos/{v['id']}/thumb.jpg" if v.get("thumb") else None,
+             "download_url": f"{base}/api/v1/videos/{v['id']}/download" if v["ready"] else None} for v in list_videos(cfg)]
+
+
+def api_events_data(limit: int = 20) -> list:
+    return recent_events(max(1, min(200, limit)))
+
+
+@app.get("/api/v1/status")
+def api_status(request: Request):
+    return api_status_data(load_config())
+
+
+@app.get("/api/v1/cameras")
+def api_cameras(request: Request):
+    return {"ok": True, "cameras": api_cameras_data(load_config(), _api_base(request))}
+
+
+@app.get("/api/v1/cameras/{camera}/snapshot.jpg")
+def api_snapshot(camera: str, h: int = 720):
+    return live_thumbnail(camera, h)
+
+
+@app.get("/api/v1/detections")
+def api_detections(request: Request, camera: str = "", limit: int = 20, notified: int = 1, min_score: int = 0):
+    return {"ok": True, "detections": api_detections_data(load_config(), _api_base(request), camera, limit, notified, min_score)}
 
 
 @app.get("/api/v1/detections/{rid}")
@@ -3560,7 +3638,7 @@ def api_detection(request: Request, rid: int):
         row = con.execute("SELECT e.*, (SELECT COUNT(*) FROM exports x WHERE x.detection_id=e.id) AS exported FROM evaluations e WHERE id=?", (rid,)).fetchone()
     if not row:
         return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
-    return {"ok": True, "detection": _api_detection(cfg, dict(row), request)}
+    return {"ok": True, "detection": _api_detection(cfg, dict(row), _api_base(request))}
 
 
 @app.get("/api/v1/detections/{rid}/image.jpg")
@@ -3574,13 +3652,7 @@ def api_detection_image(rid: int):
 
 @app.get("/api/v1/videos")
 def api_videos(request: Request):
-    cfg = load_config()
-    base = str(request.base_url).rstrip("/")
-    vids = [{"id": v["id"], "name": v["name"], "camera": v["camera"], "camera_label": cam_label(cfg, v["camera"]), "detection_id": v.get("detection_id"),
-             "start_ts": v["start_ts"], "end_ts": v["end_ts"], "created": v["created"], "ready": v["ready"], "in_progress": v["in_progress"],
-             "auto": bool(v.get("auto")), "size": v.get("size_h"), "duration": v.get("duration_h"),
-             "download_url": f"{base}/api/v1/videos/{v['id']}/download" if v["ready"] else None} for v in list_videos(cfg)]
-    return {"ok": True, "videos": vids}
+    return {"ok": True, "videos": api_videos_data(load_config(), _api_base(request))}
 
 
 @app.get("/api/v1/videos/{vid}/download")
@@ -3590,7 +3662,7 @@ def api_video_download(vid: int):
 
 @app.get("/api/v1/events")
 def api_events(limit: int = 20):
-    return {"ok": True, "events": recent_events(max(1, min(200, limit)))}
+    return {"ok": True, "events": api_events_data(limit)}
 
 
 @app.post("/system/api_key")
@@ -4787,7 +4859,8 @@ def list_videos(cfg) -> list:
                    duration_h=human_minutes(rec["end_ts"] - rec["start_ts"]),
                    range_h=f"{t0.day}. {t0.month}. {t0.year} {t0:%H:%M}–{t1:%H:%M}",
                    days_left=max(0, keep - age_days),
-                   thumb=bool(export_thumb_path(cfg, rec, fr)))
+                   thumb_path=str(export_thumb_path(cfg, rec, fr) or ""))
+        rec["thumb"] = bool(rec["thumb_path"])
         out.append(rec)
     return out
 
