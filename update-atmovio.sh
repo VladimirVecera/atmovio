@@ -116,7 +116,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "4.3"
+APP_VERSION = "4.4"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -144,12 +144,39 @@ PHENOMENA = [
     ("virga", "Virga", "srážkové pruhy pod oblakem, které se vypařují ve vzduchu a nedosahují země"),
     ("dest", "Silný déšť", "silný déšť viditelný přímo v záběru – kapky, stékající voda, mlžný závoj deště, zhoršená viditelnost"),
     ("snezeni", "Sněžení", "husté sněžení nebo sněhová přeháňka viditelná v záběru"),
-    ("jine", "Jiná zajímavá obloha", "cokoliv výrazně fotogenického, co nespadá do předchozích kategorií"),
+    ("jine", "Fotogenická / zajímavá obloha", "cokoliv výrazně fotogenického, co nespadá do předchozích kategorií – krásné barvy mraků, dramatické nasvícení, výrazná struktura oblačnosti, neobvyklá atmosféra"),
 ]
 PHENOMENA_IDS = [p[0] for p in PHENOMENA]
 PHENOMENA_LABELS = {p[0]: p[1] for p in PHENOMENA}
 # Jevy přidané v pozdějších verzích – u existující instalace se zapnou automaticky (jednorázově).
 PHENOMENA_ADDED = {"2": ["tornado", "wallcloud", "rollcloud", "asperitas", "kroupy", "prehanka", "virga", "dest", "snezeni"]}
+
+
+def phenomena_catalog(ai: dict | None = None) -> list:
+    """Vestavěné jevy + vlastní jevy uživatele (ai.custom_phenomena: [{id, label, desc}])."""
+    out = list(PHENOMENA)
+    for c in (ai or {}).get("custom_phenomena") or []:
+        if c.get("id") and c.get("label"):
+            out.append((c["id"], c["label"], c.get("desc") or c["label"]))
+    return out
+
+
+def phen_labels(ai: dict | None = None) -> dict:
+    return {p[0]: p[1] for p in phenomena_catalog(ai)}
+
+
+def cam_rule(ai: dict, cam: str) -> dict:
+    """Co platí pro danou kameru: práh a sledované jevy – vlastní (ai.cam_rules[cam]), jinak výchozí."""
+    ids = [p[0] for p in phenomena_catalog(ai)]
+    default = {"threshold": int(ai.get("threshold", 7) or 7), "phenomena": [p for p in (ai.get("phenomena") or ids) if p in ids] or ids,
+               "any": bool(ai.get("any_photogenic", True)), "custom": False}
+    r = (ai.get("cam_rules") or {}).get(cam) or {}
+    if not r.get("custom"):
+        return default
+    thr = r.get("threshold")
+    ph = [p for p in (r.get("phenomena") or []) if p in ids]
+    return {"threshold": int(thr) if thr else default["threshold"], "phenomena": ph or default["phenomena"],
+            "any": bool(r.get("any", default["any"])), "custom": True}
 
 DEFAULT_PROMPT = (
     "Jsi meteorolog a fotograf oblohy. Na obrázku je záběr z venkovní kamery. "
@@ -957,7 +984,7 @@ def frigate_reset_admin_password(cfg) -> str:
 # --------------------------------------------------------------------------- AI providers
 
 def build_prompt(ai: dict) -> str:
-    selected = [p for p in PHENOMENA if p[0] in (ai.get("phenomena") or PHENOMENA_IDS)]
+    selected = phenomena_catalog(ai)
     lines = [DEFAULT_PROMPT, "", "Sledované jevy (id – popis):"]
     lines += [f"- {pid}: {label} – {desc}" for pid, label, desc in selected]
     lines += [
@@ -1133,7 +1160,8 @@ def ai_evaluate(ai: dict, image_bytes: bytes) -> tuple[dict, str]:
     if not isinstance(phenomena, list):
         phenomena = [phenomena]
     phenomena = [str(p).strip().lower() for p in phenomena]
-    phenomena = [p for p in phenomena if p in PHENOMENA_IDS]
+    known = [p[0] for p in phenomena_catalog(ai)]
+    phenomena = [p for p in phenomena if p in known]
     return {
         "score": int(score),
         "phenomena": phenomena,
@@ -1514,7 +1542,7 @@ class AtmovioWatcher(threading.Thread):
         for cam in ai["cameras"]:
             if not self.running:
                 break
-            fast = bool(ai.get("fast_mode")) and (golden or self.last_score.get(cam, 0) >= int(ai["threshold"]) - 2)
+            fast = bool(ai.get("fast_mode")) and (golden or self.last_score.get(cam, 0) >= cam_rule(ai, cam)["threshold"] - 2)
             interval = int(ai["fast_interval_min"] if fast else ai["interval_min"]) * 60
             if time.time() - self.last_check.get(cam, 0) < interval:
                 continue
@@ -1593,15 +1621,19 @@ class AtmovioWatcher(threading.Thread):
         result.update(parsed)
         result["raw"] = raw
         self.last_score[cam] = int(parsed["score"])
-        if int(parsed["score"]) >= int(ai["threshold"]):
+        rule = cam_rule(ai, cam)
+        if int(parsed["score"]) >= rule["threshold"]:
             ai_stat(day, cam, interesting=1)
 
         notified = 0
         note = ""
-        threshold = int(ai["threshold"])
-        selected = set(ai.get("phenomena") or PHENOMENA_IDS)
+        threshold = rule["threshold"]
+        selected = set(rule["phenomena"])
         detected = list(parsed["phenomena"]) or (["jine"] if parsed["score"] >= threshold else [])
         hits = [p for p in detected if p in selected]
+        # „Cokoli fotogenického“: upozornit i bez shody s vybranými jevy, když je záběr podle skóre výjimečný
+        if not hits and rule.get("any") and parsed["score"] >= threshold:
+            hits = ["jine"]
         if force:
             note = "ruční test – bez e-mailu"
         elif parsed["score"] >= threshold and hits:
@@ -1620,7 +1652,7 @@ class AtmovioWatcher(threading.Thread):
             elif ts_now - self.last_notify[cam] < cooldown:
                 note = f"odstup e-mailů {ai['cooldown_min']} min – bez e-mailu"
             else:
-                labels = ", ".join(PHENOMENA_LABELS.get(p, p) for p in fresh)
+                labels = ", ".join(phen_labels(ai).get(p, p) for p in fresh)
                 # Nejdřív uložit (kvůli id pro odkaz na detail), potom odeslat.
                 result["notified"] = 0
                 result["note"] = "odesílám…"
@@ -2368,7 +2400,7 @@ TEMPLATES["dashboard.html"] = """{% extends "base.html" %}{% block head %}{% end
 <div class="meta"><span>🖥 {{ info.ip or 'IP ?' }}</span><span>·</span><span>{{ info.via }}</span>{% if c in cfg.ai.cameras and cfg.ai.enabled %}<span class="badge info">AI hlídá</span>{% endif %}{% if cfg.ai.enabled and cfg.ai.auto_export.enabled and c in cfg.ai.auto_export.cameras %}<span class="badge ok" title="Po upozornění se automaticky vystřihne video">🎬 auto video</span>{% endif %}</div>
 {% set le = last_eval.get(c) %}
 {% if c in cfg.ai.cameras and cfg.ai.enabled %}<a class="ai-note{{ ' hit' if le and le.notified else '' }}" href="{% if le %}/detection/{{ le.id }}{% else %}/history?camera={{ c }}&show=all{% endif %}" title="Poslední hodnocení AI – kliknutím otevřeš detail">
-{% if le %}<span class="sc {{ 'ok' if le.score >= cfg.ai.threshold else 'mut' }}">{{ le.score }}/10</span><span class="t"><b>{{ le.phenomenon or 'nic zvláštního' }}</b> <small>{{ le.ts|cztime }}{% if le.ts|czdate != now_dt|czdate %} {{ le.ts|czdate }}{% endif %}</small><span class="desc">{{ le.description or '–' }}</span></span>
+{% if le %}<span class="sc {{ 'ok' if le.score >= rule(c).threshold else 'mut' }}">{{ le.score }}/10</span><span class="t"><b>{{ le.phenomenon or 'nic zvláštního' }}</b> <small>{{ le.ts|cztime }}{% if le.ts|czdate != now_dt|czdate %} {{ le.ts|czdate }}{% endif %}</small><span class="desc">{{ le.description or '–' }}</span></span>
 {% else %}<span class="sc mut">AI</span><span class="t"><small>zatím žádné hodnocení – první proběhne za světla</small></span>{% endif %}</a>{% endif %}
 <div class="acts"><a class="btn sec" href="/live/{{ c }}">{{ icons.play|safe }} Živý náhled</a><a class="btn sec" href="/camera/{{ c }}">{{ icons.cog|safe }} Nastavení</a></div></div></div>
 {% endfor %}
@@ -2576,10 +2608,25 @@ TEMPLATES["storage.html"] = """{% extends "base.html" %}{% block content %}
 <p class="hint">Smaže video vybrané kamery v zadaném rozmezí (kromě právě nahrávané hodiny). Časová osa v přehrávači se srovná do jednoho dne.</p></form></details>
 {% endblock %}"""
 
-TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block content %}
-<form method="post" action="/ai">
-<div class="card" x-data="{p: '{{ ai.provider }}'}"><div class="section-head"><h2 style="margin:0">1 · Poskytovatel AI a klíč</h2>{% if ai.api_key or ai.provider == 'ollama' %}<span class="badge ok">{{ provider_info[ai.provider].name }} · {{ ai.model or 'auto' }}</span>{% else %}<span class="badge warn">chybí klíč</span>{% endif %}</div>
-<p class="hint">Oblohu hodnotí „vision“ model – Atmovio mu pošle snímek a otázku, on vrátí skóre 0–10 a jevy. Vyber, kdo to bude dělat. <b>Google Gemini je zdarma a stačí na start</b>; placené Claude/OpenAI jsou přesnější za pár desítek korun měsíčně.</p>
+TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block head %}{% endblock %}{% block content %}
+{% set thr_opts = [(4, '4 – i docela obyčejná obloha (hodně upozornění)'), (5, '5 – hezká obloha'), (6, '6 – hezká, spíš výraznější'), (7, '7 – výrazný jev (doporučeno)'), (8, '8 – opravdu výrazný'), (9, '9 – jen výjimečná podívaná')] %}
+<div x-data="{tab: (location.hash || '#kdo').slice(1)}" x-init="$watch('tab', t => history.replaceState(null, '', '#' + t))">
+<div class="page-head"><div><h1>AI hlídání oblohy</h1><p class="sub">Umělá inteligence se dívá do kamer a dá vědět, když je na obloze něco pěkného nebo nebezpečného.</p></div>
+<div class="actions">{% if ai.enabled and (ai.api_key or ai.provider == 'ollama') %}<span class="badge ok">zapnuto · {{ ai.cameras|length }} {{ 'kamera' if ai.cameras|length == 1 else ('kamery' if ai.cameras|length < 5 else 'kamer') }} · dnes {{ used_today }} dotazů</span>{% else %}<span class="badge warn">vypnuto</span>{% endif %}</div></div>
+
+<div class="tabs big">
+ <button type="button" :class="{on: tab==='kdo'}" @click="tab='kdo'"><span class="n">1</span>Kdo hodnotí</button>
+ <button type="button" :class="{on: tab==='kamery'}" @click="tab='kamery'"><span class="n">2</span>Kamery a jevy</button>
+ <button type="button" :class="{on: tab==='kdy'}" @click="tab='kdy'"><span class="n">3</span>Kdy se dívat</button>
+ <button type="button" :class="{on: tab==='video'}" @click="tab='video'"><span class="n">4</span>Video automaticky</button>
+ <button type="button" :class="{on: tab==='test'}" @click="tab='test'"><span class="n">5</span>Vyzkoušet a statistika</button>
+</div>
+
+<form method="post" action="/ai" id="aiform"><input type="hidden" name="tab" :value="tab">
+<!-- ===== 1 · kdo hodnotí ===== -->
+<div x-show="tab==='kdo'">
+<div class="card" x-data="{p: '{{ ai.provider }}'}"><div class="section-head"><h2>Kdo se na oblohu dívá</h2>{% if ai.api_key or ai.provider == 'ollama' %}<span class="badge ok">{{ provider_info[ai.provider].name }} · {{ ai.model or 'auto' }}</span>{% else %}<span class="badge warn">chybí klíč</span>{% endif %}</div>
+<p class="hint">Snímek z kamery se pošle „vision“ modelu s otázkou, co je na obloze; ten vrátí skóre 0–10, jevy a popis. <b>Google Gemini je zdarma a stačí na start.</b> Placené Claude / OpenAI popisují přesněji za pár desítek korun měsíčně.</p>
 <div class="prov">
 {% for pid, pi in provider_info.items() %}
 <label class="prov-card" :class="{on: p==='{{ pid }}'}"><input type="radio" name="provider" value="{{ pid }}" x-model="p">
@@ -2593,13 +2640,11 @@ TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block content %}
 {% for pid, pi in provider_info.items() %}
 <div x-show="p==='{{ pid }}'" {% if ai.provider != pid %}x-cloak{% endif %}>
 {% if pid != 'ollama' %}
-<ol class="steps" style="margin-top:.8rem"><li>Otevři <a href="{{ pi.key_url }}" target="_blank" rel="noopener">{{ pi.key_url|replace('https://','') }}</a>{% if pid == 'gemini' %} a přihlas se Google účtem{% endif %}.</li><li>Klikni na <b>{{ pi.key_label }}</b> a klíč zkopíruj{% if pi.kind == 'paid' %} (nejdřív dobij kredit, obvykle 5 USD){% endif %}.</li><li>Vlož ho níže a klikni na <b>Uložit a ověřit klíč</b>.{% if pi.usage_url %} Spotřebu a limity vidíš na <a href="{{ pi.usage_url }}" target="_blank" rel="noopener">{{ pi.usage_url|replace('https://','') }}</a>.{% endif %}</li></ol>
+<ol class="steps" style="margin-top:.8rem"><li>Otevři <a href="{{ pi.key_url }}" target="_blank" rel="noopener">{{ pi.key_url|replace('https://','') }}</a>{% if pid == 'gemini' %} a přihlas se Google účtem{% endif %}.</li><li>Klikni na <b>{{ pi.key_label }}</b> a klíč zkopíruj{% if pi.kind == 'paid' %} (nejdřív dobij kredit, obvykle 5 USD){% endif %}.</li><li>Vlož ho níže a klikni na <b>Uložit a ověřit klíč</b>.{% if pi.usage_url %} Spotřebu vidíš na <a href="{{ pi.usage_url }}" target="_blank" rel="noopener">{{ pi.usage_url|replace('https://','') }}</a>.{% endif %}</li></ol>
 {% else %}
 <p class="hint" style="margin-top:.8rem">Ollama musí běžet na Pi (<a href="{{ pi.key_url }}" target="_blank" rel="noopener">ollama.com</a>) a model musí být stažený: <code>ollama pull {{ pi.models[0][0] }}</code>. Klíč není potřeba.</p>
 {% endif %}
-<div class="row" style="align-items:end">
-<div style="flex:2"><label>Doporučené modely</label><select onchange="if(this.value){document.getElementById('model').value=this.value}"><option value="">– vybrat –</option>{% for m, note in pi.models %}<option value="{{ m }}" {% if ai.provider==pid and ai.model==m %}selected{% endif %}>{{ m }} – {{ note }}</option>{% endfor %}</select></div>
-</div>
+<label>Doporučené modely</label><select onchange="if(this.value){document.getElementById('model').value=this.value}"><option value="">– vybrat –</option>{% for m, note in pi.models %}<option value="{{ m }}" {% if ai.provider==pid and ai.model==m %}selected{% endif %}>{{ m }} – {{ note }}</option>{% endfor %}</select>
 </div>
 {% endfor %}
 <div class="row" style="align-items:end">
@@ -2608,82 +2653,131 @@ TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block content %}
 </div>
 <div x-show="p==='openai_compat'" {% if ai.provider != 'openai_compat' %}x-cloak{% endif %}><label>Adresa API (base URL)</label><input type="text" name="base_url" value="{{ ai.base_url }}" placeholder="https://api.groq.com/openai/v1"><div class="hint">Groq: https://api.groq.com/openai/v1 · OpenRouter: https://openrouter.ai/api/v1</div></div>
 <div x-show="p==='ollama'" {% if ai.provider != 'ollama' %}x-cloak{% endif %}><label>Ollama URL</label><input type="text" name="ollama_url" value="{{ ai.ollama_url }}"></div>
-<div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-top:.6rem"><button class="btn sec" formaction="/ai/check" formnovalidate>Uložit a ověřit klíč</button><span class="hint">Ověření pošle jeden testovací dotaz – u placených stojí zlomek haléře.</span></div>
+<div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-top:.6rem"><button class="btn sec" formaction="/ai/check" formnovalidate>Uložit a ověřit klíč</button><span class="hint">Pošle jeden testovací dotaz – u placených stojí zlomek haléře.</span></div>
 {% if check %}<pre style="margin-top:10px">{{ check }}</pre>{% endif %}
-<p class="hint" style="margin-top:.6rem">Dnes použito <b>{{ used_today }}</b>{% if ai.daily_limit %} z {{ ai.daily_limit }}{% endif %} dotazů (denní strop nastavíš v kroku 3). Snímky odcházejí jen k vybranému poskytovateli; záznamy nikdy.</p>
+<p class="hint" style="margin-top:.6rem">Snímky odcházejí jen k vybranému poskytovateli, záznamy z kamer nikdy.</p>
+</div>
 </div>
 
-<div class="card"><h2>2 · Co hlídat</h2>
-<label class="check"><input type="checkbox" name="enabled" {% if ai.enabled %}checked{% endif %}> Hlídání oblohy zapnuto</label>
-<label>Kamery</label>
-<div class="chips">{% for c in cameras %}<label class="chip"><input type="checkbox" name="cam_{{ c }}" {% if c in ai.cameras %}checked{% endif %}> {{ cam(c) }}</label>{% endfor %}{% if not cameras %}<span class="hint">Nejprve <a href="/cameras">přidej kamery</a>.</span>{% endif %}</div>
-<label>Na co chci upozornit</label>
+<!-- ===== 2 · kamery a jevy ===== -->
+<div x-show="tab==='kamery'" x-cloak>
+<div class="card"><label class="check" style="margin:0;font-size:1.05rem"><input type="checkbox" name="enabled" {% if ai.enabled %}checked{% endif %}> <b>Hlídání oblohy zapnuto</b></label>
+<p class="hint" style="margin:.4rem 0 0">U každé kamery zapneš hlídání a řekneš, <b>od jakého skóre</b> a <b>na které jevy</b> chceš upozornit. AI hodnotí oblohu 0–10 (0–3 nudná, 4–6 hezká, 7–8 výrazný jev, 9–10 výjimečná). Kamera s hezkým výhledem si vystačí s prahem 7, horší kamera nebo kamera na sever klidně 5.</p></div>
+
+<div class="card"><div class="section-head"><h2>Výchozí nastavení</h2><span class="hint">platí pro každou kameru, která nemá vlastní</span></div>
+<label>Upozornit, když je obloha aspoň…</label><select name="threshold">{% for v, t in thr_opts %}<option value="{{ v }}" {% if ai.threshold == v %}selected{% endif %}>{{ t }}</option>{% endfor %}</select>
+<label class="check any"><input type="checkbox" name="any_photo" {% if ai.get('any_photogenic', True) %}checked{% endif %}> <b>Cokoli fotogenického</b> <span class="hint">– upozornit i tehdy, když nejde o žádný z vybraných jevů, ale záběr vypadá výjimečně (skóre dosáhne prahu)</span></label>
+<label>…a navíc tyto konkrétní jevy</label>
 <div class="chips">{% for pid, label, desc in phenomena %}<label class="chip" title="{{ desc }}"><input type="checkbox" name="ph_{{ pid }}" {% if pid in ai.phenomena %}checked{% endif %}> {{ label }}</label>{% endfor %}</div>
-<div class="row">
-<div><label>Upozornit, když je obloha aspoň…</label><select name="threshold">
-{% for v, t in [(5, '5 – hezká (hodně upozornění)'), (6, '6 – hezká'), (7, '7 – výrazný jev (doporučeno)'), (8, '8 – opravdu výrazný'), (9, '9 – jen výjimečná')] %}<option value="{{ v }}" {% if ai.threshold == v %}selected{% endif %}>{{ t }}</option>{% endfor %}</select><div class="hint">AI hodnotí oblohu 0–10.</div></div>
-<div><label>Stejný jev znovu hlásit nejdřív za (minut)</label><input type="number" name="episode_gap_min" min="5" max="1440" value="{{ ai.episode_gap_min }}"><div class="hint">Červánky trvající 40 minut = jedno upozornění, ne deset.</div></div>
+<div class="hint">Nezaškrtnuté jevy AI pořád vidí a zapíše do historie, jen na ně nepřijde upozornění. Vlastní jev přidáš níže.</div>
+</div>
+
+<div class="cam-rules">
+{% for c in cameras %}{% set r = cam_rules.get(c) or {} %}
+<div class="card cam-rule" x-data="{on: {{ 'true' if c in ai.cameras else 'false' }}, mode: '{{ 'custom' if r.custom else 'default' }}'}" :class="{off: !on}">
+ <div class="section-head"><h2>📷 {{ cam(c) }}</h2><label class="check" style="margin:0"><input type="checkbox" name="cam_{{ c }}" x-model="on"> <span x-text="on ? 'AI hlídá' : 'nehlídá se'"></span></label></div>
+ <div x-show="on">
+ <div class="seg" style="margin:.2rem 0 .6rem"><label class="{{ 'on' if not r.custom }}" :class="{on: mode==='default'}"><input type="radio" name="mode_{{ c }}" value="default" x-model="mode" hidden>Použít výchozí nastavení</label><label :class="{on: mode==='custom'}"><input type="radio" name="mode_{{ c }}" value="custom" x-model="mode" hidden>Vlastní práh a jevy</label></div>
+ <div x-show="mode==='default'" class="hint">Upozorní od skóre <b>{{ ai.threshold }}</b>{% if ai.get('any_photogenic', True) %} na cokoli fotogenického a{% else %} na{% endif %} výchozí jevy ({{ ai.phenomena|length }} z {{ phenomena|length }}).</div>
+ <div x-show="mode==='custom'" x-cloak>
+  <label>Upozornit, když je obloha aspoň…</label><select name="thr_{{ c }}">{% for v, t in thr_opts %}<option value="{{ v }}" {% if (r.threshold or ai.threshold) == v %}selected{% endif %}>{{ t }}</option>{% endfor %}</select>
+  <label class="check any"><input type="checkbox" name="cany_{{ c }}" {% if r.get('any', ai.get('any_photogenic', True)) %}checked{% endif %}> <b>Cokoli fotogenického</b> <span class="hint">– i bez shody s jevy, když je záběr výjimečný</span></label>
+  <label>…a navíc tyto konkrétní jevy</label>
+  <div class="chips">{% for pid, label, desc in phenomena %}<label class="chip" title="{{ desc }}"><input type="checkbox" name="cph_{{ c }}_{{ pid }}" {% if pid in (r.phenomena or ai.phenomena) %}checked{% endif %}> {{ label }}</label>{% endfor %}</div>
+ </div>
+ <label class="check" style="margin-top:.6rem"><input type="checkbox" name="ax_cam_{{ c }}" {% if c in ai.auto_export.cameras %}checked{% endif %}> 🎬 Po upozornění automaticky vystřihnout video <span class="hint">(délku nastavíš v záložce Video)</span></label>
+ </div>
+</div>
+{% endfor %}
+{% if not cameras %}<div class="card"><p class="hint" style="margin:0">Nejprve <a href="/cameras">přidej kamery</a>.</p></div>{% endif %}
 </div>
 </div>
 
-<div class="card"><h2>3 · Jak často se dívat</h2>
+<!-- ===== 3 · kdy se dívat ===== -->
+<div x-show="tab==='kdy'" x-cloak>
+<div class="card"><h2>Jak často</h2>
 <div class="row">
 <div><label>Běžně každých (minut)</label><input type="number" name="interval_min" min="1" max="1440" value="{{ ai.interval_min }}"></div>
-<div><label>Kolem východu/západu každých (minut)</label><input type="number" name="fast_interval_min" min="1" max="60" value="{{ ai.fast_interval_min }}"><div class="hint">Červánky a shelf cloud trvají krátce – tady se dívá častěji.</div></div>
-<div><label>Nejvíc dotazů na AI za den</label><input type="number" name="daily_limit" min="0" max="100000" value="{{ ai.daily_limit }}"><div class="hint">Dnes použito: <b>{{ used_today }}</b>. Bezplatný tarif má denní limit – tohle hlídá, aby se nepřekročil. Přehled po dnech je dole na stránce.</div></div>
+<div><label>Kolem východu/západu každých (minut)</label><input type="number" name="fast_interval_min" min="1" max="60" value="{{ ai.fast_interval_min }}"><div class="hint">Červánky trvají krátce – tady se dívá častěji.</div></div>
+<div><label>Nejvíc dotazů na AI za den</label><input type="number" name="daily_limit" min="0" max="100000" value="{{ ai.daily_limit }}"><div class="hint">Dnes použito <b>{{ used_today }}</b>. Hlídá bezplatný limit poskytovatele.</div></div>
 </div>
 <label class="check"><input type="checkbox" name="fast_mode" {% if ai.fast_mode %}checked{% endif %}> Kolem východu/západu a po zajímavém snímku se dívat častěji</label>
-<label class="check"><input type="checkbox" name="day_only" {% if ai.day_only %}checked{% endif %}> Jen když je světlo (v noci nemá smysl)</label>
-<div class="row">
-<div><label>Od kdy do kdy je „světlo“</label><select name="twilight">
-<option value="civil" {% if ai.twilight == 'civil' %}selected{% endif %}>občanský soumrak – slunce do 6° pod obzorem (cca ±35 min)</option>
-<option value="nautical" {% if ai.twilight == 'nautical' %}selected{% endif %}>nautický soumrak – do 12° pod obzorem (cca ±75 min, doporučeno)</option>
-<option value="astronomical" {% if ai.twilight == 'astronomical' %}selected{% endif %}>astronomický soumrak – do 18° (cca ±2 h, v létě celá noc)</option>
-<option value="minutes" {% if ai.twilight == 'minutes' %}selected{% endif %}>pevně: východ/západ ± rezerva v minutách (níže)</option></select>
-<div class="hint">Červánky bývají nejhezčí před východem a po západu – proto se hlídá už od svítání a až do soumraku.</div></div>
-<div><label class="check" style="margin:1.9rem 0 .3rem"><input type="checkbox" name="dark_skip" {% if ai.dark_skip %}checked{% endif %}> Když je snímek tmavý, AI se neptat</label><div class="hint">Šetří limit: v noci nebo když kamera přepne do infra režimu se snímek jen změří a přeskočí. Práh jasu níže v Pokročilém.</div></div>
-</div>
-<div class="hint">Dnes: svítání {{ sun.dawn }} · východ {{ sun.sunrise }} · západ {{ sun.sunset }} · soumrak {{ sun.dusk }} (hlídá se {{ sun.dawn }}–{{ sun.dusk }}). Odhad: asi {{ estimate }} dotazů denně (méně, když se obraz nemění nebo je tma).</div>
-<details><summary>Pokročilé</summary>
-<div class="row">
-<div><label>Zlatá hodina – kolik minut kolem východu/západu</label><input type="number" name="golden_min" min="0" max="180" value="{{ ai.golden_min }}"></div>
-<div><label>Rezerva před východem / po západu (minut) – jen pro volbu „pevně“</label><input type="number" name="margin_min" min="0" max="240" value="{{ ai.margin_min }}"></div>
-<div><label>Práh tmy (jas 0–255; snímek tmavší než tohle se přeskočí)</label><input type="number" name="dark_level" min="0" max="120" value="{{ ai.dark_level }}"><div class="hint">Výchozí 22. Když se ti zdá, že za šera přeskakuje moc brzo, sniž na 12–15.</div></div>
-<div><label>Minimální odstup upozornění z jedné kamery (minut)</label><input type="number" name="cooldown_min" min="0" max="1440" value="{{ ai.cooldown_min }}"></div>
-</div>
-<div class="row"><div><label>Zeměpisná šířka</label><input type="text" name="lat" value="{{ cfg.lat }}"></div><div><label>Zeměpisná délka</label><input type="text" name="lon" value="{{ cfg.lon }}"></div></div>
-<div class="hint">Souřadnice slouží jen k výpočtu svítání, východu, západu a soumraku – zadej svou polohu (stačí na desetiny stupně).</div>
 <label class="check"><input type="checkbox" name="prefilter" {% if ai.prefilter %}checked{% endif %}> Neptat se AI, když se obraz skoro nezměnil (šetří limit)</label>
-<div class="row"><div><label>Citlivost na změnu obrazu (0–255, menší = citlivější)</label><input type="text" name="prefilter_diff" value="{{ ai.prefilter_diff }}"></div>
-<div><label>Uchovávat snímky a historii (dní)</label><input type="number" name="keep_days" min="1" max="365" value="{{ ai.keep_days }}"></div></div>
+<div class="hint">Odhad: asi <b>{{ estimate }}</b> dotazů denně (méně, když se obraz nemění nebo je tma).</div>
+</div>
+<div class="card"><h2>Kdy je světlo</h2>
+<label class="check"><input type="checkbox" name="day_only" {% if ai.day_only %}checked{% endif %}> Dívat se jen od svítání do soumraku (v noci nemá smysl)</label>
+<div class="row">
+<div><label>Co je „světlo“</label><select name="twilight">
+<option value="civil" {% if ai.twilight == 'civil' %}selected{% endif %}>občanský soumrak – cca 35 min před východem / po západu</option>
+<option value="nautical" {% if ai.twilight == 'nautical' %}selected{% endif %}>nautický soumrak – cca 75 min (doporučeno, červánky)</option>
+<option value="astronomical" {% if ai.twilight == 'astronomical' %}selected{% endif %}>astronomický soumrak – cca 2 h (v létě skoro celá noc)</option>
+<option value="minutes" {% if ai.twilight == 'minutes' %}selected{% endif %}>pevně: východ/západ ± rezerva v minutách (níže)</option></select></div>
+<div><label class="check" style="margin:1.9rem 0 .3rem"><input type="checkbox" name="dark_skip" {% if ai.dark_skip %}checked{% endif %}> Tmavý snímek AI neposílat</label><div class="hint">V noci nebo v infra režimu kamery se snímek jen změří a přeskočí.</div></div>
+</div>
+<div class="hint">Dnes: svítání {{ sun.dawn }} · východ {{ sun.sunrise }} · západ {{ sun.sunset }} · soumrak {{ sun.dusk }} → hlídá se {{ sun.dawn }}–{{ sun.dusk }}.</div>
+<details><summary>Pokročilé (poloha, prahy, odstupy, pokyny pro AI)</summary>
+<div class="row"><div><label>Zeměpisná šířka</label><input type="text" name="lat" value="{{ cfg.lat }}"></div><div><label>Zeměpisná délka</label><input type="text" name="lon" value="{{ cfg.lon }}"></div></div>
+<div class="hint">Jen pro výpočet svítání/soumraku – stačí na desetiny stupně.</div>
+<div class="row">
+<div><label>Zlatá hodina – minut kolem východu/západu</label><input type="number" name="golden_min" min="0" max="180" value="{{ ai.golden_min }}"></div>
+<div><label>Rezerva před východem / po západu (min, volba „pevně“)</label><input type="number" name="margin_min" min="0" max="240" value="{{ ai.margin_min }}"></div>
+<div><label>Práh tmy (jas 0–255)</label><input type="number" name="dark_level" min="0" max="120" value="{{ ai.dark_level }}"><div class="hint">Výchozí 22; když přeskakuje moc brzo za šera, sniž na 12–15.</div></div>
+</div>
+<div class="row">
+<div><label>Stejný jev znovu hlásit nejdřív za (minut)</label><input type="number" name="episode_gap_min" min="5" max="1440" value="{{ ai.episode_gap_min }}"><div class="hint">Červánky trvající 40 minut = jedno upozornění, ne deset.</div></div>
+<div><label>Minimální odstup upozornění z jedné kamery (minut)</label><input type="number" name="cooldown_min" min="0" max="1440" value="{{ ai.cooldown_min }}"></div>
+<div><label>Citlivost na změnu obrazu (0–255, menší = citlivější)</label><input type="text" name="prefilter_diff" value="{{ ai.prefilter_diff }}"></div>
+<div><label>Uchovávat snímky a historii (dní)</label><input type="number" name="keep_days" min="1" max="365" value="{{ ai.keep_days }}"></div>
+</div>
 <label>Doplňující pokyny pro AI (volitelné)</label><textarea name="prompt_extra" placeholder="např. Kamera míří na západ, v dolní části je střecha – ignoruj ji.">{{ ai.prompt_extra }}</textarea>
 </details>
 </div>
-<div class="card"><div class="section-head"><h2 style="margin:0">4 · Video automaticky</h2>{% if ai.auto_export.enabled and ai.auto_export.cameras %}<span class="badge ok">zapnuto · {{ ai.auto_export.cameras|length }} {{ 'kamera' if ai.auto_export.cameras|length == 1 else ('kamery' if ai.auto_export.cameras|length < 5 else 'kamer') }}</span>{% else %}<span class="badge mut">vypnuto</span>{% endif %}</div>
-<p>Když nejsi doma a přijde upozornění, Atmovio může video kolem snímku vystřihnout sám – najdeš ho pak ve <a href="/videos">Videích</a> a nemusíš se bát, že se záznam mezitím smaže.</p>
-<label class="check"><input type="checkbox" name="ax_enabled" {% if ai.auto_export.enabled %}checked{% endif %}> Po každém odeslaném upozornění automaticky vytvořit video</label>
+</div>
+
+<!-- ===== 4 · video ===== -->
+<div x-show="tab==='video'" x-cloak>
+<div class="card"><div class="section-head"><h2>Video automaticky</h2>{% if ai.auto_export.enabled and ai.auto_export.cameras %}<span class="badge ok">zapnuto · {{ ai.auto_export.cameras|length }} {{ 'kamera' if ai.auto_export.cameras|length == 1 else ('kamery' if ai.auto_export.cameras|length < 5 else 'kamer') }}</span>{% else %}<span class="badge mut">vypnuto</span>{% endif %}</div>
+<p>Když přijde upozornění, Atmovio vystřihne video kolem snímku samo – najdeš ho ve <a href="/videos">Videích</a> a nemusíš se bát, že se záznam mezitím smaže. Které kamery to dělají, zaškrtneš u kamer v záložce <a href="#kamery" @click.prevent="tab='kamery'">Kamery a jevy</a>.</p>
+<label class="check"><input type="checkbox" name="ax_enabled" {% if ai.auto_export.enabled %}checked{% endif %}> Automatické video zapnuto</label>
 <div class="row">
 <div><label>Minut před snímkem</label><input type="number" name="ax_before" min="0" max="60" value="{{ ai.auto_export.before_min }}"></div>
 <div><label>Minut po snímku</label><input type="number" name="ax_after" min="0" max="60" value="{{ ai.auto_export.after_min }}"><div class="hint">Video vznikne, až tahle doba uplyne.</div></div>
 <div><label>Rychlost videa</label><select name="ax_playback"><option value="realtime" {% if ai.auto_export.playback != 'timelapse_25x' %}selected{% endif %}>normální (hotové hned)</option><option value="timelapse_25x" {% if ai.auto_export.playback == 'timelapse_25x' %}selected{% endif %}>zrychlené 25× (překóduje se)</option></select></div>
 </div>
-<label>Pro které kamery</label>
-<div class="chips">{% for c in cameras %}<label class="chip"><input type="checkbox" name="ax_cam_{{ c }}" {% if c in ai.auto_export.cameras %}checked{% endif %}> {{ cam(c) }}{% if c not in ai.cameras %} <span class="hint">(AI ji nehlídá)</span>{% endif %}</label>{% endfor %}</div>
-<div class="hint">Každé upozornění = jedno video (max. jedno za {{ ai.cooldown_min }} min z kamery díky odstupu upozornění). Videa se mažou po {{ ai.export_keep_days }} dnech – nastavíš ve Videích.</div>
-<button class="btn">Uložit nastavení</button>
+<div class="hint">Kamery s automatickým videem: {% for c in ai.auto_export.cameras %}<b>{{ cam(c) }}</b>{% if not loop.last %}, {% endif %}{% else %}žádná{% endfor %}. Videa se mažou po {{ ai.export_keep_days }} dnech (nastavíš ve Videích).</div>
 </div>
+</div>
+
+<div class="savebar" x-show="tab!=='test'"><button class="btn">Uložit nastavení</button><span class="hint">Uloží se všechny záložky najednou.</span></div>
 </form>
-<div class="card"><h2>Vyzkoušet</h2>
+
+<!-- vlastní jevy (mimo hlavní formulář) -->
+<div x-show="tab==='kamery'" x-cloak>
+<div class="card"><div class="section-head"><h2>Vlastní jevy</h2><span class="hint">něco, co v seznamu chybí – AI ho bude hledat podle tvého popisu</span></div>
+{% if custom_phenomena %}<ul class="plainlist">{% for c in custom_phenomena %}<li><b>{{ c.label }}</b> <span class="hint">– {{ c.desc }}</span><form method="post" action="/ai/phenomena/delete" data-nobusy style="display:inline;margin-left:.6rem"><input type="hidden" name="pid" value="{{ c.id }}"><button class="btn small sec">Odebrat</button></form></li>{% endfor %}</ul>{% endif %}
+<form method="post" action="/ai/phenomena/add" class="row" style="align-items:end" data-nobusy>
+<div><label>Název jevu</label><input type="text" name="label" maxlength="60" placeholder="např. Kondenzační stopy" required></div>
+<div style="flex:2"><label>Popis pro AI (jak to na snímku poznat)</label><input type="text" name="desc" maxlength="300" placeholder="např. dlouhé bílé čáry za letadly, rovné nebo rozpité"></div>
+<button class="btn">Přidat jev</button></form>
+</div>
+</div>
+
+<!-- ===== 5 · test a statistika ===== -->
+<div x-show="tab==='test'" x-cloak>
+<div class="card"><h2>Vyzkoušet hned</h2>
 <form method="post" action="/ai/test" class="row" style="align-items:end"><div><label>Kamera</label><select name="camera">{% for c in cameras %}<option value="{{ c }}">{{ cam(c) }}</option>{% endfor %}</select></div>
 <div><button class="btn">Vyhodnotit oblohu teď</button></div></form>
 <div class="hint">Vezme aktuální snímek, zeptá se AI a ukáže odpověď. Upozornění se při zkoušce neposílá.</div>
 {% if test %}<pre>{{ test }}</pre>{% endif %}</div>
-<div class="card"><div class="section-head"><h2>Statistika dotazů za posledních 7 dní</h2><span class="hint">nezávislá na historii – mazání snímků ji nemění</span></div>
+<div class="card"><div class="section-head"><h2>Statistika dotazů za posledních 7 dní</h2><a class="btn small sec" href="/history?show=all">Historie hodnocení</a></div>
 <div class="stats7"><table><thead><tr><th>Den</th><th>Dotazů</th><th>Zajímavé</th><th>Upozornění</th><th>Přeskočeno</th><th>Chyby</th></tr></thead><tbody>
 {% for d in stats7 %}<tr{% if loop.first %} class="today"{% endif %}><td>{{ d.label }} <span class="hint">{{ d.dow }}</span></td><td><b>{{ d.calls }}</b></td><td>{{ d.interesting }}</td><td>{% if d.notified %}<span class="badge ok">{{ d.notified }}</span>{% else %}0{% endif %}</td><td class="hint">{{ d.skipped }}</td><td>{% if d.errors %}<span class="badge err">{{ d.errors }}</span>{% else %}0{% endif %}</td></tr>{% endfor %}
 <tr class="sum"><td>celkem</td><td><b>{{ stats7|sum(attribute='calls') }}</b></td><td>{{ stats7|sum(attribute='interesting') }}</td><td>{{ stats7|sum(attribute='notified') }}</td><td class="hint">{{ stats7|sum(attribute='skipped') }}</td><td>{{ stats7|sum(attribute='errors') }}</td></tr>
 </tbody></table></div>
-<div class="hint">„Dotazů“ = kolikrát se AI opravdu ptalo (počítá se do denního limitu{% if ai.daily_limit %} {{ ai.daily_limit }}{% endif %}). „Zajímavá obloha“ = skóre dosáhlo prahu. „Přeskočeno“ = obraz se od minula nezměnil, snímek se AI neposlal a neukládá se.</div></div>
+<div class="hint">„Dotazů“ = kolikrát se AI opravdu ptalo (počítá se do denního limitu{% if ai.daily_limit %} {{ ai.daily_limit }}{% endif %}). „Zajímavá obloha“ = skóre dosáhlo prahu. „Přeskočeno“ = obraz se od minula nezměnil, snímek se AI neposlal.</div></div>
+</div>
+</div>
 {% endblock %}"""
 
 TEMPLATES["email.html"] = """{% extends "base.html" %}{% block content %}
@@ -3011,7 +3105,7 @@ TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block content %}
 {% if videos and videos|selectattr('in_progress')|list %}<div x-data="autorefresh(20)"></div>{% endif %}
 {% endblock %}"""
 
-TEMPLATES["history.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><form method="post" action="/history/delete" data-nobusy style="display:flex;gap:.4rem"><input type="hidden" name="camera" value="{{ f_cam }}"><button class="btn small sec" name="what" value="errors">Smazat chybná</button><button class="btn small danger" name="what" value="all" onclick="return confirm('Smazat celou historii{% if f_cam %} kamery {{ cam(f_cam) }}{% endif %} včetně snímků?')">Smazat vše{% if f_cam %} ({{ cam(f_cam) }}){% endif %}</button></form></div>{% endblock %}{% block content %}
+TEMPLATES["history.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small" href="/ai#kamery">⚙ Nastavení AI</a><form method="post" action="/history/delete" data-nobusy style="display:flex;gap:.4rem"><input type="hidden" name="camera" value="{{ f_cam }}"><button class="btn small sec" name="what" value="errors">Smazat chybná</button><button class="btn small danger" name="what" value="all" onclick="return confirm('Smazat celou historii{% if f_cam %} kamery {{ cam(f_cam) }}{% endif %} včetně snímků?')">Smazat vše{% if f_cam %} ({{ cam(f_cam) }}){% endif %}</button></form></div>{% endblock %}{% block content %}
 {% macro link(cam_, min_, show_, page_=1) %}/history?camera={{ cam_ }}&min_score={{ min_ }}&show={{ show_ }}{% if page_ > 1 %}&page={{ page_ }}{% endif %}{% endmacro %}
 <div class="filters">
  <div class="fgroup"><span class="fl">Zobrazit</span><span class="seg"><a class="{{ 'on' if f_show=='notified' }}" href="{{ link(f_cam, f_min, 'notified') }}">S upozorněním</a><a class="{{ 'on' if f_show=='all' }}" href="{{ link(f_cam, f_min, 'all') }}">Všechna hodnocení</a><a class="{{ 'on' if f_show=='errors' }}" href="{{ link(f_cam, f_min, 'errors') }}">Chyby</a></span></div>
@@ -3024,8 +3118,8 @@ TEMPLATES["history.html"] = """{% extends "base.html" %}{% block actions %}<div 
 <article class="hrow {{ 'err' if e.error else ('hit' if e.notified else '') }}">
  {% if e.image %}<a class="pic" href="{% if not e.error %}/detection/{{ e.id }}{% else %}/snapshot/{{ e.image }}{% endif %}" {% if e.error %}data-lightbox="history"{% endif %}><img src="/snapshot/{{ e.image }}" alt="" loading="lazy"></a>{% endif %}
  <div class="tx">
-  <div class="hd"><span class="score {{ 'err' if e.error else ('ok' if e.score >= threshold else ('mid' if e.score >= 5 else 'low')) }}">{% if e.error %}chyba{% else %}{{ e.score }}<small>/10</small>{% endif %}</span><span class="when">{{ e.ts|cztime }}</span><b>{{ cam(e.camera) }}</b>{% if e.phenomenon %}<span class="ph">{{ e.phenomenon }}</span>{% endif %}
-   {% if e.notified %}<span class="badge ok">upozorněno</span>{% elif not e.error and e.score >= threshold %}<span class="badge info">v epizodě</span>{% endif %}{% if e.exported %}<a class="badge info" href="/videos" title="Z této detekce je vystřižené video">🎬 video</a>{% endif %}</div>
+  <div class="hd"><span class="score {{ 'err' if e.error else ('ok' if e.score >= rule(e.camera).threshold else ('mid' if e.score >= 5 else 'low')) }}">{% if e.error %}chyba{% else %}{{ e.score }}<small>/10</small>{% endif %}</span><span class="when">{{ e.ts|cztime }}</span><b>{{ cam(e.camera) }}</b>{% if e.phenomenon %}<span class="ph">{{ e.phenomenon }}</span>{% endif %}
+   {% if e.notified %}<span class="badge ok">upozorněno</span>{% elif not e.error and e.score >= rule(e.camera).threshold %}<span class="badge info">v epizodě</span>{% endif %}{% if e.exported %}<a class="badge info" href="/videos" title="Z této detekce je vystřižené video">🎬 video</a>{% endif %}</div>
   <p class="desc">{{ e.description or e.error or '–' }}</p>
   {% if e.note %}<div class="hint">{{ e.note }}</div>{% endif %}
  </div>
@@ -3116,7 +3210,7 @@ def render(request: Request, tpl: str, title: str, **ctx) -> HTMLResponse:
     flashes = [{"text": flash, "kind": flash_kind}] if flash else []
     ctx.setdefault("version", APP_VERSION)
     html = jenv.get_template(tpl).render(
-        cam=lambda c: labels.get(c) or c,
+        cam=lambda c: labels.get(c) or c, rule=lambda c: cam_rule(cfg["ai"], c),
         title=title, subtitle=ctx.pop("subtitle", SUBTITLES.get(path, "")), nav=NAV, nav_items=NAV_ITEMS, bottom_nav=BOTTOM_NAV,
         nav_primary=NAV_PRIMARY, nav_settings=NAV_SETTINGS, bottom_labels=BOTTOM_LABELS, settings_open=active in [h for h, _n, _i in NAV_SETTINGS],
         active=active, favicon=FAVICON, side=side, flashes=flashes, **static_assets(),
@@ -4421,7 +4515,8 @@ def ai_page(request: Request):
     sr, ss = daylight_window(cfg, now.date())
     cameras = frigate_cameras(cfg)
     return render(request, "ai.html", "AI hlídání oblohy", cfg=cfg, ai=cfg["ai"], cameras=cameras, test=test, check=check,
-                  providers=PROVIDERS, provider_info=PROVIDER_INFO, phenomena=PHENOMENA, used_today=watcher.calls_today(cfg, now), stats7=ai_stats_days(now, 7),
+                  providers=PROVIDERS, provider_info=PROVIDER_INFO, phenomena=phenomena_catalog(cfg["ai"]), custom_phenomena=cfg["ai"].get("custom_phenomena") or [],
+                  cam_rules=cfg["ai"].get("cam_rules") or {}, used_today=watcher.calls_today(cfg, now), stats7=ai_stats_days(now, 7),
                   sun=sun_times(cfg, now), estimate=ai_estimate(cfg, max(1, len(cfg["ai"]["cameras"]))))
 
 
@@ -4433,7 +4528,8 @@ async def ai_save(request: Request):
         flash(request, "Nastavení AI uloženo.")
     except ValueError as e:
         flash(request, str(e), "err")
-    return RedirectResponse("/ai", status_code=303)
+    tab = str(form.get("tab") or "")
+    return RedirectResponse("/ai" + (f"#{tab}" if re.fullmatch(r"[a-z]+", tab) else ""), status_code=303)
 
 
 @app.post("/ai/check")
@@ -4498,9 +4594,53 @@ def apply_ai_form(form, cfg, cameras):
     ax["playback"] = "timelapse_25x" if form.get("ax_playback") == "timelapse_25x" else "realtime"
     ax["cameras"] = [c for c in cameras if form.get(f"ax_cam_{c}")]
     ai["auto_export"] = ax
+    ids = [p[0] for p in phenomena_catalog(ai)]
     if any(k.startswith("ph_") for k in form.keys()) or form.get("provider"):
-        chosen = [p for p in PHENOMENA_IDS if form.get(f"ph_{p}")]
-        ai["phenomena"] = chosen or list(PHENOMENA_IDS)
+        chosen = [p for p in ids if form.get(f"ph_{p}")]
+        ai["phenomena"] = chosen or list(ids)
+        ai["any_photogenic"] = bool(form.get("any_photo"))
+    # vlastní pravidla kamer (práh + jevy); "použít výchozí" = žádné vlastní
+    rules = {}
+    for c in cameras:
+        if form.get(f"mode_{c}") == "custom":
+            try:
+                thr = max(1, min(10, int(form.get(f"thr_{c}", ai["threshold"]))))
+            except (TypeError, ValueError):
+                thr = int(ai["threshold"])
+            rules[c] = {"custom": True, "threshold": thr, "phenomena": [p for p in ids if form.get(f"cph_{c}_{p}")] or list(ai["phenomena"]),
+                        "any": bool(form.get(f"cany_{c}"))}
+    ai["cam_rules"] = rules
+
+
+@app.post("/ai/phenomena/add")
+def ai_phenomena_add(request: Request, label: str = Form(...), desc: str = Form("")):
+    label = label.strip()[:60]
+    desc = desc.strip()[:300]
+    if len(label) < 2:
+        flash(request, "Název jevu je moc krátký.", "err")
+        return RedirectResponse("/ai#kamery", status_code=303)
+    pid = "c_" + (slugify(label)[:24] or "jev")
+    with edit_config() as cfg:
+        ai = cfg["ai"]
+        custom = [c for c in (ai.get("custom_phenomena") or []) if c.get("id") != pid]
+        custom.append({"id": pid, "label": label, "desc": desc or label})
+        ai["custom_phenomena"] = custom
+        if pid not in (ai.get("phenomena") or []):
+            ai["phenomena"] = list(ai.get("phenomena") or PHENOMENA_IDS) + [pid]
+    flash(request, f"Jev „{label}“ přidán – AI ho od teď hledá na snímcích.")
+    return RedirectResponse("/ai#kamery", status_code=303)
+
+
+@app.post("/ai/phenomena/delete")
+def ai_phenomena_delete(request: Request, pid: str = Form(...)):
+    with edit_config() as cfg:
+        ai = cfg["ai"]
+        ai["custom_phenomena"] = [c for c in (ai.get("custom_phenomena") or []) if c.get("id") != pid]
+        ai["phenomena"] = [p for p in (ai.get("phenomena") or []) if p != pid]
+        for r in (ai.get("cam_rules") or {}).values():
+            r["phenomena"] = [p for p in (r.get("phenomena") or []) if p != pid]
+    flash(request, "Vlastní jev odebrán.")
+    return RedirectResponse("/ai#kamery", status_code=303)
 
 
 @app.post("/ai/reset_prompt")
@@ -4522,7 +4662,7 @@ def ai_test(request: Request, camera: str = Form(...), back: str = Form("")):
     r = watcher.check_camera(cfg, camera, now, force=True)
     r.pop("raw", None)
     if r.get("phenomena"):
-        r["phenomena"] = [PHENOMENA_LABELS.get(p, p) for p in r["phenomena"]]
+        r["phenomena"] = [phen_labels(cfg["ai"]).get(p, p) for p in r["phenomena"]]
     request.session["ai_test"] = json.dumps(r, ensure_ascii=False, indent=2)
     return RedirectResponse(back, status_code=303)
 
@@ -4573,7 +4713,7 @@ def detection_page(request: Request, rid: int):
     except ValueError:
         t = dt.datetime.now()
     t = t.replace(tzinfo=None)
-    phen = [PHENOMENA_LABELS.get(x, x) for x in (e.get("phenomena") or "").split(",") if x]
+    phen = [phen_labels(cfg["ai"]).get(x, x) for x in (e.get("phenomena") or "").split(",") if x]
     def qint(key, default):
         try:
             return max(0, min(60, int(request.query_params.get(key, default) or 0)))
@@ -6311,7 +6451,7 @@ textarea { min-height: 110px; font-family: ui-monospace, SFMono-Regular, Menlo, 
 .chip:has(input:checked) { background: var(--sw-info-bg); border-color: var(--pico-primary); }
 /* segmentový přepínač (Vše / Živé / Offline) */
 .seg { display: inline-flex; gap: .2rem; padding: .2rem; border-radius: 999px; background: var(--pico-card-sectioning-background-color); border: 1px solid var(--pico-card-border-color); }
-.seg a, .seg span { padding: .28rem .75rem; border-radius: 999px; font-size: .82rem; font-weight: 600; color: var(--pico-muted-color); text-decoration: none; display: inline-flex; gap: .35rem; align-items: center; }
+.seg a, .seg span, .seg label { padding: .28rem .75rem; border-radius: 999px; font-size: .82rem; font-weight: 600; color: var(--pico-muted-color); text-decoration: none; display: inline-flex; gap: .35rem; align-items: center; }
 .seg .on { background: var(--pico-primary-background); color: var(--pico-primary-inverse); }
 .seg b { font-weight: 800; }
 
@@ -6602,6 +6742,26 @@ h2.day { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; col
 .pager .pages a, .pager .pages span { min-width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border-radius: .55rem; text-decoration: none; font-weight: 700; font-size: .9rem; color: var(--pico-muted-color); }
 .pager .pages a:hover { background: var(--pico-card-sectioning-background-color); color: var(--pico-color); }
 .pager .pages a.on { background: var(--pico-primary-background); color: var(--pico-primary-inverse); }
+
+/* ---------- AI: záložky, pravidla kamer, lišta uložení ---------- */
+.tabs.big { gap: .4rem; margin-bottom: 1rem; }
+.tabs.big button { display: inline-flex; align-items: center; gap: .5rem; padding: .55rem .9rem; border-radius: .7rem; border: 1px solid var(--pico-card-border-color); background: var(--pico-card-background-color); color: var(--pico-muted-color); font-weight: 700; font-size: .92rem; margin: 0; width: auto; cursor: pointer; box-shadow: none; }
+.tabs.big button .n { width: 22px; height: 22px; border-radius: 50%; background: var(--pico-muted-border-color); color: var(--pico-muted-color); display: inline-grid; place-items: center; font-size: .75rem; }
+.tabs.big button:hover { border-color: var(--pico-primary); color: var(--pico-color); }
+.tabs.big button.on { background: var(--pico-primary-background); border-color: var(--pico-primary-background); color: var(--pico-primary-inverse); }
+.tabs.big button.on .n { background: rgba(255, 255, 255, .25); color: #fff; }
+.cam-rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 560px), 1fr)); gap: 1rem; margin-bottom: 1rem; align-items: start; }
+.cam-rules .card { margin: 0; }
+.cam-rule.off { opacity: .6; }
+.cam-rule .seg label { margin: 0; cursor: pointer; }
+.savebar { position: sticky; bottom: 0; z-index: 5; display: flex; align-items: center; gap: .8rem; padding: .7rem 1rem; margin: 0 0 1rem; border-radius: var(--at-radius); background: var(--pico-card-background-color); border: 1px solid var(--pico-card-border-color); box-shadow: 0 -8px 30px rgba(0, 0, 0, .25); }
+.savebar .btn { margin: 0; }
+.plainlist { list-style: none; margin: 0 0 .8rem; padding: 0; }
+.plainlist li { padding: .35rem 0; border-bottom: 1px solid var(--pico-card-border-color); display: flex; align-items: center; flex-wrap: wrap; gap: .3rem; }
+.plainlist li:last-child { border: 0; }
+.plainlist form .btn { margin: 0; }
+@media (max-width: 640px) { .cam-rules { grid-template-columns: 1fr; } .tabs.big button { font-size: .82rem; padding: .45rem .6rem; } }
+.check.any { padding: .5rem .7rem; border-radius: .7rem; background: var(--sw-info-bg); border: 1px solid var(--pico-primary); }
 ATMOVIO_CSS_EOF
   cat > "$1/atmovio.js" <<'ATMOVIO_JS_EOF'
 /* Atmovio – interakce (Alpine.js komponenty + pomocné funkce). */
