@@ -2267,7 +2267,7 @@ TEMPLATES["dashboard.html"] = """{% extends "base.html" %}{% block head %}{% end
 <section class="hero">
  <div class="grow"><h1>Přehled</h1><p class="sub">Kamery, nahrávání, AI detekce a hlídání oblohy na jednom místě.</p><div class="tag">Obloha má příběh…</div></div>
  <div class="pill"><div><div class="k">{{ now_dt|czdate }}</div><div class="big">{{ now_dt|cztime }}</div></div></div>
- <div class="pill"><div class="sun"><span><small>svítání</small>{{ sun.dawn }}</span><span><small>východ</small>{{ sun.sunrise }}</span><span><small>západ</small>{{ sun.sunset }}</span><span><small>soumrak</small>{{ sun.dusk }}</span></div></div>
+ <div class="pill"><div><div class="sun"><span class="tw"><small>svítání</small>{{ sun.dawn }}</span><span class="main"><small>🌅 východ</small>{{ sun.sunrise }}</span><span class="main"><small>🌇 západ</small>{{ sun.sunset }}</span><span class="tw"><small>soumrak</small>{{ sun.dusk }}</span></div><div class="hint" style="color:rgba(255,255,255,.6);font-size:.68rem;margin-top:.2rem;text-align:center">AI hlídá od svítání do soumraku</div></div></div>
  {% if golden %}<span class="badge warn">svítání/soumrak – rychlé kontroly</span>{% endif %}
 </section>
 
@@ -2277,7 +2277,7 @@ TEMPLATES["dashboard.html"] = """{% extends "base.html" %}{% block head %}{% end
  <a class="tile {{ 'ok' if ai_on else 'warn' }}" href="/history"><span class="ico green">{{ icons.brain|safe }}</span><div class="tx"><div class="k">AI detekce</div><div class="v">{% if ai_on %}{{ stats7[0].notified if stats7 else 0 }}{% else %}vypnuto{% endif %}</div><div class="d">{% if ai_on %}dnes · {{ ai_used }}{% if ai_limit %} z {{ ai_limit }}{% endif %} dotazů{% else %}nastav klíč v Nastavení → AI{% endif %}</div>{% if ai_on and ai_limit %}<div class="bar"><i style="width:{{ ai_pct }}%"></i></div>{% endif %}</div><span class="arrow">›</span></a>
  <a class="tile {{ 'err' if down_count else ('ok' if email_ok else 'warn') }}" href="/email"><span class="ico amber">{{ icons.bell|safe }}</span><div class="tx"><div class="k">Upozornění</div><div class="v">{% if down_count %}{{ down_count }} {{ 'výpadek' if down_count == 1 else 'výpadky' }}{% elif email_ok %}v pořádku{% else %}nenastaveno{% endif %}</div><div class="d">{% if events %}poslední událost {{ events[0].ts|cztime }}{% elif cfg.web.enabled and cfg.web.token %}webhook na {{ cfg.web.url|urlhost }}{% elif email_ok %}e-mail na {{ cfg.email.to }}{% else %}kam posílat zprávy{% endif %}</div></div><span class="arrow">›</span></a>
  {% set tnum = sysinfo.temp|replace(' °C','')|float(0) %}
- <a class="tile {{ 'err' if tnum > 75 else ('warn' if tnum > 65 else 'ok') }}" href="/system"><span class="ico {{ 'red' if tnum > 75 else 'violet' }}">{{ icons.temp|safe }}</span><div class="tx"><div class="k">Raspberry Pi</div><div class="v">{{ sysinfo.temp }}</div><div class="d">{% if not fs.online %}Frigate neběží{% elif rec %}nahrává · Frigate {{ fs.version }}{% else %}jen náhled{% endif %} · běží {{ sysinfo.uptime }}</div></div><span class="arrow">›</span></a>
+ <a class="tile {{ 'err' if tnum > 75 else ('warn' if tnum > 65 else 'ok') }}" href="/system"><span class="ico {{ 'red' if tnum > 75 else 'violet' }}">{{ icons.temp|safe }}</span><div class="tx"><div class="k">Raspberry Pi{% if update_info and update_info.available %} <span class="badge warn">🆕 {{ update_info.latest }}</span>{% endif %}</div><div class="v">{{ sysinfo.temp }}</div><div class="d">{% if update_info and update_info.available %}k dispozici Atmovio {{ update_info.latest }} (běží {{ version }}){% else %}{% if not fs.online %}Frigate neběží{% elif rec %}nahrává · Frigate {{ fs.version }}{% else %}jen náhled{% endif %} · běží {{ sysinfo.uptime }}{% endif %}</div></div><span class="arrow">›</span></a>
 </div>
 
 {% set setup_cams = cameras|length > 0 %}{% set setup_web = email_ok %}{% set setup_ai = ai_on %}{% set setup_disk = rec %}
@@ -2357,6 +2357,7 @@ TEMPLATES["dashboard.html"] = """{% extends "base.html" %}{% block head %}{% end
  <div class="item ic"><span class="ico sky">{{ icons.disk|safe }}</span><div><div class="k">Systémový disk</div><div class="v" style="font-size:.95rem">{{ sysinfo.rootfs.split(' (')[1].rstrip(')') if '(' in sysinfo.rootfs else sysinfo.rootfs }}</div><div class="d">{{ sysinfo.rootfs.split(' (')[0] }}</div></div></div>
  <div class="item ic"><span class="ico teal">{{ icons.clock|safe }}</span><div><div class="k">Uptime</div><div class="v" style="font-size:.95rem">{{ sysinfo.uptime }}</div><div class="d">{{ sysinfo.hostname }} · {{ sysinfo.ip.split(' ')[0] }}</div></div></div>
  <div class="item ic"><span class="ico {{ 'red' if not fs.online else 'green' }}">{{ icons.check|safe }}</span><div><div class="k">Služby</div><div class="v" style="font-size:.95rem">{% if fs.online and rec %}vše v pořádku{% elif fs.online %}jen náhled{% else %}Frigate neběží{% endif %}</div><div class="d">Frigate {{ fs.version if fs.online else '–' }} · Atmovio {{ version }}</div></div></div>
+ <div class="item ic"><span class="ico {{ 'amber' if update_info and update_info.available else 'green' }}">{{ icons.bolt|safe }}</span><div><div class="k">Aktualizace</div><div class="v" style="font-size:.95rem">{% if update_info and update_info.available %}<a href="/system/update">verze {{ update_info.latest }} →</a>{% else %}aktuální{% endif %}</div><div class="d">{% if update_info and update_info.checked %}kontrola {{ update_info.checked|czdt }}{% else %}denní kontrola GitHubu{% endif %}</div></div></div>
  <div class="item ic"><span class="ico {{ 'red' if tnum > 75 else ('amber' if tnum > 65 else 'green') }}">{{ icons.temp|safe }}</span><div><div class="k">Teplota</div><div class="v">{{ sysinfo.temp }}</div><div class="d">{% if tnum > 75 %}vysoká{% elif tnum > 65 %}teplejší{% else %}v normě{% endif %}</div></div></div>
 </div></div>
 </div>
@@ -2944,24 +2945,29 @@ TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block content %}
 {% if videos and videos|selectattr('in_progress')|list %}<div x-data="autorefresh(20)"></div>{% endif %}
 {% endblock %}"""
 
-TEMPLATES["history.html"] = """{% extends "base.html" %}{% block content %}
-<div class="card tight"><form class="row" method="get" style="align-items:end">
-<div><label>Kamera</label><select name="camera"><option value="">všechny</option>{% for c in cameras %}<option value="{{ c }}" {% if c==f_cam %}selected{% endif %}>{{ cam(c) }}</option>{% endfor %}</select></div>
-<div><label>Min. skóre</label><input type="number" name="min_score" min="0" max="10" value="{{ f_min }}"></div>
-<div><label>Zobrazit</label><select name="show"><option value="notified" {% if f_show=='notified' %}selected{% endif %}>jen detekce s upozorněním</option><option value="all" {% if f_show=='all' %}selected{% endif %}>všechna vyhodnocení AI</option><option value="errors" {% if f_show=='errors' %}selected{% endif %}>jen chyby</option></select></div>
-<div><button class="btn">Filtrovat</button></div></form>
-<form method="post" action="/history/delete" class="row" style="margin-top:10px;align-items:center"><input type="hidden" name="camera" value="{{ f_cam }}">
-<span class="hint">Historie se maže sama po {{ keep_days }} dnech (nastavíš v AI obloha). Snímky beze změny (předfiltr) se neukládají vůbec. Ručně:</span>
-<button class="btn small sec" name="what" value="errors">Smazat chybná</button>
-<button class="btn small danger" name="what" value="all" onclick="return confirm('Smazat celou historii{% if f_cam %} kamery {{ cam(f_cam) }}{% endif %} včetně snímků?')">Smazat vše{% if f_cam %} ({{ cam(f_cam) }}){% endif %}</button></form></div>
-<div class="gallery">
-{% for e in rows %}<div class="shot">{% if e.image %}<a href="{% if not e.skipped and not e.error %}/detection/{{ e.id }}{% else %}/snapshot/{{ e.image }}{% endif %}" {% if e.skipped or e.error %}data-lightbox="history"{% endif %}><img src="/snapshot/{{ e.image }}" alt="" loading="lazy"></a>{% endif %}
-<div class="b"><div class="line">{% if e.error %}<span class="badge err">chyba</span>{% elif e.skipped %}<span class="badge mut">přeskočeno</span>{% else %}<span class="s">{{ e.score }}/10</span>{% endif %}<span class="when">{{ e.ts|cztime }}</span><span class="hint">{{ e.ts|czdate }}</span>{% if e.notified %}<span class="badge ok">upozorněno</span>{% endif %}</div>
-<div class="hint"><b>{{ cam(e.camera) }}</b>{% if e.phenomenon %} · {{ e.phenomenon }}{% endif %}</div>
-{% if e.exported %}<div><a class="badge info" href="/videos" title="Z této detekce je vystřižené video ke stažení">🎬 video exportováno</a></div>{% endif %}
-<div class="hint" style="white-space:normal">{{ (e.description or e.error or '')[:160] }}{% if (e.description or e.error or '')|length > 160 %}…{% endif %}{% if e.note %} · <i>{{ e.note }}</i>{% endif %}</div>
-<div>{% if not e.skipped and not e.error %}<a class="btn small sec" href="/detection/{{ e.id }}">Detail a video</a>{% else %}<form method="post" action="/detection/{{ e.id }}/delete" style="display:inline"><button class="btn small sec">Smazat</button></form>{% endif %}</div></div></div>{% endfor %}
-{% if not rows %}<div class="hint">Nic k zobrazení.</div>{% endif %}</div>
+TEMPLATES["history.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><form method="post" action="/history/delete" data-nobusy style="display:flex;gap:.4rem"><input type="hidden" name="camera" value="{{ f_cam }}"><button class="btn small sec" name="what" value="errors">Smazat chybná</button><button class="btn small danger" name="what" value="all" onclick="return confirm('Smazat celou historii{% if f_cam %} kamery {{ cam(f_cam) }}{% endif %} včetně snímků?')">Smazat vše{% if f_cam %} ({{ cam(f_cam) }}){% endif %}</button></form></div>{% endblock %}{% block content %}
+{% macro link(cam_, min_, show_) %}/history?camera={{ cam_ }}&min_score={{ min_ }}&show={{ show_ }}{% endmacro %}
+<div class="filters">
+ <div class="fgroup"><span class="fl">Zobrazit</span><span class="seg"><a class="{{ 'on' if f_show=='notified' }}" href="{{ link(f_cam, f_min, 'notified') }}">S upozorněním</a><a class="{{ 'on' if f_show=='all' }}" href="{{ link(f_cam, f_min, 'all') }}">Všechna hodnocení</a><a class="{{ 'on' if f_show=='errors' }}" href="{{ link(f_cam, f_min, 'errors') }}">Chyby</a></span></div>
+ <div class="fgroup"><span class="fl">Kamera</span><span class="seg"><a class="{{ 'on' if not f_cam }}" href="{{ link('', f_min, f_show) }}">Všechny</a>{% for c in cameras %}<a class="{{ 'on' if c==f_cam }}" href="{{ link(c, f_min, f_show) }}">{{ cam(c) }}</a>{% endfor %}</span></div>
+ <div class="fgroup"><span class="fl">Skóre</span><span class="seg"><a class="{{ 'on' if not f_min }}" href="{{ link(f_cam, 0, f_show) }}">vše</a>{% for m in (5, 7, 8, 9) %}<a class="{{ 'on' if f_min==m }}" href="{{ link(f_cam, m, f_show) }}">{{ m }}+</a>{% endfor %}</span></div>
+ <span class="hint" style="margin-left:auto">{{ rows|length }} záznamů · historie se maže po {{ keep_days }} dnech</span>
+</div>
+{% set ns = namespace(day='') %}
+{% for e in rows %}{% set d = e.ts|czdate %}{% if d != ns.day %}{% set ns.day = d %}<h2 class="day">{{ d }}</h2>{% endif %}
+<article class="hrow {{ 'err' if e.error else ('hit' if e.notified else '') }}">
+ <a class="pic" href="{% if not e.error %}/detection/{{ e.id }}{% else %}/snapshot/{{ e.image }}{% endif %}" {% if e.error %}data-lightbox="history"{% endif %}>{% if e.image %}<img src="/snapshot/{{ e.image }}" alt="" loading="lazy">{% endif %}
+  <span class="sc {{ 'err' if e.error else ('ok' if e.score >= threshold else 'mut') }}">{% if e.error %}chyba{% else %}{{ e.score }}/10{% endif %}</span></a>
+ <div class="tx">
+  <div class="hd"><span class="when">{{ e.ts|cztime }}</span><b>{{ cam(e.camera) }}</b>{% if e.phenomenon %}<span class="ph">{{ e.phenomenon }}</span>{% endif %}
+   {% if e.notified %}<span class="badge ok">upozorněno</span>{% elif not e.error and e.score >= threshold %}<span class="badge info">v epizodě</span>{% endif %}{% if e.exported %}<a class="badge info" href="/videos" title="Z této detekce je vystřižené video">🎬 video</a>{% endif %}</div>
+  <p class="desc">{{ e.description or e.error or '–' }}</p>
+  {% if e.note %}<div class="hint">{{ e.note }}</div>{% endif %}
+ </div>
+ <div class="ac">{% if not e.error %}<a class="btn small sec" href="/detection/{{ e.id }}">Detail a video</a>{% else %}<form method="post" action="/detection/{{ e.id }}/delete" data-nobusy><button class="btn small sec">Smazat</button></form>{% endif %}</div>
+</article>
+{% endfor %}
+{% if not rows %}<div class="card"><p class="hint" style="margin:0">Nic k zobrazení{% if f_show == 'notified' %} – zkus <a href="{{ link(f_cam, f_min, 'all') }}">všechna hodnocení</a>{% endif %}.</p></div>{% endif %}
 {% endblock %}"""
 
 # Všechny POST formuláře, včetně přihlášení, dostanou stejnou ochranu.
@@ -3086,7 +3092,8 @@ def smart_snapshot() -> list:
             return int(v) if isinstance(v, (int, float)) else None
         nvme = j.get("nvme_smart_health_information_log") or {}
         rows.append({
-            "dev": dev, "role": role, "model": j.get("model_name") or "", "serial": j.get("serial_number") or dev,
+            # klíč disku: sériové číslo; bez něj model+role (ne /dev/sdX – to se po restartu prohodí a disk by byl v seznamu dvakrát)
+            "dev": dev, "role": role, "model": j.get("model_name") or "", "serial": j.get("serial_number") or f"{j.get('model_name') or 'disk'}|{role}",
             "healthy": 1 if (j.get("smart_status") or {}).get("passed", True) else 0,
             "pending": raw(197) if attrs else None, "reallocated": raw(5) if attrs else nvme.get("media_errors"),
             "uncorrectable": raw(198) if attrs else None,
@@ -3128,7 +3135,7 @@ def disk_health() -> list:
     try:
         with db() as con:
             latest = [dict(r) for r in con.execute(
-                "SELECT * FROM disk_smart WHERE ts IN (SELECT MAX(ts) FROM disk_smart GROUP BY serial) ORDER BY role")]
+                "SELECT * FROM disk_smart WHERE ts IN (SELECT MAX(ts) FROM disk_smart GROUP BY role) ORDER BY role")]
             for r in latest:
                 bad = (r["pending"] or 0) + (r["reallocated"] or 0) + (r["uncorrectable"] or 0)
                 r["bad"] = bad
@@ -4466,7 +4473,8 @@ def history(request: Request, camera: str = "", min_score: int = 0, show: str = 
     with db() as con:
         rows = [dict(r) for r in con.execute(q, args)]
     return render(request, "history.html", "Historie vyhodnocení", rows=rows, cameras=frigate_cameras(cfg),
-                  f_cam=camera, f_min=min_score, f_show=show, keep_days=cfg["ai"].get("keep_days", 14))
+                  f_cam=camera, f_min=min_score, f_show=show, keep_days=cfg["ai"].get("keep_days", 14), threshold=int(cfg["ai"].get("threshold", 7)),
+                  subtitle="Co AI na obloze viděla – s upozorněním, nebo úplně vše.")
 
 
 @app.get("/detection/{rid}", response_class=HTMLResponse)

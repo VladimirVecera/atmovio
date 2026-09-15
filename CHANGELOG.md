@@ -12,6 +12,11 @@ All notable changes to Atmovio (versions ≤ 3.4 were released under the name Sk
 - Detection page plays the **exported clip** when one exists (smooth, seekable); the raw Frigate segment is used only for a
   custom range, with an explanation why its time may jump.
 - Camera fps badge explains that 5 fps is the preview/AI stream; recording keeps the camera's full quality.
+- **History page** rebuilt: button filters (alerts / all / errors · camera · min. score), one row per evaluation grouped
+  by day with the full AI text; delete actions moved to the page header.
+- Dashboard shows an available update in the Raspberry Pi tile and in the System box (also in `/api/v1/status` → `update`).
+- Sunrise/sunset are highlighted in the header strip, dawn/dusk muted.
+- S.M.A.R.T.: a disk is no longer listed twice after `/dev/sdX` names swap on reboot (keyed by serial/model, one row per role).
 
 ## 4.1 – 2026-09 – new admin design
 
