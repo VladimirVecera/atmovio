@@ -2,6 +2,17 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 4.2 – 2026-09 – AI in focus
+
+- **AI in focus**: every camera card on the dashboard shows the latest AI evaluation of that camera with score,
+  phenomenon and the model's description (also below the threshold), with links to the detail and the camera's history.
+  The events feed is gone; "Recent sky alerts" (with the AI text) sits above the storage / AI / system boxes.
+- **AI provider chooser**: Gemini, Groq/OpenRouter, Claude, OpenAI and Ollama as cards with price, free limits, accuracy,
+  where to get the key and recommended models (still editable by hand).
+- Detection page plays the **exported clip** when one exists (smooth, seekable); the raw Frigate segment is used only for a
+  custom range, with an explanation why its time may jump.
+- Camera fps badge explains that 5 fps is the preview/AI stream; recording keeps the camera's full quality.
+
 ## 4.1 – 2026-09 – new admin design
 
 - **Redesigned web UI.** Horizontal menu in the header (Přehled · Kamery · Záznamy · Detekce a AI · Videa · Nastavení ▾ · Nástroje ▾),
@@ -12,14 +23,6 @@ All notable changes to Atmovio (versions ≤ 3.4 were released under the name Sk
   AI today with 7-day statistics, system tiles.
 - Unified cards, tables, forms and buttons across all pages; camera cards on the Kamery page got action buttons.
 - Help section links to the REST API / Home Assistant guide on atmovio.com.
-- **AI in focus**: every camera card on the dashboard shows the latest AI evaluation of that camera with score,
-  phenomenon and the model's description (also below the threshold), with links to the detail and the camera's history.
-  The events feed is gone; "Recent sky alerts" (with the AI text) sits above the storage / AI / system boxes.
-- **AI provider chooser**: Gemini, Groq/OpenRouter, Claude, OpenAI and Ollama as cards with price, free limits, accuracy,
-  where to get the key and recommended models (still editable by hand).
-- Detection page plays the **exported clip** when one exists (smooth, seekable); the raw Frigate segment is used only for a
-  custom range, with an explanation why its time may jump.
-- Camera fps badge explains that 5 fps is the preview/AI stream; recording keeps the camera's full quality.
 
 ## 4.0 – 2026-09 – renamed to Atmovio
 
