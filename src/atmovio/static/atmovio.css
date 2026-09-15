@@ -214,10 +214,12 @@ button.menu-btn:not(.block) { display: none; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; }
 .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1rem; }
 .grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
 .grid-wide { display: grid; grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); gap: 1.2rem; }
 @media (max-width: 1250px) { .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1000px) { .grid-3 { grid-template-columns: 1fr; } }
 @media (max-width: 640px) { .grid-4, .grid-wide { grid-template-columns: 1fr; } }
-.grid > .card, .grid-2 > .card, .grid-4 > .card { margin: 0; }
+.grid > .card, .grid-2 > .card, .grid-3 > .card, .grid-4 > .card { margin: 0; }
 .row { display: flex; gap: .9rem; flex-wrap: wrap; }
 .row > * { flex: 1; min-width: 160px; }
 .row > .btn, .row > button, .row > form { flex: 0 0 auto; min-width: 0; }
@@ -352,7 +354,7 @@ a[data-lightbox] { cursor: zoom-in; }
 .cam .body { padding: .7rem .85rem .8rem; display: flex; flex-direction: column; gap: .3rem; flex: 1; }
 .cam .name { font-weight: 750; font-size: .98rem; display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
 .cam .meta { font-size: .8rem; color: var(--pico-muted-color); display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; }
-.cam .acts { display: grid; grid-template-columns: 1fr 1fr; gap: .45rem; margin-top: .45rem; }
+.cam .acts { display: grid; grid-template-columns: 1fr 1fr; gap: .45rem; margin-top: auto; padding-top: .45rem; }
 .cam .acts .btn { margin: 0; padding: .4rem .5rem; font-size: .82rem; }
 .cam.add { border-style: dashed; border-width: 2px; align-items: center; justify-content: center; text-align: center; text-decoration: none; color: var(--pico-muted-color); padding: 1.2rem; min-height: 200px; box-shadow: none; background: transparent; }
 .cam.add:hover { border-color: var(--pico-primary); color: var(--pico-primary); text-decoration: none; }
@@ -473,3 +475,41 @@ header.top .right .dd { flex: none; }
   .brand-foot { padding: 1rem .9rem; }
 }
 @media (max-width: 480px) { .tiles { grid-template-columns: 1fr; } header.top .right .btn.ghost { display: none; } }
+
+/* ---------- AI: výběr poskytovatele ---------- */
+.prov { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: .7rem; margin: .4rem 0 .6rem; }
+.prov-card { display: block; margin: 0; padding: .8rem .9rem; border: 2px solid var(--pico-card-border-color); border-radius: 12px; background: var(--pico-card-sectioning-background-color); cursor: pointer; font-size: .82rem; color: var(--pico-muted-color); font-weight: 500; position: relative; }
+.prov-card:hover { border-color: var(--pico-primary); }
+.prov-card.on { border-color: var(--pico-primary); background: var(--sw-info-bg); color: var(--pico-color); }
+.prov-card input { position: absolute; opacity: 0; width: 0; height: 0; }
+.prov-card .ph { display: flex; justify-content: space-between; align-items: center; gap: .5rem; margin-bottom: .45rem; }
+.prov-card .ph b { color: var(--pico-color); font-size: .98rem; }
+.prov-card .pr { display: flex; gap: .45rem; align-items: flex-start; margin: .2rem 0; line-height: 1.35; }
+.prov-card .pr span:first-child { flex: none; }
+
+/* ---------- Přehled: co AI naposledy viděla ---------- */
+.ai-last { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: .9rem; }
+.ai-ev { display: flex; gap: .9rem; margin: 0; padding: .7rem; border: 1px solid var(--pico-card-border-color); border-radius: 12px; background: var(--pico-card-sectioning-background-color); }
+.ai-ev.hit { border-color: rgba(34, 197, 94, .45); }
+.ai-ev .pic { position: relative; flex: none; width: 200px; border-radius: 9px; overflow: hidden; background: var(--sw-img-bg); }
+.ai-ev .pic img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; }
+.ai-ev .sc { position: absolute; left: .45rem; bottom: .45rem; padding: .1rem .5rem; border-radius: .4rem; font-weight: 800; font-size: .8rem; background: rgba(2, 6, 23, .75); color: #fff; }
+.ai-ev .sc.ok { color: #4ade80; } .ai-ev .sc.mut { color: #cbd5e1; }
+.ai-ev .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ai-ev .hd { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; font-size: .85rem; }
+.ai-ev .ph { font-weight: 750; font-size: 1rem; margin: .15rem 0 .1rem; }
+.ai-ev .desc { font-size: .88rem; color: var(--pico-muted-color); margin: 0 0 .4rem; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.ai-ev .acts { margin-top: auto; display: flex; gap: .4rem; }
+.ai-ev .acts .btn { margin: 0; }
+@media (max-width: 560px) { .ai-last { grid-template-columns: 1fr; } .ai-ev { flex-direction: column; } .ai-ev .pic { width: 100%; } }
+
+/* poslední hodnocení AI v kartě kamery */
+.cam .ai-note { display: flex; gap: .55rem; align-items: flex-start; margin-top: .35rem; padding: .5rem .6rem; border-radius: 9px; background: var(--pico-card-sectioning-background-color); border: 1px solid var(--pico-card-border-color); text-decoration: none; color: inherit; font-size: .82rem; line-height: 1.35; }
+.cam .ai-note:hover { border-color: var(--pico-primary); text-decoration: none; }
+.cam .ai-note.hit { border-color: rgba(34, 197, 94, .5); }
+.cam .ai-note .sc { flex: none; font-weight: 800; font-size: .78rem; padding: .1rem .45rem; border-radius: .4rem; background: var(--sw-ok-bg); color: var(--sw-ok); }
+.cam .ai-note .sc.mut { background: var(--pico-muted-border-color); color: var(--pico-muted-color); }
+.cam .ai-note .t { min-width: 0; }
+.cam .ai-note .t small { color: var(--pico-muted-color); }
+.cam .ai-note .desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--pico-muted-color); }
+.shot .desc2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

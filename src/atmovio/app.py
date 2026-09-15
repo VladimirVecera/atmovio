@@ -180,6 +180,35 @@ PROVIDERS = {
 }
 PROVIDER_MODELS = {k: v["model"] for k, v in PROVIDERS.items()}
 
+# Přehled poskytovatelů pro stránku AI – cena, limity, přesnost, kde vzít klíč, doporučené modely.
+PROVIDER_INFO = {
+    "gemini": {"name": "Google Gemini", "tag": "zdarma", "kind": "free", "price": "Zdarma bez karty (bezplatný tarif AI Studia).",
+               "limits": "auto = Flash-Lite: cca 500 vyhodnocení/den zdarma. Plný Flash ~20/den zdarma; placený tarif bez limitu za pár Kč/den.",
+               "quality": "Dobrá; Flash je přesnější než Flash-Lite. Google může snímky z bezplatného tarifu použít k trénování.",
+               "key_url": "https://aistudio.google.com/apikey", "key_label": "Create API key", "usage_url": "https://aistudio.google.com/rate-limit",
+               "models": [("auto", "nejnovější Flash-Lite, který klíč nabízí – doporučeno"), ("gemini-2.5-flash-lite", "Flash-Lite napevno"), ("gemini-2.5-flash", "přesnější, zdarma jen ~20/den")]},
+    "openai_compat": {"name": "Groq / OpenRouter", "tag": "zdarma", "kind": "free", "price": "Groq: zdarma bez karty. OpenRouter: modely s příponou :free zdarma, ostatní za kredity.",
+                      "limits": "Groq free: řádově tisíce požadavků/den, ale malé modely. OpenRouter free: ~50–200/den podle modelu.",
+                      "quality": "Střední – Llama 4 Scout vidí obrázky, ale oblohu popisuje hůř než Gemini/Claude.",
+                      "key_url": "https://console.groq.com/keys", "key_label": "Create API Key", "usage_url": "https://console.groq.com/settings/limits",
+                      "models": [("meta-llama/llama-4-scout-17b-16e-instruct", "Groq, zdarma"), ("meta-llama/llama-4-maverick-17b-128e-instruct", "Groq, přesnější"), ("google/gemini-2.0-flash-exp:free", "OpenRouter, zdarma")]},
+    "anthropic": {"name": "Anthropic Claude", "tag": "placené", "kind": "paid", "price": "Předplacené kredity (od 5 USD); jedno vyhodnocení ≈ 0,01–0,05 Kč u Haiku.",
+                  "limits": "Bez denního limitu, platíš za spotřebu. 300 vyhodnocení/den ≈ 10–40 Kč/měsíc.",
+                  "quality": "Nejlepší popisy a nejméně planých poplachů.",
+                  "key_url": "https://console.anthropic.com/settings/keys", "key_label": "Create Key", "usage_url": "https://console.anthropic.com/settings/usage",
+                  "models": [("claude-haiku-4-5", "levný a rychlý – doporučeno"), ("claude-sonnet-4-5", "nejpřesnější, ~10× dražší")]},
+    "openai": {"name": "OpenAI", "tag": "placené", "kind": "paid", "price": "Předplacené kredity (od 5 USD); vyhodnocení ≈ 0,02–0,05 Kč u gpt-4o-mini.",
+               "limits": "Bez denního limitu, platíš za spotřebu. 300 vyhodnocení/den ≈ 15–40 Kč/měsíc.",
+               "quality": "Velmi dobrá, srovnatelná s Claude.",
+               "key_url": "https://platform.openai.com/api-keys", "key_label": "Create new secret key", "usage_url": "https://platform.openai.com/usage",
+               "models": [("gpt-4o-mini", "levný – doporučeno"), ("gpt-4.1-mini", "novější, podobná cena"), ("gpt-4.1", "nejpřesnější, dražší")]},
+    "ollama": {"name": "Ollama na Raspberry Pi", "tag": "offline", "kind": "local", "price": "Zdarma, bez internetu a bez klíče – model běží přímo na Pi.",
+               "limits": "Bez limitu, ale jedno vyhodnocení trvá 30–90 s a zatěžuje CPU (Pi 5 8 GB doporučeno).",
+               "quality": "Nejnižší – malé modely oblohu často popíšou špatně. Spíš pro experimenty nebo úplně bez internetu.",
+               "key_url": "https://ollama.com/download", "key_label": "instalace Ollama", "usage_url": "",
+               "models": [("moondream", "nejmenší, nejrychlejší"), ("qwen2.5vl:3b", "lepší popisy, pomalejší"), ("llava", "klasika, pomalá")]},
+}
+
 # --------------------------------------------------------------------------- utils
 
 def slugify(name: str) -> str:
@@ -2268,22 +2297,26 @@ TEMPLATES["dashboard.html"] = """{% extends "base.html" %}{% block head %}{% end
 <div class="cams">
 {% for c in cameras %}{% set s = fs.cameras.get(c) %}{% set info = caminfo[c] %}{% set out = outages.get('cam:' ~ c) %}
 <div class="cam"><a class="img" href="/camera/{{ c }}" title="Otevřít kameru"><img src="/live/{{ c }}.jpg?t={{ now_ts }}" alt="" loading="lazy" onerror="window.swImgFail?swImgFail(this):this.style.display='none'">
-{% if out %}<span class="live"><span class="dot err"></span>VÝPADEK</span>{% elif s and s.fps %}<span class="live"><span class="dot ok"></span>ŽIVĚ</span><span class="fps">{{ '%.0f'|format(s.fps) }} fps</span>{% else %}<span class="live"><span class="dot warn"></span>BEZ SIGNÁLU</span>{% endif %}</a>
+{% if out %}<span class="live"><span class="dot err"></span>VÝPADEK</span>{% elif s and s.fps %}<span class="live"><span class="dot ok"></span>ŽIVĚ</span><span class="fps" title="snímků/s náhledového streamu pro AI a náhled; záznam se ukládá v plné kvalitě kamery">{{ '%.0f'|format(s.fps) }} fps</span>{% else %}<span class="live"><span class="dot warn"></span>BEZ SIGNÁLU</span>{% endif %}</a>
 <div class="body"><div class="name"><span>{{ cam(c) }}</span>{% if out %}<span class="badge err">{{ out }}</span>{% endif %}</div>
 <div class="meta"><span>🖥 {{ info.ip or 'IP ?' }}</span><span>·</span><span>{{ info.via }}</span>{% if c in cfg.ai.cameras and cfg.ai.enabled %}<span class="badge info">AI hlídá</span>{% endif %}{% if cfg.ai.enabled and cfg.ai.auto_export.enabled and c in cfg.ai.auto_export.cameras %}<span class="badge ok" title="Po upozornění se automaticky vystřihne video">🎬 auto video</span>{% endif %}</div>
+{% set le = last_eval.get(c) %}
+{% if c in cfg.ai.cameras and cfg.ai.enabled %}<a class="ai-note{{ ' hit' if le and le.notified else '' }}" href="{% if le %}/detection/{{ le.id }}{% else %}/history?camera={{ c }}&show=all{% endif %}" title="Poslední hodnocení AI – kliknutím otevřeš detail">
+{% if le %}<span class="sc {{ 'ok' if le.score >= cfg.ai.threshold else 'mut' }}">{{ le.score }}/10</span><span class="t"><b>{{ le.phenomenon or 'nic zvláštního' }}</b> <small>{{ le.ts|cztime }}{% if le.ts|czdate != now_dt|czdate %} {{ le.ts|czdate }}{% endif %}</small><span class="desc">{{ le.description or '–' }}</span></span>
+{% else %}<span class="sc mut">AI</span><span class="t"><small>zatím žádné hodnocení – první proběhne za světla</small></span>{% endif %}</a>{% endif %}
 <div class="acts"><a class="btn sec" href="/live/{{ c }}">{{ icons.play|safe }} Živý náhled</a><a class="btn sec" href="/camera/{{ c }}">{{ icons.cog|safe }} Nastavení</a></div></div></div>
 {% endfor %}
 <a class="cam add" href="/discover"><span class="plus">+</span><b>Přidat kameru</b><span class="hint">vyhledat v síti nebo zadat RTSP adresu</span></a>
 </div></div>
 
-<div class="grid-4">
-<div class="card"><div class="section-head"><h2>Poslední události</h2><a class="btn small sec" href="/history">Vše</a></div>
-<ul class="feed">
-{% for e in recent[:5] %}<li><a href="/detection/{{ e.id }}"><img class="th" src="/snapshot/{{ e.image }}" alt="" loading="lazy"></a><div class="tx"><b>{{ e.phenomenon or 'Zajímavá obloha' }} · {{ e.score }}/10</b><small>{{ cam(e.camera) }}</small></div><span class="t">{{ e.ts|czdate }} {{ e.ts|cztime }}</span></li>{% endfor %}
-{% for e in events[:3] if e.kind != 'sky' %}<li><span class="th">{% if e.kind == 'outage' %}⛔{% elif e.kind == 'recovery' %}✅{% elif e.kind == 'test' %}🧪{% else %}⚙️{% endif %}</span><div class="tx"><b>{{ e.subject }}</b><small>{{ {'outage': 'výpadek', 'recovery': 'obnoveno', 'system': 'systém', 'test': 'test'}.get(e.kind, e.kind) }}</small></div><span class="t">{{ e.ts|czdate }} {{ e.ts|cztime }}</span></li>{% endfor %}
-{% if not recent and not events %}<li><span class="hint">Zatím nic. Až AI najde zajímavou oblohu (skóre ≥ {{ cfg.ai.threshold }}), objeví se tady.</span></li>{% endif %}
-</ul></div>
+<div class="card"><div class="section-head"><h2>Poslední upozornění na oblohu</h2><span class="hint">detekce, na které přišlo upozornění</span><a class="btn small sec" href="/history">Historie</a></div>
+<div class="gallery">
+{% for e in recent[:5] %}<div class="shot"><a href="/detection/{{ e.id }}"><img src="/snapshot/{{ e.image }}" alt="" loading="lazy"></a>
+<div class="b"><div class="line"><span class="s">{{ e.score }}/10</span><span class="when">{{ e.ts|cztime }}</span><span class="hint">{{ e.ts|czdate }}</span>{% if e.exported %}<a class="badge info" href="/videos" title="Z této detekce je vystřižené video">🎬</a>{% endif %}</div><div><b>{{ e.phenomenon }}</b> <span class="hint">· {{ cam(e.camera) }}</span></div><div class="hint desc2">{{ e.description or '' }}</div></div></div>{% endfor %}
+{% if not recent %}<div class="hint">Zatím nic. Až AI najde zajímavou oblohu (skóre ≥ {{ cfg.ai.threshold }}) a pošle upozornění, objeví se tady.</div>{% endif %}
+</div></div>
 
+<div class="grid-3">
 <div class="card"><div class="section-head"><h2>Úložiště</h2><a class="btn small sec" href="/storage">Detail</a></div>
 {% if rec %}
 <div class="ai-today"><div class="ring {{ 'err' if disk.pct > 92 else ('warn' if disk.pct > 80 else '') }}" style="--p:{{ disk.pct }}"><span>{{ disk.pct }} %</span></div>
@@ -2327,13 +2360,6 @@ TEMPLATES["dashboard.html"] = """{% extends "base.html" %}{% block head %}{% end
  <div class="item ic"><span class="ico {{ 'red' if tnum > 75 else ('amber' if tnum > 65 else 'green') }}">{{ icons.temp|safe }}</span><div><div class="k">Teplota</div><div class="v">{{ sysinfo.temp }}</div><div class="d">{% if tnum > 75 %}vysoká{% elif tnum > 65 %}teplejší{% else %}v normě{% endif %}</div></div></div>
 </div></div>
 </div>
-
-<div class="card" style="margin-top:1rem"><div class="section-head"><h2>Poslední upozornění na oblohu</h2><span class="hint">jen detekce, na které přišlo upozornění</span><a class="btn small sec" href="/history">Historie</a></div>
-<div class="gallery">
-{% for e in recent[:5] %}<div class="shot"><a href="/detection/{{ e.id }}"><img src="/snapshot/{{ e.image }}" alt="" loading="lazy"></a>
-<div class="b"><div class="line"><span class="s">{{ e.score }}/10</span><span class="when">{{ e.ts|cztime }}</span><span class="hint">{{ e.ts|czdate }}</span></div><div class="hint">{{ cam(e.camera) }} · {{ e.phenomenon }}</div>{% if e.exported %}<div><a class="badge info" href="/videos" title="Z této detekce je vystřižené video">🎬 video</a></div>{% endif %}</div></div>{% endfor %}
-{% if not recent %}<div class="hint">Zatím nic. Až AI najde zajímavou oblohu (skóre ≥ {{ cfg.ai.threshold }}) a pošle upozornění, objeví se tady.</div>{% endif %}
-</div></div>
 
 <details class="card" id="guide" data-keep><summary>Nápověda – kam chodit a co kde najdu</summary>
 <div class="guide">
@@ -2485,26 +2511,39 @@ TEMPLATES["storage.html"] = """{% extends "base.html" %}{% block content %}
 
 TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block content %}
 <form method="post" action="/ai">
-<div class="card"><div class="section-head"><h2 style="margin:0">1 · Klíč k AI</h2>{% if ai.api_key %}<span class="badge ok">klíč zadán</span>{% else %}<span class="badge warn">chybí klíč</span>{% endif %}</div>
-{% if not ai.api_key %}
-<p>Hlídání oblohy dělá umělá inteligence Google (Gemini). Je <b>zdarma</b>, stačí Google účet – žádná platební karta.</p>
-<ol class="steps"><li>Otevři <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> a přihlas se Google účtem.</li>
-<li>Klikni na <b>Create API key</b> a klíč zkopíruj.</li>
-<li>Vlož ho do pole níže a klikni na <b>Uložit a ověřit klíč</b>.</li></ol>
-{% endif %}
-<label>Klíč od Google (API klíč)</label><input type="password" name="api_key" value="{{ ai.api_key }}" autocomplete="off" placeholder="vlož zkopírovaný klíč">
-<button class="btn sec" formaction="/ai/check" formnovalidate>Uložit a ověřit klíč</button>
-{% if check %}<pre style="margin-top:10px">{{ check }}</pre>{% endif %}
-<details><summary>Pokročilé: jiný poskytovatel AI (Groq, Claude, OpenAI, Ollama)</summary>
-<div class="row">
-<div><label>Poskytovatel</label><select name="provider" id="provider" onchange="var h=document.getElementById('mh');var m=this.options[this.selectedIndex];h.textContent=m.dataset.hint;document.getElementById('bu').style.display=this.value=='openai_compat'?'':'none';document.getElementById('ol').style.display=this.value=='ollama'?'':'none';document.getElementById('model').placeholder=m.dataset.model;">
-{% for pid, p in providers.items() %}<option value="{{ pid }}" data-hint="{{ p.models_hint }}" data-model="{{ p.model }}" {% if ai.provider==pid %}selected{% endif %}>{{ p.label }}</option>{% endfor %}</select></div>
-<div><label>Název modelu</label><input type="text" name="model" id="model" value="{{ ai.model }}" placeholder="{{ providers[ai.provider].model }}"><div class="hint" id="mh">{{ providers[ai.provider].models_hint }}</div></div>
+<div class="card" x-data="{p: '{{ ai.provider }}'}"><div class="section-head"><h2 style="margin:0">1 · Poskytovatel AI a klíč</h2>{% if ai.api_key or ai.provider == 'ollama' %}<span class="badge ok">{{ provider_info[ai.provider].name }} · {{ ai.model or 'auto' }}</span>{% else %}<span class="badge warn">chybí klíč</span>{% endif %}</div>
+<p class="hint">Oblohu hodnotí „vision“ model – Atmovio mu pošle snímek a otázku, on vrátí skóre 0–10 a jevy. Vyber, kdo to bude dělat. <b>Google Gemini je zdarma a stačí na start</b>; placené Claude/OpenAI jsou přesnější za pár desítek korun měsíčně.</p>
+<div class="prov">
+{% for pid, pi in provider_info.items() %}
+<label class="prov-card" :class="{on: p==='{{ pid }}'}"><input type="radio" name="provider" value="{{ pid }}" x-model="p">
+<div class="ph"><b>{{ pi.name }}</b><span class="badge {{ 'ok' if pi.kind == 'free' else ('info' if pi.kind == 'local' else 'warn') }}">{{ pi.tag }}</span></div>
+<div class="pr"><span>💰</span><span>{{ pi.price }}</span></div>
+<div class="pr"><span>📊</span><span>{{ pi.limits }}</span></div>
+<div class="pr"><span>🎯</span><span>{{ pi.quality }}</span></div>
+</label>
+{% endfor %}
 </div>
-<div id="bu" {% if ai.provider != 'openai_compat' %}style="display:none"{% endif %}><label>Adresa API (base URL)</label><input type="text" name="base_url" value="{{ ai.base_url }}" placeholder="https://api.groq.com/openai/v1"><div class="hint">Groq: https://api.groq.com/openai/v1 · OpenRouter: https://openrouter.ai/api/v1</div></div>
-<div id="ol" {% if ai.provider != 'ollama' %}style="display:none"{% endif %}><label>Ollama URL</label><input type="text" name="ollama_url" value="{{ ai.ollama_url }}"></div>
-<p class="hint">Groq je také zdarma bez karty (adresa <code>https://api.groq.com/openai/v1</code>, model <code>meta-llama/llama-4-scout-17b-16e-instruct</code>). Claude Haiku / GPT-4o-mini jsou placené (desítky Kč měsíčně) a nejpřesnější. Ollama běží přímo na RPi zdarma, ale je pomalá a méně přesná. U bezplatného Gemini může Google snímky použít ke zlepšování svých modelů.</p>
-</details>
+{% for pid, pi in provider_info.items() %}
+<div x-show="p==='{{ pid }}'" {% if ai.provider != pid %}x-cloak{% endif %}>
+{% if pid != 'ollama' %}
+<ol class="steps" style="margin-top:.8rem"><li>Otevři <a href="{{ pi.key_url }}" target="_blank" rel="noopener">{{ pi.key_url|replace('https://','') }}</a>{% if pid == 'gemini' %} a přihlas se Google účtem{% endif %}.</li><li>Klikni na <b>{{ pi.key_label }}</b> a klíč zkopíruj{% if pi.kind == 'paid' %} (nejdřív dobij kredit, obvykle 5 USD){% endif %}.</li><li>Vlož ho níže a klikni na <b>Uložit a ověřit klíč</b>.{% if pi.usage_url %} Spotřebu a limity vidíš na <a href="{{ pi.usage_url }}" target="_blank" rel="noopener">{{ pi.usage_url|replace('https://','') }}</a>.{% endif %}</li></ol>
+{% else %}
+<p class="hint" style="margin-top:.8rem">Ollama musí běžet na Pi (<a href="{{ pi.key_url }}" target="_blank" rel="noopener">ollama.com</a>) a model musí být stažený: <code>ollama pull {{ pi.models[0][0] }}</code>. Klíč není potřeba.</p>
+{% endif %}
+<div class="row" style="align-items:end">
+<div style="flex:2"><label>Doporučené modely</label><select onchange="if(this.value){document.getElementById('model').value=this.value}"><option value="">– vybrat –</option>{% for m, note in pi.models %}<option value="{{ m }}" {% if ai.provider==pid and ai.model==m %}selected{% endif %}>{{ m }} – {{ note }}</option>{% endfor %}</select></div>
+</div>
+</div>
+{% endfor %}
+<div class="row" style="align-items:end">
+<div style="flex:2" x-show="p!=='ollama'"><label>API klíč</label><input type="password" name="api_key" value="{{ ai.api_key }}" autocomplete="off" placeholder="vlož zkopírovaný klíč"></div>
+<div><label>Název modelu <span class="hint">(lze přepsat ručně)</span></label><input type="text" name="model" id="model" value="{{ ai.model }}" placeholder="auto"></div>
+</div>
+<div x-show="p==='openai_compat'" {% if ai.provider != 'openai_compat' %}x-cloak{% endif %}><label>Adresa API (base URL)</label><input type="text" name="base_url" value="{{ ai.base_url }}" placeholder="https://api.groq.com/openai/v1"><div class="hint">Groq: https://api.groq.com/openai/v1 · OpenRouter: https://openrouter.ai/api/v1</div></div>
+<div x-show="p==='ollama'" {% if ai.provider != 'ollama' %}x-cloak{% endif %}><label>Ollama URL</label><input type="text" name="ollama_url" value="{{ ai.ollama_url }}"></div>
+<div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-top:.6rem"><button class="btn sec" formaction="/ai/check" formnovalidate>Uložit a ověřit klíč</button><span class="hint">Ověření pošle jeden testovací dotaz – u placených stojí zlomek haléře.</span></div>
+{% if check %}<pre style="margin-top:10px">{{ check }}</pre>{% endif %}
+<p class="hint" style="margin-top:.6rem">Dnes použito <b>{{ used_today }}</b>{% if ai.daily_limit %} z {{ ai.daily_limit }}{% endif %} dotazů (denní strop nastavíš v kroku 3). Snímky odcházejí jen k vybranému poskytovateli; záznamy nikdy.</p>
 </div>
 
 <div class="card"><h2>2 · Co hlídat</h2>
@@ -2734,7 +2773,9 @@ TEMPLATES["detection.html"] = """{% extends "base.html" %}{% block actions %}<di
 <div class="grid-2" style="grid-template-columns:minmax(0,3fr) minmax(300px,2fr)">
 <div>
 <div class="card" style="padding:0;overflow:hidden">
-{% if clip_state == 'ok' %}
+{% if use_export %}
+<video id="clip" controls preload="metadata" playsinline style="width:100%;display:block;background:#000;aspect-ratio:16/9" poster="{% if e.image %}/snapshot/{{ e.image }}{% endif %}" src="/videos/{{ use_export.id }}/play.mp4"></video>
+{% elif clip_state == 'ok' %}
 <video id="clip" controls preload="metadata" playsinline style="width:100%;display:block;background:#000;aspect-ratio:16/9" poster="{% if e.image %}/snapshot/{{ e.image }}{% endif %}" src="/clip/{{ e.camera }}.mp4?start={{ '%.0f'|format(clip_start) }}&end={{ '%.0f'|format(clip_end) }}"></video>
 {% elif e.image %}<a href="/snapshot/{{ e.image }}" data-lightbox="detail" data-caption="{{ cam(e.camera) }} · {{ e.ts[8:10] }}. {{ e.ts[5:7]|int }}. {{ e.ts[0:4] }} {{ e.ts[11:16] }}"><img src="/snapshot/{{ e.image }}" alt="" style="width:100%;display:block"></a>{% else %}<div class="hint" style="padding:18px">Snímek už není k dispozici.</div>{% endif %}
 <div style="padding:.6rem .9rem;display:flex;gap:.8rem;align-items:center;flex-wrap:wrap">
@@ -2744,7 +2785,8 @@ TEMPLATES["detection.html"] = """{% extends "base.html" %}{% block actions %}<di
 <div style="flex:0"><button class="btn small sec">Přehrát úsek</button></div></form>
 {% if e.image %}<a class="btn small sec" href="/snapshot/{{ e.image }}" data-lightbox="detail" data-caption="{{ cam(e.camera) }} · {{ e.ts[11:16] }}">🖼 Snímek AI</a>{% endif %}
 </div>
-{% if clip_state == 'ok' %}<div class="hint" style="padding:0 .9rem .7rem">Přehrává se záznam {{ before }} min před a {{ after }} min po snímku. Načtení trvá pár sekund (Frigate úsek nejdřív sestaví).</div>
+{% if use_export %}<div class="hint" style="padding:0 .9rem .7rem">🎬 Přehrává se <b>vystřižené video</b> „{{ use_export.name }}“ ({{ use_export.range_h }}, {{ use_export.duration_h }}) – plynule, s posuvníkem. Jiný rozsah přímo ze záznamu zobrazíš tlačítkem <b>Přehrát úsek</b>.</div>
+{% elif clip_state == 'ok' %}<div class="hint" style="padding:0 .9rem .7rem">Přehrává se surový záznam {{ before }} min před a {{ after }} min po snímku, který Frigate skládá z 10s úseků – čas v přehrávači proto může skákat a posuvník je nepřesný. Pro plynulé přehrání si video níže vystřihni; pak se tady přehraje samo.</div>
 {% elif clip_state == 'none' %}<div class="flash warn" style="margin:0 .9rem .7rem"><span>🎞</span><div>Pro tento čas <b>není záznam</b> – kamera v tu dobu nenahrávala (výpadek, živý režim bez disku) nebo už byl smazán po {{ retain }} dnech. Video tedy nelze přehrát ani vystřihnout; snímek AI zůstává.</div></div>
 {% elif clip_state == 'offline' %}<div class="flash warn" style="margin:0 .9rem .7rem"><span>⏳</span><div>Frigate právě neodpovídá (startuje nebo se restartuje) – zkus to za minutu.</div></div>
 {% else %}<div class="hint" style="padding:0 .9rem .7rem">Záznam není k dispozici – disk pro záznamy není připojený.</div>{% endif %}
@@ -2792,7 +2834,7 @@ TEMPLATES["detection.html"] = """{% extends "base.html" %}{% block actions %}<di
 TEMPLATES["live.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions">{% if mode != 'grid' %}<a class="btn small sec" href="/live">← Kamery</a>{% endif %}{% if mode == 'grid' and cameras %}<a class="btn small" href="/live/all">▶ Živě všechny kamery</a>{% endif %}<a class="btn small sec" href="{{ frigate_ui }}" target="_blank" rel="noopener">Frigate – záznamy ↗</a></div>{% endblock %}{% block content %}
 {% if not cameras %}<div class="card"><b>Zatím žádné kamery.</b> <a href="/discover">Nech je vyhledat v síti</a>.</div>{% endif %}
 {% if not fs.online %}<div class="flash warn"><span>⏳</span><div>Frigate právě neodpovídá (startuje nebo se restartuje) – obraz naskočí, až poběží.</div></div>{% endif %}
-{% macro state(c) %}{% set s = fs.cameras.get(c) %}{% set out = outages.get('cam:' ~ c) %}{% if out %}<span class="badge err">výpadek {{ out }}</span>{% elif s and s.fps %}<span class="badge ok">{{ '%.0f'|format(s.fps) }} fps</span>{% else %}<span class="badge warn">bez obrazu</span>{% endif %}{% endmacro %}
+{% macro state(c) %}{% set s = fs.cameras.get(c) %}{% set out = outages.get('cam:' ~ c) %}{% if out %}<span class="badge err">výpadek {{ out }}</span>{% elif s and s.fps %}<span class="badge ok" title="snímků/s náhledového streamu (AI, náhled); záznam je v plné kvalitě kamery">{{ '%.0f'|format(s.fps) }} fps</span>{% else %}<span class="badge warn">bez obrazu</span>{% endif %}{% endmacro %}
 
 {% if mode == 'all' %}
 <div class="cams big">
@@ -2829,7 +2871,7 @@ TEMPLATES["camera.html"] = """{% extends "base.html" %}{% block actions %}<div c
 <div class="grid-2">
 <div class="card" id="stav"><div class="section-head"><h2>Stav</h2></div>
 <div class="kpi">
- <div class="item"><div class="k">Obraz</div><div class="v">{% if out %}<span class="badge err">výpadek</span>{% elif s and s.fps %}{{ '%.0f'|format(s.fps) }} fps{% else %}<span class="badge warn">bez signálu</span>{% endif %}</div><div class="d">{% if out %}už {{ out }}{% elif s and s.fps %}kamera posílá video{% else %}Frigate z kamery nic nedostává{% endif %}</div></div>
+ <div class="item"><div class="k">Obraz</div><div class="v">{% if out %}<span class="badge err">výpadek</span>{% elif s and s.fps %}{{ '%.0f'|format(s.fps) }} fps{% else %}<span class="badge warn">bez signálu</span>{% endif %}</div><div class="d">{% if out %}už {{ out }}{% elif s and s.fps %}náhledový stream (AI a náhled); záznam jde v plné kvalitě kamery{% else %}Frigate z kamery nic nedostává{% endif %}</div></div>
  <div class="item"><div class="k">Nahrávání</div><div class="v">{% if rec_state == 'ok' %}<span class="badge ok">běží</span>{% elif rec_state == 'none' %}<span class="badge warn">bez záznamu</span>{% elif rec_state == 'offline' %}<span class="badge warn">Frigate neběží</span>{% else %}<span class="badge warn">bez disku</span>{% endif %}</div><div class="d">{% if rec_state == 'ok' %}posledních 10 minut je na disku{% elif rec_state == 'none' %}za posledních 10 min nic – kamera nebo disk{% elif rec_state == 'nodisk' %}připoj disk v Záznamech{% else %}zkus za minutu{% endif %}</div></div>
  <div class="item"><div class="k">Adresa</div><div class="v" style="font-size:.95rem">{{ info.ip or '?' }}</div><div class="d">{{ info.via }}{% if info.via == 'VPN' %} · <a href="/vpn">Síť a VPN</a>{% endif %}</div></div>
  <div class="item"><div class="k">Poslední AI</div><div class="v" style="font-size:.95rem">{% if last_eval %}{{ last_eval.ts|cztime }} <span class="hint">{{ last_eval.ts|czdate }}</span>{% else %}–{% endif %}</div><div class="d">{% if last_eval and last_eval.error %}<span class="badge err">chyba</span> {{ last_eval.error[:60] }}{% elif last_eval %}{{ last_eval.score }}/10 · {{ last_eval.phenomenon or 'nic zvláštního' }}{% if last_eval.notified %} · <span class="badge ok">upozorněno</span>{% endif %}{% else %}zatím nevyhodnoceno{% endif %}</div></div>
@@ -3495,7 +3537,15 @@ def dashboard(request: Request):
             ai_model = f"auto → {gemini_pick_model(cfg['ai']['api_key'])}"
         except Exception:
             pass
-    return render(request, "dashboard.html", "Přehled", cfg=cfg, fs=frigate_status(cfg), cameras=cameras,
+    last_evals = []
+    with db() as con:
+        for c in (cfg["ai"].get("cameras") or []):
+            r = con.execute("SELECT id, ts, camera, score, phenomenon, description, image, notified FROM evaluations "
+                            "WHERE camera=? AND skipped=0 AND error IS NULL AND image IS NOT NULL ORDER BY id DESC LIMIT 1", (c,)).fetchone()
+            if r:
+                last_evals.append(dict(r))
+    last_evals.sort(key=lambda r: r["ts"], reverse=True)
+    return render(request, "dashboard.html", "Přehled", cfg=cfg, fs=frigate_status(cfg), cameras=cameras, last_eval={e["camera"]: e for e in last_evals},
                   caminfo={c: camera_info(cfg, c) for c in cameras}, outages=outages, down_count=len(outages),
                   disk=disk_info(cfg["recordings_path"]), retain_days=retain_days(cfg), watcher_status=watcher.status,
                   sun=sun_times(cfg, now), golden=is_golden_hour(cfg, now),
@@ -4289,7 +4339,7 @@ def ai_page(request: Request):
     sr, ss = daylight_window(cfg, now.date())
     cameras = frigate_cameras(cfg)
     return render(request, "ai.html", "AI hlídání oblohy", cfg=cfg, ai=cfg["ai"], cameras=cameras, test=test, check=check,
-                  providers=PROVIDERS, phenomena=PHENOMENA, used_today=watcher.calls_today(cfg, now), stats7=ai_stats_days(now, 7),
+                  providers=PROVIDERS, provider_info=PROVIDER_INFO, phenomena=PHENOMENA, used_today=watcher.calls_today(cfg, now), stats7=ai_stats_days(now, 7),
                   sun=sun_times(cfg, now), estimate=ai_estimate(cfg, max(1, len(cfg["ai"]["cameras"]))))
 
 
@@ -4451,11 +4501,17 @@ def detection_page(request: Request, rid: int):
         my_exports = [dict(r) for r in con.execute("SELECT * FROM exports WHERE detection_id=? ORDER BY id DESC", (rid,))]
     neighbours = list(reversed(earlier)) + later
     clip_state = recording_state(cfg, e["camera"], center - before * 60, center + after * 60) if storage_ready() else "nodisk"
+    # Hotové vystřižené video z této detekce se přehrává přednostně (plynule, se správným posuvníkem);
+    # surový úsek z Frigate jen když si uživatel zadá vlastní rozsah.
+    use_export = None
+    if my_exports and "before" not in request.query_params and "after" not in request.query_params:
+        ready = [v for v in list_videos(cfg) if v.get("detection_id") == rid and v.get("ready")]
+        use_export = ready[0] if ready else None
     default_name = f"{cam_label(cfg, e['camera'])} {e['ts'][8:10]}.{e['ts'][5:7]}.{e['ts'][0:4]} {e['ts'][11:16]}" + (f" – {e['phenomenon']}" if e.get("phenomenon") else "")
     return render(request, "detection.html", f"Detekce · {cam_label(cfg, e['camera'])}", e=e, phen=phen, info=camera_info(cfg, e["camera"]),
                   before=before, after=after, clip_start=center - before * 60, clip_end=center + after * 60,
                   neighbours=neighbours, my_exports=my_exports, default_name=default_name, ready=storage_ready(), clip_state=clip_state, retain=retain_days(cfg),
-                  pending_auto=pending_auto_exports(cfg, rid), e_center=center,
+                  pending_auto=pending_auto_exports(cfg, rid), e_center=center, use_export=use_export,
                   subtitle="Snímek a záznam kolem něj. Video si přehraješ rovnou tady, nebo si ho nech vystřihnout ke stažení.")
 
 
