@@ -2,6 +2,12 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 4.4.3 – 2026-09 – last AI evaluation in the web heartbeat
+
+- **Webhook heartbeat** carries `last_eval` for every AI-watched camera – the most recent evaluation (score, phenomenon,
+  description, time, whether it alerted), including evaluations below the threshold. A website receiving the
+  heartbeat can show "what the AI just said" under the current snapshot, exactly like the Atmovio dashboard.
+
 ## 4.4.2 – 2026-09 – readable logs
 
 - **Logs made readable**: every Atmovio log line gets a level and a plain-language explanation – ✖ needs action,

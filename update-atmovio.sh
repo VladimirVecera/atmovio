@@ -116,7 +116,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "4.4.2"
+APP_VERSION = "4.4.3"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -1364,12 +1364,25 @@ def web_heartbeat(cfg, fs: dict, watcher_status: str, outages: dict) -> None:
     d = disk_info(cfg["recordings_path"]) if storage_ready() else {"pct": 0, "free_h": "–"}
     sysi = sys_info()
     cameras = []
+    last_eval = {}   # poslední hodnocení AI (i to, které nedosáhlo prahu) – web ho ukazuje pod aktuálním snímkem
+    try:
+        with db() as con:
+            for c in (cfg["ai"].get("cameras") or []):
+                r = con.execute("SELECT id, ts, score, phenomenon, description, notified FROM evaluations "
+                                "WHERE camera=? AND skipped=0 AND error IS NULL AND image IS NOT NULL ORDER BY id DESC LIMIT 1", (c,)).fetchone()
+                if r:
+                    last_eval[c] = {"id": r["id"], "ts": r["ts"], "score": int(r["score"] or 0), "phenomenon": r["phenomenon"] or "",
+                                    "description": (r["description"] or "")[:600], "notified": bool(r["notified"])}
+    except Exception as e:
+        log(f"Web: poslední hodnocení AI pro heartbeat se nepodařilo načíst: {e}")
     for cam in frigate_cameras(cfg):
         s = fs["cameras"].get(cam) or {}
         info = camera_info(cfg, cam)
         fps = float(s.get("fps") or 0)
         entry = {"name": cam, "label": cam_label(cfg, cam), "ip": info["ip"], "via": info["via"],
                  "online": bool(fs["online"] and fps > 0), "fps": round(fps, 1), "ai": cam in cfg["ai"]["cameras"]}
+        if cam in last_eval:
+            entry["last_eval"] = last_eval[cam]
         if w.get("thumbs", True) and entry["online"]:
             try:
                 r = frigate_api(cfg, f"/api/{cam}/latest.jpg?h=240", timeout=6)

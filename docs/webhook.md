@@ -54,10 +54,15 @@ Expected response: `{"ok": true, "nvr": "name to display", "server_time": "2026-
   },
   "cameras": [
     {"name": "zahrada", "label": "Zahrada – západ", "ip": "192.168.1.50", "via": "LAN",
-     "online": true, "fps": 15.0, "ai": true, "thumb": "<base64 JPEG, ≤190 kB, height 240 px>"}
+     "online": true, "fps": 15.0, "ai": true, "thumb": "<base64 JPEG, ≤190 kB, height 240 px>",
+     "last_eval": {"id": 812, "ts": "2026-09-14T18:43:10", "score": 8, "phenomenon": "Duha a červánky",
+                   "description": "Na obloze je vidět výrazná duha …", "notified": true}}
   ]
 }
 ```
+`last_eval` (since 4.4.3) is the newest AI evaluation of that camera – also when it scored below the threshold and
+nothing was sent – so a website can show what the AI last said about the current view. Omitted for cameras the AI
+does not watch or that have no evaluation yet.
 `storage_mode`: `recording` | `legacy` | `live` (no disk) | other values = not ready. `via`: `LAN` | `VPN` | `?`.
 `thumb` is omitted when thumbnails are disabled or the camera is offline.
 
