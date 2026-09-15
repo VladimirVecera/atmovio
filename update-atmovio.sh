@@ -116,7 +116,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "4.4.1"
+APP_VERSION = "4.4.2"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -2914,7 +2914,7 @@ TEMPLATES["update.html"] = """{% extends "base.html" %}{% block actions %}<div c
 </div>
 {% endblock %}"""
 
-TEMPLATES["logs.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><form method="post" action="/logs/clear" data-nobusy onsubmit="return confirm('Vymazat tento log? Zobrazí se pak jen nové záznamy.')"><input type="hidden" name="src" value="{{ src }}"><button class="btn small danger">Vymazat tento log</button></form></div>{% endblock %}{% block content %}
+TEMPLATES["logs.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions">{% if issue_url %}<a class="btn small" href="{{ issue_url }}" target="_blank" rel="noopener" title="Otevře GitHub s předvyplněným hlášením – chybové řádky a verze, nic osobního">🐛 Nahlásit chybu na GitHub</a>{% endif %}<form method="post" action="/logs/clear" data-nobusy onsubmit="return confirm('Vymazat tento log? Zobrazí se pak jen nové záznamy.')"><input type="hidden" name="src" value="{{ src }}"><button class="btn small danger">Vymazat tento log</button></form></div>{% endblock %}{% block content %}
 <div class="card">
 <div class="tabs">{% for key, name, _d in sources %}<a class="tab{% if key == src %} active{% endif %}" href="/logs?src={{ key }}&n={{ n }}{% if q %}&q={{ q|urlencode }}{% endif %}">{{ name }}</a>{% endfor %}</div>
 <p class="hint" style="margin-top:8px">{{ desc }}</p>
@@ -2924,8 +2924,11 @@ TEMPLATES["logs.html"] = """{% extends "base.html" %}{% block actions %}<div cla
 {% if src == 'frigate' %}<div><label class="check" style="margin:0 0 8px"><input type="checkbox" name="raw" value="1" {% if raw %}checked{% endif %}> i provozní řádky webserveru</label></div>{% endif %}
 <div><button class="btn small">Zobrazit</button> <a class="btn small sec" href="/logs?src={{ src }}&n={{ n }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if raw %}&raw=1{% endif %}">Obnovit</a> <button type="button" class="btn small sec" onclick="swCopy('logtext', this)">Kopírovat</button> <a class="btn small sec" href="/logs/download?src={{ src }}">Stáhnout</a></div></form>
 {% if since %}<div class="hint" style="margin-top:6px">zobrazeno od {{ since }} (starší část logu byla vymazána)</div>{% endif %}
-{% if summary %}<div class="row" style="gap:8px;margin:8px 0">{% for label, cls in summary %}<span class="badge {{ cls }}">{{ label }}</span>{% endfor %}</div>{% endif %}
-<pre class="logbox" id="logtext">{{ text or 'Log je prázdný.' }}</pre>
+{% if summary %}<div class="row" style="gap:8px;margin:8px 0;align-items:center">{% for label, cls in summary %}<span class="badge {{ cls }}">{{ label }}</span>{% endfor %}{% if src == 'atmovio' %}<a class="hint" style="margin-left:auto" href="/logs?src={{ src }}&n={{ n }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if not raw %}&raw=1{% endif %}">{% if raw %}přehledně{% else %}surový text{% endif %}</a>{% endif %}</div>{% endif %}
+{% if rows %}<div class="loglist">{% for r in rows|reverse %}<div class="lrow {{ r.level }}"><span class="lt">{{ r.ts[5:16] if r.ts else '' }}</span><span class="li">{% if r.level == 'err' %}✖{% elif r.level == 'warn' %}⚠{% elif r.level == 'note' %}◌{% else %}·{% endif %}</span><span class="lx">{{ r.text }}{% if r.why %}<small>{{ r.why }}</small>{% endif %}</span></div>{% endfor %}{% if not rows %}<div class="hint">Log je prázdný.</div>{% endif %}</div>
+<pre class="logbox" id="logtext" hidden>{{ text }}</pre>
+<p class="hint">Nejnovější nahoře. ✖ chyba = něco je potřeba udělat · ⚠ stojí za pozornost · ◌ přechodné (hosting nebo AI chvíli neodpověděly, vyřešilo se samo) · · běžný provoz.</p>
+{% else %}<pre class="logbox" id="logtext">{{ text or 'Log je prázdný.' }}</pre>{% endif %}
 <p class="hint">Nejnovější řádky jsou dole; časy jsou v místním čase RPi. Systémové logy (Disk, VPN, Systém) ukazují i starší události od posledního startu – „Vymazat“ jen posune, odkdy se zobrazují. Tlačítko Kopírovat zkopíruje celý log do schránky.</p>
 </div>
 {% endblock %}"""
@@ -5681,16 +5684,60 @@ def read_log_source(src: str, n: int = 300) -> str:
     return ""
 
 
+# Srozumitelný log: každý řádek dostane úroveň a lidské vysvětlení.
+#   err  = vyžaduje zásah    warn = stojí za pozornost    note = přechodné, vyřešilo se samo    ok = běžný provoz
+_LOG_RULES = [
+    (r"Spojení s webem obnoveno", "ok", "spojení s webem zase funguje"),
+    (r"Heartbeat na web selh", "note", "hosting webu chvíli neodpověděl – data se doposlala, spojení se obnovilo samo"),
+    (r"AI: .*(timed out|timeout|503|502|529|429|Service Unavailable|overloaded|Read timed)", "note", "poskytovatel AI byl chvíli přetížený – snímek se přeskočil, další kontrola proběhla normálně"),
+    (r"AI: .*(401|403|API key|api key|invalid|PERMISSION_DENIED|Unauthorized)", "err", "AI odmítá klíč – zkontroluj ho v Nastavení → AI → Kdo hodnotí"),
+    (r"AI: .*(quota|RESOURCE_EXHAUSTED|limit)", "warn", "vyčerpaný denní limit poskytovatele AI – do půlnoci se nehlídá, nebo zvol placený tarif / jiného poskytovatele"),
+    (r"Aktualizace .*(selhala|rollback|obnoven)", "err", "aktualizace se nepovedla a původní verze byla obnovena – pošli tento log na GitHub"),
+    (r"S\.M\.A\.R\.T\..*(SELHÁNÍ|roste|ZMĚNA)", "err", "disk hlásí zhoršení – zálohuj a naplánuj výměnu"),
+    (r"S\.M\.A\.R\.T\.", "warn", "disk hlásí vadné sektory – sleduje se, jestli počet roste"),
+    (r"Kamera .* (neposílá|výpadek|nedostupn)", "warn", "kamera nedává obraz – zkontroluj napájení a síť"),
+    (r"(opět|znovu) (běží|posílá|dostupn)|obnoveno", "ok", "výpadek skončil"),
+    (r"Nahrávání neběží|Frigate odmítl|storage guard|Disk pro záznamy (zmizel|není)", "err", "nahrávání stojí – podívej se na Záznamy / Systém"),
+    (r"Video .* (nepodařilo|selhal)", "warn", "video se nepodařilo vytvořit – zkus to z detailu detekce znovu"),
+    (r"Nepodařilo se získat snímek", "note", "kamera nebo Frigate zrovna nedaly snímek – AI kontrola se přeskočila; když se to opakuje, zkontroluj kameru"),
+    (r"Traceback|Exception|nepodařilo|selhal|chyba|error", "err", "chyba – když se opakuje, pošli tento řádek na GitHub"),
+    (r"smyčka spuštěna", "ok", "služba (znovu) naběhla – po aktualizaci nebo restartu"),
+    (r"K dispozici je nová verze|Aktualizace .* spuštěna|Log .* vymazán", "ok", ""),
+    (r"Automatické video|zadáno k vytvoření|naplánováno", "ok", ""),
+]
+
+
+def classify_log_line(line: str) -> tuple[str, str]:
+    for pat, level, why in _LOG_RULES:
+        if re.search(pat, line, re.I):
+            return level, why
+    return "ok", ""
+
+
+def log_rows(text: str) -> list[dict]:
+    rows = []
+    for line in text.splitlines():
+        level, why = classify_log_line(line)
+        m = re.match(r"^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2})\s*(.*)$", line)
+        rows.append({"ts": m.group(1).replace("T", " ") if m else "", "text": m.group(2) if m else line, "level": level, "why": why})
+    return rows
+
+
 def log_summary(text: str) -> list[tuple[str, str]]:
-    errors = sum(1 for line in text.splitlines() if re.search(r"error|chyba|selhal|failed|nepodařilo|traceback|critical|safe mode|nouzov|not valid", line, re.I))
-    warnings = sum(1 for line in text.splitlines() if re.search(r"warn|varování|výpadek|timeout", line, re.I))
+    counts = {"err": 0, "warn": 0, "note": 0}
+    for line in text.splitlines():
+        level, _ = classify_log_line(line)
+        if level in counts:
+            counts[level] += 1
     out = []
-    if errors:
-        out.append((f"{errors}× chyba", "err"))
-    if warnings:
-        out.append((f"{warnings}× varování", "warn"))
-    if not errors and not warnings:
-        out.append(("bez chyb a varování", "ok"))
+    if counts["err"]:
+        out.append((f"{counts['err']}× chyba – vyžaduje zásah", "err"))
+    if counts["warn"]:
+        out.append((f"{counts['warn']}× stojí za pozornost", "warn"))
+    if counts["note"]:
+        out.append((f"{counts['note']}× přechodné – vyřešilo se samo", "info"))
+    if not out:
+        out.append(("vše v pořádku", "ok"))
     return out
 
 
@@ -5709,7 +5756,18 @@ def logs_page(request: Request, src: str = "atmovio", n: int = 300, q: str = "",
     if q:
         text = "\n".join(line for line in text.splitlines() if q.lower() in line.lower())
     desc = dict((k, d) for k, _n, d in LOG_SOURCES)[src]
+    rows = log_rows(text) if src == "atmovio" else []
+    # Nahlášení na GitHub: předvyplněné issue s chybovými řádky (bez osobních údajů – jen log a verze)
+    issue_url = ""
+    bad = [r for r in rows if r["level"] in ("err", "warn")]
+    if bad:
+        lines = "\n".join(f"{r['ts']} {r['text']}" for r in bad[-25:])
+        body = (f"**Atmovio {APP_VERSION}** · Raspberry Pi OS\n\n"
+                f"Co jsem čekal / co se stalo:\n(doplň prosím)\n\n```\n{lines[:5000]}\n```\n")
+        issue_url = ("https://github.com/" + GITHUB_REPO + "/issues/new?labels=bug&title="
+                     + quote(f"[{APP_VERSION}] " + bad[-1]["text"][:70]) + "&body=" + quote(body))
     return render(request, "logs.html", "Logy", sources=LOG_SOURCES, src=src, n=n, q=q, desc=desc, text=text,
+                  rows=rows if not raw else [], issue_url=issue_url,
                   summary=log_summary(text), since=log_since(src), raw=raw)
 
 
@@ -6800,6 +6858,20 @@ h2.day { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; col
 .plainlist form .btn { margin: 0; }
 @media (max-width: 640px) { .cam-rules { grid-template-columns: 1fr; } .tabs.big button { font-size: .82rem; padding: .45rem .6rem; } }
 .check.any { padding: .5rem .7rem; border-radius: .7rem; background: var(--sw-info-bg); border: 1px solid var(--pico-primary); }
+
+/* ---------- srozumitelný log ---------- */
+.loglist { display: flex; flex-direction: column; gap: .2rem; max-height: 70vh; overflow: auto; padding-right: .3rem; }
+.lrow { display: grid; grid-template-columns: 82px 20px minmax(0, 1fr); gap: .5rem; align-items: start; padding: .4rem .6rem; border-radius: .55rem; font-size: .86rem; line-height: 1.4; background: var(--pico-card-sectioning-background-color); }
+.lrow .lt { color: var(--pico-muted-color); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lrow .li { text-align: center; font-weight: 800; }
+.lrow .lx { word-break: break-word; }
+.lrow .lx small { display: block; color: var(--pico-muted-color); font-size: .8rem; }
+.lrow.ok .li { color: var(--pico-muted-color); }
+.lrow.note { background: var(--sw-info-bg); } .lrow.note .li { color: var(--sw-info); }
+.lrow.warn { background: var(--sw-warn-bg); } .lrow.warn .li { color: var(--sw-warn); }
+.lrow.err { background: var(--sw-err-bg); } .lrow.err .li { color: var(--sw-err); }
+.lrow.err .lx small, .lrow.warn .lx small { color: inherit; opacity: .85; }
+@media (max-width: 640px) { .lrow { grid-template-columns: 20px minmax(0, 1fr); } .lrow .lt { grid-column: 2; font-size: .72rem; } }
 ATMOVIO_CSS_EOF
   cat > "$1/atmovio.js" <<'ATMOVIO_JS_EOF'
 /* Atmovio – interakce (Alpine.js komponenty + pomocné funkce). */

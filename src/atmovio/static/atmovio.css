@@ -576,3 +576,17 @@ h2.day { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; col
 .plainlist form .btn { margin: 0; }
 @media (max-width: 640px) { .cam-rules { grid-template-columns: 1fr; } .tabs.big button { font-size: .82rem; padding: .45rem .6rem; } }
 .check.any { padding: .5rem .7rem; border-radius: .7rem; background: var(--sw-info-bg); border: 1px solid var(--pico-primary); }
+
+/* ---------- srozumitelný log ---------- */
+.loglist { display: flex; flex-direction: column; gap: .2rem; max-height: 70vh; overflow: auto; padding-right: .3rem; }
+.lrow { display: grid; grid-template-columns: 82px 20px minmax(0, 1fr); gap: .5rem; align-items: start; padding: .4rem .6rem; border-radius: .55rem; font-size: .86rem; line-height: 1.4; background: var(--pico-card-sectioning-background-color); }
+.lrow .lt { color: var(--pico-muted-color); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lrow .li { text-align: center; font-weight: 800; }
+.lrow .lx { word-break: break-word; }
+.lrow .lx small { display: block; color: var(--pico-muted-color); font-size: .8rem; }
+.lrow.ok .li { color: var(--pico-muted-color); }
+.lrow.note { background: var(--sw-info-bg); } .lrow.note .li { color: var(--sw-info); }
+.lrow.warn { background: var(--sw-warn-bg); } .lrow.warn .li { color: var(--sw-warn); }
+.lrow.err { background: var(--sw-err-bg); } .lrow.err .li { color: var(--sw-err); }
+.lrow.err .lx small, .lrow.warn .lx small { color: inherit; opacity: .85; }
+@media (max-width: 640px) { .lrow { grid-template-columns: 20px minmax(0, 1fr); } .lrow .lt { grid-column: 2; font-size: .72rem; } }

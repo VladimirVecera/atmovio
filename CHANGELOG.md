@@ -2,6 +2,16 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 4.4.2 – 2026-09 – readable logs
+
+- **Logs made readable**: every Atmovio log line gets a level and a plain-language explanation – ✖ needs action,
+  ⚠ worth a look, ◌ transient (hosting or AI provider hiccup that resolved itself), · normal. The summary counts only
+  real problems; a hosting timeout is no longer an "error". "Surový text" toggle keeps the raw log.
+- **Report a bug**: when the log contains errors, a "Nahlásit chybu na GitHub" button opens a pre-filled issue with
+  the error lines and version (nothing personal).
+- Logs: "Vymazat tento log" moved to the page header instead of dangling under the toolbar.
+- Release workflow updates an existing release instead of failing when a tag is force-pushed.
+
 ## 4.4.1 – 2026-09 – camera page cleanup, stuck exports
 
 - **Camera page is a dashboard only** – no forms; "Upravit kameru" opens the edit form on Nastavení → Kamery
@@ -9,9 +19,6 @@ All notable changes to Atmovio (versions ≤ 3.4 were released under the name Sk
 - **Stuck video exports** (Frigate restarted mid-export, "vytváří se…" for days) are flagged after 2 hours with
   "Vytvořit znovu" (re-submits the same range) and delete buttons, on Videa and on the camera page.
   When the recording for that range is already gone (retention), the export says so and offers delete only.
-- Logs: "Vymazat tento log" moved to the page header instead of dangling under the toolbar.
-- Release workflow updates an existing release instead of failing when a tag is force-pushed.
-
 ## 4.4 – 2026-09 – AI settings for humans
 
 - **AI settings rebuilt** into five tabs: Who evaluates · Cameras and phenomena · When to look · Automatic video ·
