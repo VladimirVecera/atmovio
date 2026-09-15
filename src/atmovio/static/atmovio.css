@@ -541,3 +541,18 @@ h2.day { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; col
 .hrow .ac { flex: none; }
 .hrow .ac .btn { margin: 0; }
 @media (max-width: 720px) { .hrow { flex-wrap: wrap; } .hrow .pic { width: 100%; } .hrow .ac { width: 100%; } .hrow .ac .btn { width: 100%; } }
+
+/* historie: skóre v řádku + stránkování */
+.hrow .score { display: inline-flex; align-items: baseline; gap: .05rem; padding: .15rem .6rem; border-radius: .5rem; font-weight: 800; font-size: 1.1rem; line-height: 1.2; background: var(--pico-muted-border-color); color: var(--pico-muted-color); }
+.hrow .score small { font-size: .7rem; font-weight: 600; opacity: .8; }
+.hrow .score.ok { background: var(--sw-ok-bg); color: var(--sw-ok); }
+.hrow .score.mid { background: var(--sw-warn-bg); color: var(--sw-warn); }
+.hrow .score.low { background: var(--pico-muted-border-color); color: var(--pico-muted-color); }
+.hrow .score.err { background: var(--sw-err-bg); color: var(--sw-err); }
+.pager { display: flex; align-items: center; justify-content: center; gap: .8rem; margin: 1.2rem 0 .5rem; flex-wrap: wrap; }
+.pager .btn { margin: 0; }
+.pager .btn.dis { opacity: .4; pointer-events: none; }
+.pager .pages { display: flex; gap: .25rem; align-items: center; }
+.pager .pages a, .pager .pages span { min-width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border-radius: .55rem; text-decoration: none; font-weight: 700; font-size: .9rem; color: var(--pico-muted-color); }
+.pager .pages a:hover { background: var(--pico-card-sectioning-background-color); color: var(--pico-color); }
+.pager .pages a.on { background: var(--pico-primary-background); color: var(--pico-primary-inverse); }

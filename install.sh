@@ -3371,20 +3371,19 @@ TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block content %}
 {% endblock %}"""
 
 TEMPLATES["history.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><form method="post" action="/history/delete" data-nobusy style="display:flex;gap:.4rem"><input type="hidden" name="camera" value="{{ f_cam }}"><button class="btn small sec" name="what" value="errors">Smazat chybná</button><button class="btn small danger" name="what" value="all" onclick="return confirm('Smazat celou historii{% if f_cam %} kamery {{ cam(f_cam) }}{% endif %} včetně snímků?')">Smazat vše{% if f_cam %} ({{ cam(f_cam) }}){% endif %}</button></form></div>{% endblock %}{% block content %}
-{% macro link(cam_, min_, show_) %}/history?camera={{ cam_ }}&min_score={{ min_ }}&show={{ show_ }}{% endmacro %}
+{% macro link(cam_, min_, show_, page_=1) %}/history?camera={{ cam_ }}&min_score={{ min_ }}&show={{ show_ }}{% if page_ > 1 %}&page={{ page_ }}{% endif %}{% endmacro %}
 <div class="filters">
  <div class="fgroup"><span class="fl">Zobrazit</span><span class="seg"><a class="{{ 'on' if f_show=='notified' }}" href="{{ link(f_cam, f_min, 'notified') }}">S upozorněním</a><a class="{{ 'on' if f_show=='all' }}" href="{{ link(f_cam, f_min, 'all') }}">Všechna hodnocení</a><a class="{{ 'on' if f_show=='errors' }}" href="{{ link(f_cam, f_min, 'errors') }}">Chyby</a></span></div>
  <div class="fgroup"><span class="fl">Kamera</span><span class="seg"><a class="{{ 'on' if not f_cam }}" href="{{ link('', f_min, f_show) }}">Všechny</a>{% for c in cameras %}<a class="{{ 'on' if c==f_cam }}" href="{{ link(c, f_min, f_show) }}">{{ cam(c) }}</a>{% endfor %}</span></div>
  <div class="fgroup"><span class="fl">Skóre</span><span class="seg"><a class="{{ 'on' if not f_min }}" href="{{ link(f_cam, 0, f_show) }}">vše</a>{% for m in (5, 7, 8, 9) %}<a class="{{ 'on' if f_min==m }}" href="{{ link(f_cam, m, f_show) }}">{{ m }}+</a>{% endfor %}</span></div>
- <span class="hint" style="margin-left:auto">{{ rows|length }} záznamů · historie se maže po {{ keep_days }} dnech</span>
+ <span class="hint" style="margin-left:auto">{{ total }} záznamů · {{ per_page }} na stránku · historie se maže po {{ keep_days }} dnech</span>
 </div>
 {% set ns = namespace(day='') %}
 {% for e in rows %}{% set d = e.ts|czdate %}{% if d != ns.day %}{% set ns.day = d %}<h2 class="day">{{ d }}</h2>{% endif %}
 <article class="hrow {{ 'err' if e.error else ('hit' if e.notified else '') }}">
- <a class="pic" href="{% if not e.error %}/detection/{{ e.id }}{% else %}/snapshot/{{ e.image }}{% endif %}" {% if e.error %}data-lightbox="history"{% endif %}>{% if e.image %}<img src="/snapshot/{{ e.image }}" alt="" loading="lazy">{% endif %}
-  <span class="sc {{ 'err' if e.error else ('ok' if e.score >= threshold else 'mut') }}">{% if e.error %}chyba{% else %}{{ e.score }}/10{% endif %}</span></a>
+ {% if e.image %}<a class="pic" href="{% if not e.error %}/detection/{{ e.id }}{% else %}/snapshot/{{ e.image }}{% endif %}" {% if e.error %}data-lightbox="history"{% endif %}><img src="/snapshot/{{ e.image }}" alt="" loading="lazy"></a>{% endif %}
  <div class="tx">
-  <div class="hd"><span class="when">{{ e.ts|cztime }}</span><b>{{ cam(e.camera) }}</b>{% if e.phenomenon %}<span class="ph">{{ e.phenomenon }}</span>{% endif %}
+  <div class="hd"><span class="score {{ 'err' if e.error else ('ok' if e.score >= threshold else ('mid' if e.score >= 5 else 'low')) }}">{% if e.error %}chyba{% else %}{{ e.score }}<small>/10</small>{% endif %}</span><span class="when">{{ e.ts|cztime }}</span><b>{{ cam(e.camera) }}</b>{% if e.phenomenon %}<span class="ph">{{ e.phenomenon }}</span>{% endif %}
    {% if e.notified %}<span class="badge ok">upozorněno</span>{% elif not e.error and e.score >= threshold %}<span class="badge info">v epizodě</span>{% endif %}{% if e.exported %}<a class="badge info" href="/videos" title="Z této detekce je vystřižené video">🎬 video</a>{% endif %}</div>
   <p class="desc">{{ e.description or e.error or '–' }}</p>
   {% if e.note %}<div class="hint">{{ e.note }}</div>{% endif %}
@@ -3393,6 +3392,11 @@ TEMPLATES["history.html"] = """{% extends "base.html" %}{% block actions %}<div 
 </article>
 {% endfor %}
 {% if not rows %}<div class="card"><p class="hint" style="margin:0">Nic k zobrazení{% if f_show == 'notified' %} – zkus <a href="{{ link(f_cam, f_min, 'all') }}">všechna hodnocení</a>{% endif %}.</p></div>{% endif %}
+{% if pages > 1 %}<nav class="pager">
+ <a class="btn small sec {{ 'dis' if page <= 1 }}" href="{{ link(f_cam, f_min, f_show, page - 1) }}">‹ Novější</a>
+ <span class="pages">{% for p in range(1, pages + 1) %}{% if p == 1 or p == pages or (p >= page - 2 and p <= page + 2) %}<a class="{{ 'on' if p == page }}" href="{{ link(f_cam, f_min, f_show, p) }}">{{ p }}</a>{% elif p == page - 3 or p == page + 3 %}<span>…</span>{% endif %}{% endfor %}</span>
+ <a class="btn small sec {{ 'dis' if page >= pages }}" href="{{ link(f_cam, f_min, f_show, page + 1) }}">Starší ›</a>
+</nav>{% endif %}
 {% endblock %}"""
 
 # Všechny POST formuláře, včetně přihlášení, dostanou stejnou ochranu.
@@ -4883,8 +4887,10 @@ def ai_test(request: Request, camera: str = Form(...), back: str = Form("")):
 
 
 @app.get("/history", response_class=HTMLResponse)
-def history(request: Request, camera: str = "", min_score: int = 0, show: str = "notified"):
+def history(request: Request, camera: str = "", min_score: int = 0, show: str = "notified", page: int = 1):
     cfg = load_config()
+    per_page = 30
+    page = max(1, int(page or 1))
     if show not in ("notified", "all", "errors"):
         show = "notified"
     q = "SELECT e.*, (SELECT COUNT(*) FROM exports x WHERE x.detection_id=e.id) AS exported FROM evaluations e WHERE skipped=0"
@@ -4899,10 +4905,15 @@ def history(request: Request, camera: str = "", min_score: int = 0, show: str = 
         q += " AND notified=1"
     elif show == "errors":
         q += " AND error IS NOT NULL AND error != ''"
-    q += " ORDER BY id DESC LIMIT 300"
+    count_q = "SELECT COUNT(*) FROM evaluations e WHERE skipped=0" + q.split("WHERE skipped=0", 1)[1]
+    q += " ORDER BY id DESC LIMIT ? OFFSET ?"
     with db() as con:
-        rows = [dict(r) for r in con.execute(q, args)]
+        total = con.execute(count_q, args).fetchone()[0]
+        pages = max(1, (total + per_page - 1) // per_page)
+        page = min(page, pages)
+        rows = [dict(r) for r in con.execute(q, args + [per_page, (page - 1) * per_page])]
     return render(request, "history.html", "Historie vyhodnocení", rows=rows, cameras=frigate_cameras(cfg),
+                  total=total, pages=pages, page=page, per_page=per_page,
                   f_cam=camera, f_min=min_score, f_show=show, keep_days=cfg["ai"].get("keep_days", 14), threshold=int(cfg["ai"].get("threshold", 7)),
                   subtitle="Co AI na obloze viděla – s upozorněním, nebo úplně vše.")
 
@@ -6936,6 +6947,21 @@ h2.day { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; col
 .hrow .ac { flex: none; }
 .hrow .ac .btn { margin: 0; }
 @media (max-width: 720px) { .hrow { flex-wrap: wrap; } .hrow .pic { width: 100%; } .hrow .ac { width: 100%; } .hrow .ac .btn { width: 100%; } }
+
+/* historie: skóre v řádku + stránkování */
+.hrow .score { display: inline-flex; align-items: baseline; gap: .05rem; padding: .15rem .6rem; border-radius: .5rem; font-weight: 800; font-size: 1.1rem; line-height: 1.2; background: var(--pico-muted-border-color); color: var(--pico-muted-color); }
+.hrow .score small { font-size: .7rem; font-weight: 600; opacity: .8; }
+.hrow .score.ok { background: var(--sw-ok-bg); color: var(--sw-ok); }
+.hrow .score.mid { background: var(--sw-warn-bg); color: var(--sw-warn); }
+.hrow .score.low { background: var(--pico-muted-border-color); color: var(--pico-muted-color); }
+.hrow .score.err { background: var(--sw-err-bg); color: var(--sw-err); }
+.pager { display: flex; align-items: center; justify-content: center; gap: .8rem; margin: 1.2rem 0 .5rem; flex-wrap: wrap; }
+.pager .btn { margin: 0; }
+.pager .btn.dis { opacity: .4; pointer-events: none; }
+.pager .pages { display: flex; gap: .25rem; align-items: center; }
+.pager .pages a, .pager .pages span { min-width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border-radius: .55rem; text-decoration: none; font-weight: 700; font-size: .9rem; color: var(--pico-muted-color); }
+.pager .pages a:hover { background: var(--pico-card-sectioning-background-color); color: var(--pico-color); }
+.pager .pages a.on { background: var(--pico-primary-background); color: var(--pico-primary-inverse); }
 ATMOVIO_CSS_EOF
   cat > "$1/atmovio.js" <<'ATMOVIO_JS_EOF'
 /* Atmovio – interakce (Alpine.js komponenty + pomocné funkce). */

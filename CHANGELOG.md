@@ -5,7 +5,7 @@ All notable changes to Atmovio (versions ≤ 3.4 were released under the name Sk
 ## 4.3 – 2026-09 – history, disk and log polish
 
 - **History page** rebuilt: button filters (alerts / all / errors · camera · min. score), one row per evaluation grouped
-  by day with the full AI text; delete actions moved to the page header.
+  by day with the full AI text and a colour score badge, 30 rows per page with paging; delete actions moved to the page header.
 - Dashboard shows an available update in the Raspberry Pi tile and in the System box (also in `/api/v1/status` → `update`).
 - Sunrise/sunset are highlighted in the header strip, dawn/dusk muted.
 - S.M.A.R.T.: a disk is no longer listed twice after `/dev/sdX` names swap on reboot (keyed by serial/model, one row per role).
