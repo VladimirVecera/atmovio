@@ -2,6 +2,17 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 4.1 – 2026-09 – new admin design
+
+- **Redesigned web UI.** Horizontal menu in the header (Přehled · Kamery · Záznamy · Detekce a AI · Videa · Nastavení ▾ · Nástroje ▾),
+  quick actions (live view, add camera), account menu with update notice and logout. No more sidebar.
+- **Dark and light mode** with a switch in the header (remembered in the browser; dark is the default).
+- **New dashboard**: hero strip with date/time and sun times, KPI tiles with coloured icons (cameras, storage, AI detections,
+  alerts, Raspberry Pi), camera cards with live/settings buttons and an "add camera" card, recent events feed, storage ring,
+  AI today with 7-day statistics, system tiles.
+- Unified cards, tables, forms and buttons across all pages; camera cards on the Kamery page got action buttons.
+- Help section links to the REST API / Home Assistant guide on atmovio.com.
+
 ## 4.0 – 2026-09 – renamed to Atmovio
 
 - **SkyWatch is now Atmovio** (the old name collides with existing products). Everything is renamed: repository

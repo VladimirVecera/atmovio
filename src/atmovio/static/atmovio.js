@@ -4,12 +4,13 @@
 
   // ---------- Alpine komponenty ----------
   document.addEventListener('alpine:init', function () {
-    // Kostra stránky: mobilní menu, rozbalená skupina Nastavení, toasty, lightbox.
+    // Kostra stránky: mobilní menu, rozbalovací nabídky v hlavičce (dd), přepínač vzhledu, toasty, lightbox.
     Alpine.data('shell', function (opts) {
       opts = opts || {};
       return {
         menu: false,
-        settingsOpen: !!opts.settingsOpen,
+        dd: '',
+        theme: document.documentElement.getAttribute('data-theme') || 'dark',
         toasts: [],
         lb: { open: false, src: '', caption: '', items: [], index: -1 },
         init: function () {
@@ -30,6 +31,11 @@
             self.lb.index = Math.max(0, links.indexOf(a));
             self.lbShow();
           });
+        },
+        toggleTheme: function () {
+          this.theme = this.theme === 'dark' ? 'light' : 'dark';
+          document.documentElement.setAttribute('data-theme', this.theme);
+          try { localStorage.setItem('atmovio-theme', this.theme); } catch (e) { /* soukromý režim */ }
         },
         toast: function (text, kind) {
           var id = Date.now() + Math.random();

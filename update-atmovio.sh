@@ -116,7 +116,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "4.0"
+APP_VERSION = "4.1"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -2175,42 +2175,90 @@ LOGO_SVG = """<svg class="logo" viewBox="0 0 64 64" width="34" height="34" aria-
 
 BASE_CSS = ""  # vzhled je v static/atmovio.css (nad Pico CSS)
 
-NAV_PRIMARY = [("/", "Přehled", "⌂"), ("/live", "Kamery", "📷"), ("/storage", "Záznamy a disk", "💾"),
-               ("/history", "Historie AI detekcí", "🖼"), ("/videos", "Videa ke stažení", "🎬")]
-NAV_SETTINGS = [("/cameras", "Kamery (přidání, úpravy)", "🎥"), ("/ai", "AI hlídání oblohy", "☁"), ("/email", "Upozornění (e-mail, web)", "✉"),
+NAV_PRIMARY = [("/", "Přehled", "⌂"), ("/live", "Kamery", "📷"), ("/storage", "Záznamy", "💾"),
+               ("/history", "Detekce a AI", "🖼"), ("/videos", "Videa", "🎬")]
+NAV_SETTINGS = [("/cameras", "Kamery – přidání a úpravy", "🎥"), ("/ai", "AI hlídání oblohy", "☁"), ("/email", "Upozornění (e-mail, web)", "✉"),
                 ("/vpn", "Síť a VPN", "🔗"), ("/system", "Systém a disky", "⚙"), ("/logs", "Logy (diagnostika)", "📜")]
 BOTTOM_LABELS = {"/": "Přehled", "/live": "Kamery", "/storage": "Záznamy", "/history": "Historie", "/videos": "Videa"}
 NAV_ITEMS = NAV_PRIMARY + NAV_SETTINGS
 NAV = [(h, n) for h, n, _ in NAV_ITEMS]
 BOTTOM_NAV = ["/", "/live", "/history", "/videos"]
 
+# Ikony (inline SVG, stroke = currentColor) pro dlaždice a hlavičku.
+ICONS = {
+    "camera": '<svg class="i" viewBox="0 0 24 24"><path d="M4 7h3l2-2h6l2 2h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
+    "disk": '<svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><circle cx="7" cy="7.5" r="1"/><circle cx="7" cy="16.5" r="1"/></svg>',
+    "brain": '<svg class="i" viewBox="0 0 24 24"><path d="M9 4a3 3 0 0 0-3 3v1a3 3 0 0 0-2 3 3 3 0 0 0 2 3v1a3 3 0 0 0 3 3h1V4zM15 4a3 3 0 0 1 3 3v1a3 3 0 0 1 2 3 3 3 0 0 1-2 3v1a3 3 0 0 1-3 3h-1V4z"/><path d="M10 9h4M10 15h4"/></svg>',
+    "bell": '<svg class="i" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>',
+    "sun": '<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+    "moon": '<svg class="i" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>',
+    "cpu": '<svg class="i" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>',
+    "ram": '<svg class="i" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="10" rx="2"/><path d="M6 17v3M10 17v3M14 17v3M18 17v3M6 10v4M10 10v4M14 10v4M18 10v4"/></svg>',
+    "clock": '<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+    "temp": '<svg class="i" viewBox="0 0 24 24"><path d="M10 4a2 2 0 0 1 4 0v9.5a4 4 0 1 1-4 0z"/><path d="M12 9v6"/></svg>',
+    "check": '<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/></svg>',
+    "play": '<svg class="i" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>',
+    "cog": '<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+    "plus": '<svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+    "menu": '<svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
+    "ext": '<svg class="i" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>',
+    "cloud": '<svg class="i" viewBox="0 0 24 24"><path d="M7 18a4 4 0 0 1-.5-8 6 6 0 0 1 11.5 1.5A3.5 3.5 0 0 1 17.5 18z"/></svg>',
+    "bolt": '<svg class="i" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>',
+    "video": '<svg class="i" viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3z"/></svg>',
+    "image": '<svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m21 16-5-5-8 8"/></svg>',
+    "wifi": '<svg class="i" viewBox="0 0 24 24"><path d="M2 8.5a15 15 0 0 1 20 0M5.5 12a10 10 0 0 1 13 0M9 15.5a5 5 0 0 1 6 0"/><circle cx="12" cy="19" r="1"/></svg>',
+}
+NAV_ICONS = {"/": "sun", "/live": "camera", "/storage": "disk", "/history": "image", "/videos": "video",
+             "/cameras": "camera", "/ai": "brain", "/email": "bell", "/vpn": "wifi", "/system": "cpu", "/logs": "clock"}
+
 TEMPLATES["base.html"] = """<!doctype html>
-<html lang="cs"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="color-scheme" content="light dark"><meta name="theme-color" content="#0b1220">
+<html lang="cs" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark light"><meta name="theme-color" content="#0b1220">
 <title>Atmovio – {{ title }}</title>
 <link rel="icon" href="data:image/svg+xml,{{ favicon }}">
+<script>try{var t=localStorage.getItem('atmovio-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
 <link rel="stylesheet" href="{{ pico_css }}">
 <link rel="stylesheet" href="/static/atmovio.css?v={{ version }}">
 <script defer src="/static/atmovio.js?v={{ version }}"></script>
 <script defer src="{{ alpine_js }}"></script>
 </head><body>
-<div class="app" x-data='shell({settingsOpen: {{ "true" if settings_open else "false" }}, flashes: {{ flashes|tojson }}})'>
-<aside class="sidebar" :class="{open: menu}">
- <a class="brand" href="/">""" + LOGO_SVG + """<span>Atmovio<small>NVR · hlídání oblohy</small></span></a>
- <nav class="nav">
-  {% for href,name,ic in nav_primary %}<a class="{% if active==href %}active{% endif %}" href="{{ href }}"><span class="ic">{{ ic }}</span>{{ name }}</a>{% endfor %}
-  <button type="button" class="group" @click="settingsOpen=!settingsOpen"><span class="ic">🛠</span>Nastavení<span class="caret" :class="{open: settingsOpen}">▾</span></button>
-  <div class="sub" x-show="settingsOpen" {% if not settings_open %}x-cloak{% endif %}>
-  {% for href,name,ic in nav_settings %}<a class="{% if active==href %}active{% endif %}" href="{{ href }}"><span class="ic">{{ ic }}</span>{{ name }}</a>{% endfor %}
-  </div>
+<div class="app" x-data='shell({flashes: {{ flashes|tojson }}})' @keydown.escape.window="menu=false;dd=''">
+<header class="top"><div class="inner">
+ <button type="button" class="ico-btn menu-btn" @click="menu=!menu" aria-label="Menu">""" + ICONS["menu"] + """</button>
+ <a class="brand" href="/">""" + LOGO_SVG + """<span>Atmovio<small>NVR · kamery · AI</small></span></a>
+ <nav class="menu" :class="{open: menu}">
+  {% for href,name,ic in nav_primary %}<a class="{% if active==href %}active{% endif %}" href="{{ href }}">{{ name }}</a>{% endfor %}
+  <div class="dd" :class="{open: dd==='set'}" @click.outside="if (dd==='set') dd=''"><button type="button" class="{% if settings_open %}active{% endif %}" @click="dd = dd==='set' ? '' : 'set'">Nastavení <span class="caret">▾</span></button>
+   <div class="dd-panel" x-show="dd==='set'" x-cloak>
+   {% for href,name,ic in nav_settings %}<a class="{% if active==href %}active{% endif %}" href="{{ href }}"><span class="ic">{{ ic }}</span>{{ name }}</a>{% endfor %}
+   </div></div>
+  <div class="dd" :class="{open: dd==='ext'}" @click.outside="if (dd==='ext') dd=''"><button type="button" @click="dd = dd==='ext' ? '' : 'ext'">Nástroje <span class="caret">▾</span></button>
+   <div class="dd-panel" x-show="dd==='ext'" x-cloak>
+   <a href="{{ frigate_ui }}" target="_blank" rel="noopener"><span class="ic">▶</span>Frigate – přehrávač a export videa ↗</a>
+   <a href="{{ cockpit_ui }}" target="_blank" rel="noopener"><span class="ic">🖥</span>Cockpit – systém, síť, aktualizace ↗</a>
+   <a href="{{ portainer_ui }}" target="_blank" rel="noopener"><span class="ic">📦</span>Portainer – kontejnery ↗</a>
+   <hr><a href="https://www.atmovio.com/api/" target="_blank" rel="noopener"><span class="ic">🏠</span>API a Home Assistant ↗</a>
+   <a href="https://github.com/{{ github_repo }}" target="_blank" rel="noopener"><span class="ic">🐙</span>GitHub – dokumentace ↗</a>
+   </div></div>
  </nav>
- <div class="grow"></div>
- <div class="ext"><div class="label" style="padding-left:0">Externí nástroje</div><a href="{{ frigate_ui }}" target="_blank" rel="noopener">▸ Frigate – přehrávač a export videa</a><a href="{{ cockpit_ui }}" target="_blank" rel="noopener">▸ Cockpit – systém, síť, aktualizace</a><a href="{{ portainer_ui }}" target="_blank" rel="noopener">▸ Portainer – kontejnery</a></div>
- <div class="foot"><form method="post" action="/logout" data-nobusy><button class="btn small sec">Odhlásit</button></form><span class="version">v{{ version }}</span></div>
-</aside>
-<div class="scrim" :class="{open: menu}" @click="menu=false"></div>
-<div class="content">
-<header class="top"><button type="button" class="menu-btn" @click="menu=!menu" aria-label="Menu">☰</button><a class="brand" href="/">""" + LOGO_SVG + """<span>Atmovio</span></a></header>
+ <div class="right">
+  <div class="head-status">
+   <a href="/live" title="Kamery"><span class="dot {{ 'err' if side.down else ('ok' if storage.mode in ['recording','legacy'] else 'warn') }}"></span>{% if side.down %}{{ side.down }} výpadek{% else %}{{ 'nahrává' if storage.mode in ['recording','legacy'] else 'jen náhled' }}{% endif %}</a>
+   {% if side.ai_on %}<a href="/ai" title="AI hlídání oblohy"><span class="dot ok"></span>AI {{ side.ai_used }}{% if side.ai_limit %}/{{ side.ai_limit }}{% endif %}</a>{% endif %}
+  </div>
+  <a class="btn small ghost" href="/live/all" title="Živý náhled všech kamer">""" + ICONS["play"] + """<span>Živý náhled</span></a>
+  <a class="btn small" href="/discover">""" + ICONS["plus"] + """<span>Přidat kameru</span></a>
+  <button type="button" class="ico-btn" @click="toggleTheme()" :title="theme==='dark' ? 'Světlý režim' : 'Tmavý režim'" aria-label="Přepnout vzhled"><span x-show="theme==='dark'">""" + ICONS["sun"] + """</span><span x-show="theme!=='dark'" x-cloak>""" + ICONS["moon"] + """</span></button>
+  <div class="dd" :class="{open: dd==='usr'}" @click.outside="if (dd==='usr') dd=''"><button type="button" class="ico-btn user" @click="dd = dd==='usr' ? '' : 'usr'" title="Účet">A{% if update_info and update_info.available %}<span class="n"></span>{% endif %}</button>
+   <div class="dd-panel end" x-show="dd==='usr'" x-cloak>
+   <div class="label">Atmovio {{ version }}</div>
+   {% if update_info and update_info.available %}<a href="/system/update"><span class="ic">🆕</span>Aktualizace na {{ update_info.latest }}</a>{% endif %}
+   <a href="/system"><span class="ic">⚙</span>Systém a disky</a>
+   <a href="/logs"><span class="ic">📜</span>Logy</a>
+   <hr><form method="post" action="/logout" data-nobusy><button type="submit" class="item"><span class="ic">⏻</span>Odhlásit</button></form>
+   </div></div>
+ </div>
+</div></header>
 <main class="page">
 {% if storage.mode not in ['recording', 'legacy'] %}<div class="flash warn"><span>⚠️</span><div><b>Režim bez záznamu.</b> {{ storage.reason }} <a href="/storage">Nastavit disk pro záznamy</a> · <a href="{{ frigate_ui }}" target="_blank">Živý náhled kamer ↗</a></div></div>{% endif %}
 {% if disk_warning[1] %}<div class="flash {{ disk_warning[0] }}"><span>💽</span><div><b>{% if disk_warning[0] == 'err' %}Disk selhává.{% else %}Disk hlásí vadné sektory – sleduji.{% endif %}</b> {{ disk_warning[1] }}. {% if disk_warning[0] == 'err' %}Zálohuj a disk vyměň.{% else %}Když počet zůstane stejný, není třeba nic dělat; když poroste, upozorním červeně.{% endif %} <a href="/system">Stav disků</a></div></div>{% endif %}
@@ -2218,11 +2266,10 @@ TEMPLATES["base.html"] = """<!doctype html>
 {% if frigate_problem %}<div class="flash err"><span>⛔</span><div><b>Nahrávání neběží – Frigate odmítl konfiguraci.</b> {{ frigate_problem }}
 <form method="post" action="/system/ctl" style="display:inline;margin-left:8px"><button class="btn small" name="action" value="fix_frigate">Opravit konfiguraci a restartovat nahrávání</button></form></div></div>{% endif %}
 {% if update_info and update_info.available and active in ['/', '/system'] and req_path != '/system/update' %}<div class="flash"><span>🆕</span><div><b>K dispozici je Atmovio {{ update_info.latest }}</b> (běží {{ version }}). <a href="/system/update">Co je nového a aktualizace</a></div></div>{% endif %}
-<div class="page-head"><div><h1>{{ title }}</h1>{% if subtitle %}<p class="sub">{{ subtitle }}</p>{% endif %}</div>{% block actions %}{% endblock %}</div>
+{% block head %}<div class="page-head"><div><h1>{{ title }}</h1>{% if subtitle %}<p class="sub">{{ subtitle }}</p>{% endif %}</div>{% block actions %}{% endblock %}</div>{% endblock %}
 {% block content %}{% endblock %}
 </main>
-</div>
-<nav class="bottom">{% for href,name,ic in nav_primary if href in bottom_nav %}<a class="{% if active==href %}active{% endif %}" href="{{ href }}"><span class="ic">{{ ic }}</span>{{ bottom_labels.get(href, name) }}</a>{% endfor %}<button type="button" @click="menu=true"><span class="ic">☰</span>Více</button></nav>
+<footer class="brand-foot"><div>© Atmovio {{ now_year }} · v{{ version }} · <span class="mut">NVR pro kamery a hlídání oblohy</span></div><div><a href="https://github.com/{{ github_repo }}" target="_blank" rel="noopener">GitHub</a><a href="https://www.atmovio.com/" target="_blank" rel="noopener">Dokumentace</a><a href="https://www.atmovio.com/donate/" target="_blank" rel="noopener">♥ Podpořit</a><span class="tag">Kamery, které vidí víc.</span></div></footer>
 <div class="toasts"><template x-for="t in toasts" :key="t.id"><div class="toast" :class="t.kind"><span x-text="t.text"></span><button type="button" class="x" @click="dismiss(t.id)" aria-label="Zavřít">×</button></div></template></div>
 <div class="lightbox" x-show="lb.open" x-cloak @click.self="lbClose()" role="dialog" aria-modal="true"><button type="button" class="close" @click="lbClose()" aria-label="Zavřít">×</button>
 <button type="button" class="nav-btn prev" x-show="lb.items.length>1" @click="lbStep(-1)" aria-label="Předchozí">‹</button><button type="button" class="nav-btn next" x-show="lb.items.length>1" @click="lbStep(1)" aria-label="Další">›</button>
@@ -2231,7 +2278,7 @@ TEMPLATES["base.html"] = """<!doctype html>
 <div id="busy" hidden><div class="busy-box"><span class="spin"></span><div><b id="busy-text">Zpracovávám…</b><div class="hint" id="busy-hint">Stránka se sama obnoví, až bude hotovo.</div></div></div></div>
 </body></html>"""
 
-TEMPLATES["login.html"] = """<!doctype html><html lang="cs"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Atmovio – přihlášení</title>
+TEMPLATES["login.html"] = """<!doctype html><html lang="cs" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Atmovio – přihlášení</title>
 <link rel="icon" href="data:image/svg+xml,{{ favicon }}">
 <link rel="stylesheet" href="{{ pico_css }}"><link rel="stylesheet" href="/static/atmovio.css?v={{ version }}">
 <style>body{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0b1220 radial-gradient(1200px 600px at 20% -10%,#1e3a5f 0%,transparent 60%)}
@@ -2242,17 +2289,29 @@ TEMPLATES["login.html"] = """<!doctype html><html lang="cs"><head><meta charset=
 {% if error %}<div class="e">{{ error }}</div>{% endif %}
 <label>Heslo administrátora</label><input type="password" name="password" autofocus autocomplete="current-password"><button class="btn block" style="margin-top:.9rem">Přihlásit</button></form></body></html>"""
 
-TEMPLATES["dashboard.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small sec" href="/live">📷 Kamery</a><a class="btn small" href="/discover">🔍 Přidat kameru</a></div>{% endblock %}{% block content %}
+TEMPLATES["dashboard.html"] = """{% extends "base.html" %}{% block head %}{% endblock %}{% block content %}
 <div x-data="autorefresh(60)"></div>
 {% set rec = storage.mode in ['recording','legacy'] %}
+{% set ns = namespace(online=0) %}{% for c in cameras %}{% set s = fs.cameras.get(c) %}{% if s and s.fps and not outages.get('cam:' ~ c) %}{% set ns.online = ns.online + 1 %}{% endif %}{% endfor %}
+{% set ai_on = cfg.ai.enabled and cfg.ai.api_key %}
+
+<section class="hero">
+ <div class="grow"><h1>Přehled</h1><p class="sub">Kamery, nahrávání, AI detekce a hlídání oblohy na jednom místě.</p><div class="tag">Obloha má příběh…</div></div>
+ <div class="pill"><div><div class="k">{{ now_dt|czdate }}</div><div class="big">{{ now_dt|cztime }}</div></div></div>
+ <div class="pill"><div class="sun"><span><small>svítání</small>{{ sun.dawn }}</span><span><small>východ</small>{{ sun.sunrise }}</span><span><small>západ</small>{{ sun.sunset }}</span><span><small>soumrak</small>{{ sun.dusk }}</span></div></div>
+ {% if golden %}<span class="badge warn">svítání/soumrak – rychlé kontroly</span>{% endif %}
+</section>
+
 <div class="tiles">
- <a class="tile {{ 'ok' if fs.online and rec else ('warn' if fs.online else 'err') }}" href="/storage"><div class="k">Nahrávání</div><div class="v">{% if not fs.online %}neběží{% elif rec %}běží{% else %}jen náhled{% endif %}</div><div class="d">{% if not fs.online %}Frigate neodpovídá – viz Systém{% elif rec %}{{ cameras|length }} {{ 'kamera' if cameras|length == 1 else ('kamery' if cameras|length < 5 else 'kamer') }} · Frigate {{ fs.version }}{% else %}bez disku se nic neukládá{% endif %}</div><span class="ico">⏺</span></a>
- <a class="tile {{ ('err' if disk.pct > 92 else ('warn' if disk.pct > 80 else 'ok')) if rec else 'warn' }}" href="/storage"><div class="k">Disk pro záznamy</div><div class="v">{% if rec %}{{ disk.pct }} % plný{% else %}nepřipojen{% endif %}</div><div class="d">{% if rec %}volné {{ disk.free_h }} z {{ disk.total_h }} · {{ retain_days }} dní{% else %}připoj HDD a nastav ho v Záznamech{% endif %}</div><span class="ico">💾</span></a>
- <a class="tile {{ 'ok' if cfg.ai.enabled and cfg.ai.api_key else 'warn' }}" href="/ai"><div class="k">AI hlídání oblohy</div><div class="v">{% if cfg.ai.enabled and cfg.ai.api_key %}zapnuto{% else %}vypnuto{% endif %}</div><div class="d">{% if cfg.ai.enabled %}dnes {{ ai_used }}{% if ai_limit %} z {{ ai_limit }}{% endif %} dotazů{% else %}nastav klíč v Nastavení → AI{% endif %}</div><span class="ico">☁️</span></a>
- <a class="tile {{ 'err' if down_count else ('ok' if email_ok else 'warn') }}" href="/email"><div class="k">Upozornění</div><div class="v">{% if down_count %}{{ down_count }} výpadek{% elif email_ok %}v pořádku{% else %}nenastaveno{% endif %}</div><div class="d">{% if cfg.web.enabled and cfg.web.token %}přes webhook na {{ cfg.web.url|urlhost }}{% elif email_ok %}e-mail na {{ cfg.email.to }}{% else %}kam posílat zprávy{% endif %}</div><span class="ico">🔔</span></a>
+ <a class="tile {{ 'err' if down_count else ('ok' if cameras else 'warn') }}" href="/live"><span class="ico blue">{{ icons.camera|safe }}</span><div class="tx"><div class="k">Kamery</div><div class="v">{{ ns.online }} / {{ cameras|length }}</div><div class="d">{% if not cameras %}zatím žádné – přidat{% elif down_count %}{{ down_count }} {{ 'výpadek' if down_count == 1 else 'výpadky' }}{% elif not fs.online %}Frigate neodpovídá{% else %}v provozu{% endif %}</div>{% if cameras %}<div class="bar"><i class="{{ 'err' if down_count else 'ok' }}" style="width:{{ (ns.online * 100 / cameras|length)|int }}%"></i></div>{% endif %}</div><span class="arrow">›</span></a>
+ <a class="tile {{ ('err' if disk.pct > 92 else ('warn' if disk.pct > 80 else 'ok')) if rec else 'warn' }}" href="/storage"><span class="ico sky">{{ icons.disk|safe }}</span><div class="tx"><div class="k">Úložiště</div><div class="v">{% if rec %}{{ disk.pct }} %{% else %}bez disku{% endif %}</div><div class="d">{% if rec %}volné {{ disk.free_h }} z {{ disk.total_h }} · {{ retain_days }} dní{% else %}připoj HDD a nastav ho v Záznamech{% endif %}</div>{% if rec %}<div class="bar"><i class="{{ 'err' if disk.pct > 92 else ('warn' if disk.pct > 80 else '') }}" style="width:{{ disk.pct }}%"></i></div>{% endif %}</div><span class="arrow">›</span></a>
+ <a class="tile {{ 'ok' if ai_on else 'warn' }}" href="/history"><span class="ico green">{{ icons.brain|safe }}</span><div class="tx"><div class="k">AI detekce</div><div class="v">{% if ai_on %}{{ stats7[0].notified if stats7 else 0 }}{% else %}vypnuto{% endif %}</div><div class="d">{% if ai_on %}dnes · {{ ai_used }}{% if ai_limit %} z {{ ai_limit }}{% endif %} dotazů{% else %}nastav klíč v Nastavení → AI{% endif %}</div>{% if ai_on and ai_limit %}<div class="bar"><i style="width:{{ ai_pct }}%"></i></div>{% endif %}</div><span class="arrow">›</span></a>
+ <a class="tile {{ 'err' if down_count else ('ok' if email_ok else 'warn') }}" href="/email"><span class="ico amber">{{ icons.bell|safe }}</span><div class="tx"><div class="k">Upozornění</div><div class="v">{% if down_count %}{{ down_count }} {{ 'výpadek' if down_count == 1 else 'výpadky' }}{% elif email_ok %}v pořádku{% else %}nenastaveno{% endif %}</div><div class="d">{% if events %}poslední událost {{ events[0].ts|cztime }}{% elif cfg.web.enabled and cfg.web.token %}webhook na {{ cfg.web.url|urlhost }}{% elif email_ok %}e-mail na {{ cfg.email.to }}{% else %}kam posílat zprávy{% endif %}</div></div><span class="arrow">›</span></a>
+ {% set tnum = sysinfo.temp|replace(' °C','')|float(0) %}
+ <a class="tile {{ 'err' if tnum > 75 else ('warn' if tnum > 65 else 'ok') }}" href="/system"><span class="ico {{ 'red' if tnum > 75 else 'violet' }}">{{ icons.temp|safe }}</span><div class="tx"><div class="k">Raspberry Pi</div><div class="v">{{ sysinfo.temp }}</div><div class="d">{% if not fs.online %}Frigate neběží{% elif rec %}nahrává · Frigate {{ fs.version }}{% else %}jen náhled{% endif %} · běží {{ sysinfo.uptime }}</div></div><span class="arrow">›</span></a>
 </div>
 
-{% set setup_cams = cameras|length > 0 %}{% set setup_web = email_ok %}{% set setup_ai = cfg.ai.api_key and cfg.ai.enabled %}{% set setup_disk = rec %}
+{% set setup_cams = cameras|length > 0 %}{% set setup_web = email_ok %}{% set setup_ai = ai_on %}{% set setup_disk = rec %}
 {% if not (setup_cams and setup_web and setup_ai and setup_disk) %}
 <div class="card accent"><div class="section-head"><h2>Dokončit nastavení</h2><span class="hint">zbývá {{ [setup_cams, setup_disk, setup_web, setup_ai]|reject('eq', true)|list|length }} z 4 kroků</span></div>
 <ol class="steps">
@@ -2263,48 +2322,76 @@ TEMPLATES["dashboard.html"] = """{% extends "base.html" %}{% block actions %}<di
 </ol></div>
 {% endif %}
 
-<div class="section-head"><h2>Kamery</h2><div class="sunline"><span title="svítání – od té doby se hlídá">🌄 {{ sun.dawn }}</span><span>🌅 východ {{ sun.sunrise }}</span><span>🌇 západ {{ sun.sunset }}</span><span title="soumrak – do té doby se hlídá">🌌 {{ sun.dusk }}</span>{% if golden %}<span class="badge warn">svítání/soumrak – rychlé kontroly</span>{% endif %}<a class="btn small sec" href="/live">Kamery velké</a></div></div>
-<div class="cams" style="margin-bottom:1rem">
+<div class="card">
+<div class="section-head"><h2>Kamery <span class="count">({{ ns.online }} z {{ cameras|length }})</span>{% if cameras %}{% if down_count %}<span class="badge err">{{ down_count }} {{ 'výpadek' if down_count == 1 else 'výpadky' }}</span>{% elif ns.online == cameras|length %}<span class="badge ok">všechny kamery v pořádku</span>{% else %}<span class="badge warn">{{ cameras|length - ns.online }} bez obrazu</span>{% endif %}{% endif %}</h2>
+ <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap"><span class="seg"><span class="on">Vše <b>{{ cameras|length }}</b></span><span>Živé <b>{{ ns.online }}</b></span><span>Offline <b>{{ cameras|length - ns.online }}</b></span></span><a class="btn small sec" href="/live">{{ icons.play|safe }} Živý náhled</a><a class="btn small sec" href="/cameras">{{ icons.cog|safe }} Správa kamer</a></div></div>
+<div class="cams">
 {% for c in cameras %}{% set s = fs.cameras.get(c) %}{% set info = caminfo[c] %}{% set out = outages.get('cam:' ~ c) %}
 <div class="cam"><a class="img" href="/camera/{{ c }}" title="Otevřít kameru"><img src="/live/{{ c }}.jpg?t={{ now_ts }}" alt="" loading="lazy" onerror="window.swImgFail?swImgFail(this):this.style.display='none'">
-{% if out %}<span class="live"><span class="dot err"></span>VÝPADEK</span>{% elif s and s.fps %}<span class="live"><span class="dot ok"></span>ŽIVĚ</span>{% else %}<span class="live"><span class="dot warn"></span>BEZ SIGNÁLU</span>{% endif %}</a>
-<div class="body"><div class="name"><span>{{ cam(c) }}</span>{% if out %}<span class="badge err">{{ out }}</span>{% elif s and s.fps %}<span class="badge ok">{{ '%.0f'|format(s.fps) }} fps</span>{% else %}<span class="badge warn">bez obrazu</span>{% endif %}</div>
-<div class="meta"><span>{{ info.ip or 'IP ?' }}</span><span>·</span><span>{{ info.via }}</span>{% if c in cfg.ai.cameras and cfg.ai.enabled %}<span class="badge info">AI hlídá</span>{% endif %}{% if cfg.ai.enabled and cfg.ai.auto_export.enabled and c in cfg.ai.auto_export.cameras %}<span class="badge ok" title="Po upozornění se automaticky vystřihne video">🎬 auto video −{{ cfg.ai.auto_export.before_min }}/+{{ cfg.ai.auto_export.after_min }} min</span>{% endif %}<a href="/camera/{{ c }}" style="margin-left:auto">otevřít kameru ▶</a></div></div></div>
+{% if out %}<span class="live"><span class="dot err"></span>VÝPADEK</span>{% elif s and s.fps %}<span class="live"><span class="dot ok"></span>ŽIVĚ</span><span class="fps">{{ '%.0f'|format(s.fps) }} fps</span>{% else %}<span class="live"><span class="dot warn"></span>BEZ SIGNÁLU</span>{% endif %}</a>
+<div class="body"><div class="name"><span>{{ cam(c) }}</span>{% if out %}<span class="badge err">{{ out }}</span>{% endif %}</div>
+<div class="meta"><span>🖥 {{ info.ip or 'IP ?' }}</span><span>·</span><span>{{ info.via }}</span>{% if c in cfg.ai.cameras and cfg.ai.enabled %}<span class="badge info">AI hlídá</span>{% endif %}{% if cfg.ai.enabled and cfg.ai.auto_export.enabled and c in cfg.ai.auto_export.cameras %}<span class="badge ok" title="Po upozornění se automaticky vystřihne video">🎬 auto video</span>{% endif %}</div>
+<div class="acts"><a class="btn sec" href="/live/{{ c }}">{{ icons.play|safe }} Živý náhled</a><a class="btn sec" href="/camera/{{ c }}">{{ icons.cog|safe }} Nastavení</a></div></div></div>
 {% endfor %}
-{% if not cameras %}<div class="card" style="grid-column:1/-1;margin:0"><b>Zatím žádné kamery.</b> <a href="/discover">Nech je vyhledat v síti</a> – stačí uživatel a heslo kamery.</div>{% endif %}
+<a class="cam add" href="/discover"><span class="plus">+</span><b>Přidat kameru</b><span class="hint">vyhledat v síti nebo zadat RTSP adresu</span></a>
+</div></div>
+
+<div class="grid-4">
+<div class="card"><div class="section-head"><h2>Poslední události</h2><a class="btn small sec" href="/history">Vše</a></div>
+<ul class="feed">
+{% for e in recent[:5] %}<li><a href="/detection/{{ e.id }}"><img class="th" src="/snapshot/{{ e.image }}" alt="" loading="lazy"></a><div class="tx"><b>{{ e.phenomenon or 'Zajímavá obloha' }} · {{ e.score }}/10</b><small>{{ cam(e.camera) }}</small></div><span class="t">{{ e.ts|czdate }} {{ e.ts|cztime }}</span></li>{% endfor %}
+{% for e in events[:3] if e.kind != 'sky' %}<li><span class="th">{% if e.kind == 'outage' %}⛔{% elif e.kind == 'recovery' %}✅{% elif e.kind == 'test' %}🧪{% else %}⚙️{% endif %}</span><div class="tx"><b>{{ e.subject }}</b><small>{{ {'outage': 'výpadek', 'recovery': 'obnoveno', 'system': 'systém', 'test': 'test'}.get(e.kind, e.kind) }}</small></div><span class="t">{{ e.ts|czdate }} {{ e.ts|cztime }}</span></li>{% endfor %}
+{% if not recent and not events %}<li><span class="hint">Zatím nic. Až AI najde zajímavou oblohu (skóre ≥ {{ cfg.ai.threshold }}), objeví se tady.</span></li>{% endif %}
+</ul></div>
+
+<div class="card"><div class="section-head"><h2>Úložiště</h2><a class="btn small sec" href="/storage">Detail</a></div>
+{% if rec %}
+<div class="ai-today"><div class="ring {{ 'err' if disk.pct > 92 else ('warn' if disk.pct > 80 else '') }}" style="--p:{{ disk.pct }}"><span>{{ disk.pct }} %</span></div>
+<div><div class="hint">Využito úložiště záznamů</div><div class="big" style="font-size:1.3rem">{{ disk.used_h }} <span class="hint">/ {{ disk.total_h }}</span></div><div class="hint">volné {{ disk.free_h }}</div></div></div>
+<ul class="legend" style="margin-top:.8rem">
+ <li><span class="sw"></span>Záznamy z kamer<b>{{ disk.used_h }}</b></li>
+ <li><span class="sw" style="background:var(--pico-muted-border-color)"></span>Volné<b>{{ disk.free_h }}</b></li>
+ <li><span class="sw" style="background:var(--c-amber)"></span>Uchovávání<b>{{ retain_days }} dní</b></li>
+ <li><span class="sw" style="background:var(--c-green)"></span>Frigate<b>{% if fs.online %}{{ fs.version }}{% else %}neběží{% endif %}</b></li>
+</ul>
+{% else %}<p class="hint">Bez disku se nic neukládá. <a href="/storage">Připoj HDD a připrav ho</a> jedním kliknutím – kamery zatím jedou jen v živém náhledu.</p>{% endif %}
 </div>
 
-<div class="grid-2">
-<div class="card"><div class="section-head"><h2>AI hlídání oblohy dnes</h2><a class="btn small sec" href="/ai">Nastavení</a></div>
-{% if cfg.ai.enabled and cfg.ai.api_key %}
+<div class="card"><div class="section-head"><h2>AI detekce (dnes)</h2><a class="btn small sec" href="/ai">Nastavení</a></div>
+{% if ai_on %}
 <div class="ai-today"><div class="ring" style="--p:{{ ai_pct }}"><span>{{ ai_pct }} %</span></div>
-<div><div class="big" style="font-size:1.4rem">{{ ai_used }}{% if ai_limit %} <span class="hint">z {{ ai_limit }} dotazů</span>{% else %} <span class="hint">dotazů</span>{% endif %}</div>
-<div class="hint">{{ watcher_status }}</div></div></div>
-<div class="kpi" style="margin-top:.8rem">
- <div class="item"><div class="k">Kontrola</div><div class="v">každých {{ cfg.ai.interval_min }} min</div><div class="d">u východu/západu každé {{ cfg.ai.fast_interval_min }} min</div></div>
- <div class="item"><div class="k">Upozornit od</div><div class="v">{{ cfg.ai.threshold }}/10</div><div class="d">{{ cfg.ai.cameras|length }} {{ 'kamera' if cfg.ai.cameras|length == 1 else 'kamery' }} · odhad {{ estimate }} dotazů/den</div></div>
- <div class="item"><div class="k">Model</div><div class="v" style="font-size:.95rem">{{ ai_model }}</div><div class="d">{{ providers[cfg.ai.provider].label }}</div></div>
- <div class="item"><div class="k">Video automaticky</div><div class="v" style="font-size:.95rem">{% if cfg.ai.auto_export.enabled and cfg.ai.auto_export.cameras %}zapnuto{% else %}vypnuto{% endif %}</div><div class="d">{% if cfg.ai.auto_export.enabled and cfg.ai.auto_export.cameras %}−{{ cfg.ai.auto_export.before_min }}/+{{ cfg.ai.auto_export.after_min }} min · {% for c in cfg.ai.auto_export.cameras %}{{ cam(c) }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}po upozornění nic – <a href="/ai">zapnout</a>{% endif %}</div></div>
-</div>
-{% if pending_auto %}<div class="hint" style="margin-top:.5rem">🎬 Čeká na vytvoření: {% for j in pending_auto %}{{ j.name }} (v {{ j.due_h }}){% if not loop.last %} · {% endif %}{% endfor %}</div>{% endif %}
-<div class="stats7" style="margin-top:.8rem"><table><thead><tr><th>Den</th><th>Dotazů</th><th>Zajímavé</th><th>Upozornění</th><th>Přeskočeno</th><th>Chyby</th></tr></thead><tbody>
+<div><div class="big" style="font-size:1.4rem">{{ ai_used }}{% if ai_limit %} <span class="hint">z {{ ai_limit }} dotazů</span>{% else %} <span class="hint">dotazů</span>{% endif %}</div><div class="hint">{{ watcher_status }}</div></div></div>
+<ul class="legend" style="margin-top:.8rem">
+ {% set t = stats7[0] if stats7 else {'calls': 0, 'interesting': 0, 'notified': 0, 'skipped': 0, 'errors': 0} %}
+ <li><span class="sw" style="background:var(--c-amber)"></span>Zajímavá obloha<b>{{ t.interesting }}</b></li>
+ <li><span class="sw" style="background:var(--c-green)"></span>Upozornění<b>{{ t.notified }}</b></li>
+ <li><span class="sw" style="background:var(--pico-muted-border-color)"></span>Přeskočeno (beze změny)<b>{{ t.skipped }}</b></li>
+ <li><span class="sw" style="background:var(--c-red)"></span>Chyby<b>{{ t.errors }}</b></li>
+ <li><span class="sw" style="background:var(--c-violet)"></span>Práh · kontrola<b>{{ cfg.ai.threshold }}/10 · {{ cfg.ai.interval_min }} min</b></li>
+</ul>
+<details style="margin:.7rem 0 0"><summary>Posledních 7 dní</summary>
+<div class="stats7"><table><thead><tr><th>Den</th><th>Dotazů</th><th>Zajímavé</th><th>Upoz.</th><th>Přesk.</th><th>Chyby</th></tr></thead><tbody>
 {% for d in stats7 %}<tr{% if loop.first %} class="today"{% endif %}><td>{{ d.label }} <span class="hint">{{ d.dow }}</span></td><td><b>{{ d.calls }}</b></td><td>{{ d.interesting }}</td><td>{% if d.notified %}<span class="badge ok">{{ d.notified }}</span>{% else %}0{% endif %}</td><td class="hint">{{ d.skipped }}</td><td>{% if d.errors %}<span class="badge err">{{ d.errors }}</span>{% else %}0{% endif %}</td></tr>{% endfor %}
-</tbody></table><div class="hint">Posledních 7 dní. Počty se ukládají zvlášť, takže mazání historie je nemění. „Přeskočeno“ = snímek se nezměnil, AI se neptalo.</div></div>
-{% else %}<p class="hint">Hlídání oblohy je vypnuté. <a href="/ai">Vlož klíč od Google (zdarma) a zapni ho</a> – Atmovio pak sám hlásí červánky, bouřky, duhy a další jevy.</p>{% endif %}</div>
+</tbody></table></div></details>
+{% if pending_auto %}<div class="hint" style="margin-top:.5rem">🎬 Čeká na vytvoření: {% for j in pending_auto %}{{ j.name }} (v {{ j.due_h }}){% if not loop.last %} · {% endif %}{% endfor %}</div>{% endif %}
+{% else %}<p class="hint">Hlídání oblohy je vypnuté. <a href="/ai">Vlož klíč od Google (zdarma) a zapni ho</a> – Atmovio pak sám hlásí červánky, bouřky, duhy a další jevy.</p>{% endif %}
+</div>
 
-<div class="card"><div class="section-head"><h2>Raspberry Pi</h2><a class="btn small sec" href="/system">Systém</a></div>
+<div class="card"><div class="section-head"><h2>Systém</h2><a class="btn small sec" href="/system">Detail</a></div>
 <div class="kpi">
- <div class="item"><div class="k">Teplota</div><div class="v">{{ sysinfo.temp }}</div><div class="d">{% set tnum = sysinfo.temp|replace(' °C','')|float(0) %}{% if tnum > 75 %}<span class="badge err">vysoká</span>{% elif tnum > 65 %}<span class="badge warn">teplejší</span>{% else %}v normě{% endif %}</div></div>
- <div class="item"><div class="k">Zátěž</div><div class="v">{{ sysinfo.load.split(' ')[0] }}</div><div class="d">1 / 5 / 15 min: {{ sysinfo.load }}</div></div>
- <div class="item"><div class="k">Běží</div><div class="v" style="font-size:.95rem">{{ sysinfo.uptime }}</div><div class="d">{{ sysinfo.hostname }} · {{ sysinfo.ip.split(' ')[0] }}</div></div>
- <div class="item"><div class="k">Paměť</div><div class="v" style="font-size:.95rem">{{ sysinfo.mem }}</div><div class="d">systémový disk {{ sysinfo.rootfs }}</div></div>
+ <div class="item ic"><span class="ico blue">{{ icons.cpu|safe }}</span><div><div class="k">Zátěž</div><div class="v">{{ sysinfo.load.split(' ')[0] }}</div><div class="d">{{ sysinfo.load }}</div></div></div>
+ <div class="item ic"><span class="ico violet">{{ icons.ram|safe }}</span><div><div class="k">RAM</div><div class="v" style="font-size:.95rem">{{ sysinfo.mem }}</div><div class="d">použito / celkem</div></div></div>
+ <div class="item ic"><span class="ico sky">{{ icons.disk|safe }}</span><div><div class="k">Systémový disk</div><div class="v" style="font-size:.95rem">{{ sysinfo.rootfs.split(' (')[1].rstrip(')') if '(' in sysinfo.rootfs else sysinfo.rootfs }}</div><div class="d">{{ sysinfo.rootfs.split(' (')[0] }}</div></div></div>
+ <div class="item ic"><span class="ico teal">{{ icons.clock|safe }}</span><div><div class="k">Uptime</div><div class="v" style="font-size:.95rem">{{ sysinfo.uptime }}</div><div class="d">{{ sysinfo.hostname }} · {{ sysinfo.ip.split(' ')[0] }}</div></div></div>
+ <div class="item ic"><span class="ico {{ 'red' if not fs.online else 'green' }}">{{ icons.check|safe }}</span><div><div class="k">Služby</div><div class="v" style="font-size:.95rem">{% if fs.online and rec %}vše v pořádku{% elif fs.online %}jen náhled{% else %}Frigate neběží{% endif %}</div><div class="d">Frigate {{ fs.version if fs.online else '–' }} · Atmovio {{ version }}</div></div></div>
+ <div class="item ic"><span class="ico {{ 'red' if tnum > 75 else ('amber' if tnum > 65 else 'green') }}">{{ icons.temp|safe }}</span><div><div class="k">Teplota</div><div class="v">{{ sysinfo.temp }}</div><div class="d">{% if tnum > 75 %}vysoká{% elif tnum > 65 %}teplejší{% else %}v normě{% endif %}</div></div></div>
 </div></div>
 </div>
 
-<div class="card"><div class="section-head"><h2>Poslední upozornění na oblohu</h2><span class="hint">jen detekce, na které přišlo upozornění</span><a class="btn small sec" href="/history">Historie</a></div>
+<div class="card" style="margin-top:1rem"><div class="section-head"><h2>Poslední upozornění na oblohu</h2><span class="hint">jen detekce, na které přišlo upozornění</span><a class="btn small sec" href="/history">Historie</a></div>
 <div class="gallery">
-{% for e in recent %}<div class="shot"><a href="/detection/{{ e.id }}"><img src="/snapshot/{{ e.image }}" alt="" loading="lazy"></a>
-<div class="b"><div class="line"><span class="s">{{ e.score }}/10</span><span class="when">{{ e.ts|cztime }}</span><span class="hint">{{ e.ts|czdate }}</span></div><div class="hint">{{ cam(e.camera) }} · {{ e.phenomenon }}{% if e.notified %} · <span class="badge ok">upozorněno</span>{% endif %}</div>{% if e.exported %}<div><a class="badge info" href="/videos" title="Z této detekce je vystřižené video">🎬 video exportováno</a></div>{% endif %}<a class="btn small sec" href="/detection/{{ e.id }}">Detail</a></div></div>{% endfor %}
+{% for e in recent[:5] %}<div class="shot"><a href="/detection/{{ e.id }}"><img src="/snapshot/{{ e.image }}" alt="" loading="lazy"></a>
+<div class="b"><div class="line"><span class="s">{{ e.score }}/10</span><span class="when">{{ e.ts|cztime }}</span><span class="hint">{{ e.ts|czdate }}</span></div><div class="hint">{{ cam(e.camera) }} · {{ e.phenomenon }}</div>{% if e.exported %}<div><a class="badge info" href="/videos" title="Z této detekce je vystřižené video">🎬 video</a></div>{% endif %}</div></div>{% endfor %}
 {% if not recent %}<div class="hint">Zatím nic. Až AI najde zajímavou oblohu (skóre ≥ {{ cfg.ai.threshold }}) a pošle upozornění, objeví se tady.</div>{% endif %}
 </div></div>
 
@@ -2313,8 +2400,9 @@ TEMPLATES["dashboard.html"] = """{% extends "base.html" %}{% block actions %}<di
 <div><b>Atmovio (tady)</b> je jediná administrace: kamery, disk, AI hlídání oblohy, upozornění, síť, systém. Když nic neměníš, nemusíš sem chodit. Když něco nefunguje, podívej se do <a href="/logs">Logů</a>.</div>
 <div><b>Frigate</b> <a href="{{ frigate_ui }}" target="_blank" rel="noopener">{{ frigate_ui }} ↗</a> – přehrávání záznamů a <b>stažení videa od–do</b> (Review → Historie → Export). Uživatel <code>admin</code>, heslo stejné jako sem.</div>
 <div><b>Vlastní web (webhook)</b>{% if cfg.web.enabled and cfg.web.token %} <span class="badge ok">propojeno – {{ cfg.web.url|urlhost }}</span>{% else %} <span class="badge mut">nepropojeno – volitelné, nastav v <a href="/email">Upozornění</a></span>{% endif %} – Atmovio umí posílat stav kamer a upozornění na libovolný web (ukázkový přijímač v PHP je v repozitáři). Web pak zprávy zobrazí nebo rozešle dál; RPi nemusí mít SMTP.</div>
+<div><b>REST API a Home Assistant</b> – klíč vytvoříš v <a href="/system">Systému</a>; hotové YAML a PHP skripty jsou na <a href="https://www.atmovio.com/api/" target="_blank" rel="noopener">atmovio.com/api ↗</a>.</div>
 <div><b>Cockpit</b> <a href="{{ cockpit_ui }}" target="_blank" rel="noopener">{{ cockpit_ui }} ↗</a> – servis systému (statická IP, aktualizace, disky). <b>Portainer</b> běžně nepotřebuješ.</div>
-<div>Aktualizace Atmovio přes SSH: <code>sudo bash update-atmovio.sh</code>. Verze {{ version }}.</div>
+<div>Aktualizace Atmovio: v menu Nastavení → Systém, nebo přes SSH <code>sudo bash update-atmovio.sh</code>. Verze {{ version }}.</div>
 </div></details>
 {% endblock %}"""
 
@@ -2779,7 +2867,8 @@ TEMPLATES["live.html"] = """{% extends "base.html" %}{% block actions %}<div cla
 {% for c in cameras %}<div class="cam"><a class="img" href="/camera/{{ c }}" title="Otevřít kameru – velký obraz, živě, nastavení"><img src="/live/{{ c }}.jpg?h=720&t={{ now_ts }}" data-refresh="10" alt="" loading="lazy" onerror="window.swImgFail?swImgFail(this):this.style.display='none'">
 {% if outages.get('cam:' ~ c) %}<span class="live"><span class="dot err"></span>VÝPADEK</span>{% elif fs.cameras.get(c) and fs.cameras.get(c).fps %}<span class="live"><span class="dot ok"></span>AKTUÁLNÍ SNÍMEK</span>{% else %}<span class="live"><span class="dot warn"></span>BEZ SIGNÁLU</span>{% endif %}</a>
 <div class="body"><div class="name"><span>{{ cam(c) }}</span>{{ state(c) }}</div>
-<div class="meta"><span>{{ caminfo[c].ip or 'IP ?' }}</span><span>·</span><span>{{ caminfo[c].via }}</span>{% if c in cfg.ai.cameras and cfg.ai.enabled %}<span class="badge info">AI hlídá</span>{% endif %}{% if cfg.ai.enabled and cfg.ai.auto_export.enabled and c in cfg.ai.auto_export.cameras %}<span class="badge ok" title="Po upozornění se automaticky vystřihne video">🎬 auto video −{{ cfg.ai.auto_export.before_min }}/+{{ cfg.ai.auto_export.after_min }} min</span>{% endif %}<a href="/camera/{{ c }}" style="margin-left:auto">otevřít kameru ▶</a></div></div></div>
+<div class="meta"><span>{{ caminfo[c].ip or 'IP ?' }}</span><span>·</span><span>{{ caminfo[c].via }}</span>{% if c in cfg.ai.cameras and cfg.ai.enabled %}<span class="badge info">AI hlídá</span>{% endif %}{% if cfg.ai.enabled and cfg.ai.auto_export.enabled and c in cfg.ai.auto_export.cameras %}<span class="badge ok" title="Po upozornění se automaticky vystřihne video">🎬 auto video −{{ cfg.ai.auto_export.before_min }}/+{{ cfg.ai.auto_export.after_min }} min</span>{% endif %}</div>
+<div class="acts"><a class="btn" href="/camera/{{ c }}">{{ icons.play|safe }} Otevřít kameru</a><a class="btn sec" href="/camera/{{ c }}#nastaveni">{{ icons.cog|safe }} Nastavení</a></div></div></div>
 {% endfor %}
 </div>
 {% if cameras %}<p class="hint" style="margin-top:.8rem">Snímky se samy obnovují každých 10 s. Kliknutím na kameru otevřeš její stránku – velký obraz, živý přenos, stav, nastavení, AI, detekce i videa. <a href="/live/all">Živě všechny kamery najednou</a>.</p>{% endif %}
@@ -2976,7 +3065,8 @@ def render(request: Request, tpl: str, title: str, **ctx) -> HTMLResponse:
         frigate_ui=f"https://{host}:8971", cockpit_ui=f"https://{host}:9090", portainer_ui=f"https://{host}:9443",
         flash=flash, flash_kind=flash_kind, csrf_token=csrf_token(request), storage=st,
         frigate_problem=watcher.frigate_problem, vpn_problem=watcher.vpn_problem, disk_warning=disk_health_warning(),
-        update_info=update_state(), req_path=path, github_repo=GITHUB_REPO, **ctx,
+        update_info=update_state(), req_path=path, github_repo=GITHUB_REPO, icons=ICONS, nav_icons=NAV_ICONS,
+        now_year=dt.datetime.now().year, **ctx,
     )
     return HTMLResponse(html)
 
@@ -3472,7 +3562,7 @@ def dashboard(request: Request):
                   email_ok=email_ready(cfg) or web_ready(cfg), recent=recent, events=recent_events(8), now_ts=int(time.time()),
                   ai_used=ai_used, ai_limit=ai_limit, ai_pct=ai_pct, ai_model=ai_model, providers=PROVIDERS, stats7=ai_stats_days(now, 7),
                   pending_auto=pending_auto_exports(cfg),
-                  estimate=ai_estimate(cfg, max(1, len(cfg["ai"]["cameras"]))), sysinfo=sys_info())
+                  estimate=ai_estimate(cfg, max(1, len(cfg["ai"]["cameras"]))), sysinfo=sys_info(), now_dt=now.strftime("%Y-%m-%dT%H:%M:%S"))
 
 
 @app.get("/live/{camera}.jpg")
@@ -5866,7 +5956,7 @@ ATMOVIO_REQUIREMENTS_EOF
 write_static() {  # $1 = cílový adresář
   mkdir -p "$1/vendor"
   cat > "$1/atmovio.css" <<'ATMOVIO_CSS_EOF'
-/* Atmovio – vlastní vzhled nad Pico CSS 2 (světlý i tmavý režim). */
+/* Atmovio – vzhled administrace nad Pico CSS 2. Tmavý režim výchozí, světlý přes data-theme="light" (přepínač v hlavičce). */
 
 :root {
   --pico-font-size: 94%;
@@ -5879,24 +5969,63 @@ write_static() {  # $1 = cílový adresář
   --pico-block-spacing-vertical: 1rem;
   --pico-block-spacing-horizontal: 1.1rem;
 
-  --sw-nav: #0b1220;
-  --sw-nav-2: #111a2e;
-  --sw-nav-tx: #b6c2d6;
-  --sw-nav-line: rgba(255, 255, 255, .07);
-  --sw-sidebar-w: 248px;
-  --sw-ok: #16a34a; --sw-ok-bg: #dcfce7;
-  --sw-warn: #b45309; --sw-warn-bg: #fef3c7;
-  --sw-err: #b91c1c; --sw-err-bg: #fee2e2;
-  --sw-info: #0369a1; --sw-info-bg: #e0f2fe;
-  --sw-muted: #64748b;
-  --sw-text: #0f172a;
-  --sw-shadow: 0 1px 2px rgba(15, 23, 42, .05), 0 6px 20px rgba(15, 23, 42, .06);
-  --sw-img-bg: #0b1220;
+  /* hlavička je tmavá v obou režimech */
+  --at-head: #0b1220;
+  --at-head-2: #101a30;
+  --at-head-tx: #b6c2d6;
+  --at-head-line: rgba(255, 255, 255, .08);
+  --at-radius: 14px;
+  --at-w: 1400px;
+
+  /* barevné ikony dlaždic */
+  --c-blue: #3b82f6;   --c-blue-bg: rgba(59, 130, 246, .16);
+  --c-sky: #38bdf8;    --c-sky-bg: rgba(56, 189, 248, .16);
+  --c-green: #22c55e;  --c-green-bg: rgba(34, 197, 94, .16);
+  --c-amber: #f59e0b;  --c-amber-bg: rgba(245, 158, 11, .18);
+  --c-red: #ef4444;    --c-red-bg: rgba(239, 68, 68, .16);
+  --c-violet: #a78bfa; --c-violet-bg: rgba(167, 139, 250, .16);
+  --c-teal: #2dd4bf;   --c-teal-bg: rgba(45, 212, 191, .16);
 }
-[data-theme="light"], :root:not([data-theme="dark"]) {
+
+/* ---------- tmavý (výchozí) ---------- */
+:root, :root[data-theme="dark"] {
+  color-scheme: dark;
+  --pico-background-color: #0b1220;
+  --pico-card-background-color: #111a2e;
+  --pico-card-border-color: #1f2b45;
+  --pico-card-sectioning-background-color: #172239;
+  --pico-primary: #38bdf8;
+  --pico-primary-hover: #7dd3fc;
+  --pico-primary-background: #0ea5e9;
+  --pico-primary-hover-background: #38bdf8;
+  --pico-primary-inverse: #04121c;
+  --pico-primary-focus: rgba(56, 189, 248, .3);
+  --pico-color: #e2e8f0;
+  --pico-muted-color: #94a3b8;
+  --pico-muted-border-color: #24304a;
+  --pico-form-element-background-color: #0f172a;
+  --pico-form-element-border-color: #2b3a58;
+  --pico-form-element-color: #e2e8f0;
+  --pico-form-element-placeholder-color: #64748b;
+  --pico-form-element-active-border-color: #38bdf8;
+  --pico-form-element-focus-color: rgba(56, 189, 248, .3);
+  --at-surface: #111a2e; --at-surface-2: #172239; --at-line: #1f2b45; --at-text: #e2e8f0; --at-muted: #94a3b8;
+  --sw-ok: #4ade80; --sw-ok-bg: #12352a;
+  --sw-warn: #fbbf24; --sw-warn-bg: #3a2a0f;
+  --sw-err: #f87171; --sw-err-bg: #3f1515;
+  --sw-info: #7dd3fc; --sw-info-bg: #0c2a3d;
+  --sw-muted: #94a3b8; --sw-text: #e2e8f0;
+  --sw-shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 10px 30px rgba(0, 0, 0, .25);
+  --sw-img-bg: #0b1220;
+  --at-hero: linear-gradient(120deg, #0f2a5a 0%, #12305f 35%, #0b1a3a 70%, #0b1220 100%);
+}
+/* ---------- světlý ---------- */
+:root[data-theme="light"] {
+  color-scheme: light;
   --pico-background-color: #f3f5f9;
   --pico-card-background-color: #ffffff;
   --pico-card-border-color: #e3e8ef;
+  --pico-card-sectioning-background-color: #f1f5f9;
   --pico-primary: #0284c7;
   --pico-primary-hover: #0369a1;
   --pico-primary-background: #0284c7;
@@ -5906,58 +6035,36 @@ write_static() {  # $1 = cílový adresář
   --pico-color: #0f172a;
   --pico-muted-color: #64748b;
   --pico-muted-border-color: #e3e8ef;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --pico-background-color: #0b1220;
-    --pico-card-background-color: #131d33;
-    --pico-card-border-color: #24304a;
-    --pico-card-sectioning-background-color: #172239;
-    --pico-primary: #38bdf8;
-    --pico-primary-hover: #7dd3fc;
-    --pico-primary-background: #0ea5e9;
-    --pico-primary-hover-background: #38bdf8;
-    --pico-primary-inverse: #04121c;
-    --pico-color: #e2e8f0;
-    --pico-muted-color: #94a3b8;
-    --pico-muted-border-color: #24304a;
-    --sw-ok: #4ade80; --sw-ok-bg: #123524;
-    --sw-warn: #fbbf24; --sw-warn-bg: #3a2a0f;
-    --sw-err: #f87171; --sw-err-bg: #3f1515;
-    --sw-info: #7dd3fc; --sw-info-bg: #0c2a3d;
-    --sw-muted: #94a3b8;
-    --sw-text: #e2e8f0;
-    --sw-shadow: 0 1px 2px rgba(0, 0, 0, .4);
-  }
-}
-[data-theme="dark"] {
-  --pico-background-color: #0b1220;
-  --pico-card-background-color: #131d33;
-  --pico-card-border-color: #24304a;
-  --pico-card-sectioning-background-color: #172239;
-  --pico-primary: #38bdf8;
-  --pico-primary-hover: #7dd3fc;
-  --pico-primary-background: #0ea5e9;
-  --pico-primary-hover-background: #38bdf8;
-  --pico-primary-inverse: #04121c;
-  --pico-color: #e2e8f0;
-  --pico-muted-color: #94a3b8;
-  --pico-muted-border-color: #24304a;
-  --sw-ok: #4ade80; --sw-ok-bg: #123524;
-  --sw-warn: #fbbf24; --sw-warn-bg: #3a2a0f;
-  --sw-err: #f87171; --sw-err-bg: #3f1515;
-  --sw-info: #7dd3fc; --sw-info-bg: #0c2a3d;
-  --sw-muted: #94a3b8;
-  --sw-text: #e2e8f0;
-  --sw-shadow: 0 1px 2px rgba(0, 0, 0, .4);
+  --pico-form-element-background-color: #ffffff;
+  --pico-form-element-border-color: #cbd5e1;
+  --pico-form-element-color: #0f172a;
+  --pico-form-element-placeholder-color: #94a3b8;
+  --pico-form-element-active-border-color: #0284c7;
+  --pico-form-element-focus-color: rgba(2, 132, 199, .25);
+  --at-surface: #ffffff; --at-surface-2: #f1f5f9; --at-line: #e3e8ef; --at-text: #0f172a; --at-muted: #64748b;
+  --sw-ok: #15803d; --sw-ok-bg: #dcfce7;
+  --sw-warn: #b45309; --sw-warn-bg: #fef3c7;
+  --sw-err: #b91c1c; --sw-err-bg: #fee2e2;
+  --sw-info: #0369a1; --sw-info-bg: #e0f2fe;
+  --sw-muted: #64748b; --sw-text: #0f172a;
+  --sw-shadow: 0 1px 2px rgba(15, 23, 42, .05), 0 8px 24px rgba(15, 23, 42, .06);
+  --sw-img-bg: #0b1220;
+  --at-hero: linear-gradient(120deg, #0b2a6f 0%, #1e63d6 55%, #38bdf8 100%);
+  --c-blue: #2563eb;   --c-blue-bg: #dbeafe;
+  --c-sky: #0284c7;    --c-sky-bg: #e0f2fe;
+  --c-green: #16a34a;  --c-green-bg: #dcfce7;
+  --c-amber: #d97706;  --c-amber-bg: #fef3c7;
+  --c-red: #dc2626;    --c-red-bg: #fee2e2;
+  --c-violet: #7c3aed; --c-violet-bg: #ede9fe;
+  --c-teal: #0d9488;   --c-teal-bg: #ccfbf1;
 }
 
 /* ---------- základ ---------- */
-html { -webkit-text-size-adjust: 100%; }
-body { margin: 0; background: var(--pico-background-color); }
+html { -webkit-text-size-adjust: 100%; scroll-padding-top: 80px; }
+body { margin: 0; background: var(--pico-background-color); color: var(--pico-color); }
 [x-cloak] { display: none !important; }
-h1 { font-size: 1.5rem; margin: 0 0 .15rem; font-weight: 800; letter-spacing: -.01em; }
-h2 { font-size: 1.05rem; margin: 0 0 .75rem; font-weight: 750; }
+h1 { font-size: 1.6rem; margin: 0 0 .15rem; font-weight: 800; letter-spacing: -.015em; }
+h2 { font-size: 1.08rem; margin: 0 0 .75rem; font-weight: 750; }
 h3 { font-size: .95rem; margin: 0 0 .5rem; font-weight: 700; }
 p { margin: 0 0 .75rem; }
 .sub { color: var(--pico-muted-color); margin: 0; font-size: .92rem; }
@@ -5965,75 +6072,113 @@ p { margin: 0 0 .75rem; }
 .hint b { color: var(--pico-color); }
 .mut { color: var(--pico-muted-color); }
 code { font-size: .85em; }
+a { color: var(--pico-primary); }
+svg.i { width: 1.15em; height: 1.15em; flex: none; vertical-align: -.2em; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ---------- rozvržení ---------- */
-.app { display: grid; grid-template-columns: var(--sw-sidebar-w) minmax(0, 1fr); min-height: 100vh; }
-.app > .content { min-width: 0; display: flex; flex-direction: column; }
-main.page { padding: 1.4rem 1.7rem 3rem; max-width: 1240px; width: 100%; }
+.app { min-height: 100vh; display: flex; flex-direction: column; }
+main.page { padding: 1.3rem 1.6rem 3rem; max-width: var(--at-w); width: 100%; margin: 0 auto; box-sizing: border-box; flex: 1; }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.1rem; }
 .page-head .actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+.page-head .actions .btn { margin: 0; }
 
-/* ---------- boční menu ---------- */
-.sidebar { background: var(--sw-nav); color: var(--sw-nav-tx); position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; padding: 1rem .8rem; overflow-y: auto; }
-.brand { display: flex; align-items: center; gap: .65rem; color: #fff; text-decoration: none; font-weight: 800; font-size: 1.2rem; padding: .3rem .5rem 1rem; }
+/* ---------- hlavička s vodorovným menu ---------- */
+header.top { position: sticky; top: 0; z-index: 50; background: var(--at-head); color: #fff; border-bottom: 1px solid var(--at-head-line); box-shadow: 0 6px 24px rgba(0, 0, 0, .25); }
+header.top .inner { max-width: var(--at-w); margin: 0 auto; padding: 0 1.6rem; height: 64px; display: flex; align-items: center; gap: .6rem; }
+.brand { display: flex; align-items: center; gap: .6rem; color: #fff; text-decoration: none; font-weight: 800; font-size: 1.25rem; letter-spacing: -.01em; flex: none; margin-right: .8rem; }
 .brand:hover { text-decoration: none; color: #fff; }
-.brand small { display: block; font-weight: 500; font-size: .68rem; color: var(--sw-nav-tx); letter-spacing: .04em; text-transform: uppercase; }
-.brand .logo { width: 36px; height: 36px; flex: none; }
-.nav a, .nav button.group { display: flex; align-items: center; gap: .65rem; width: 100%; color: var(--sw-nav-tx); text-decoration: none; padding: .55rem .75rem; border-radius: .6rem; font-weight: 500; font-size: .95rem; background: none; border: 0; margin: 0 0 .1rem; text-align: left; cursor: pointer; box-shadow: none; }
-.nav a:hover, .nav button.group:hover { background: var(--sw-nav-line); color: #fff; }
-.nav a.active { background: var(--pico-primary-background); color: var(--pico-primary-inverse); font-weight: 700; }
-.nav .ic { width: 22px; text-align: center; font-size: 1.05rem; flex: none; }
-.nav .caret { margin-left: auto; transition: transform .15s; font-size: .8rem; opacity: .7; }
-.nav .caret.open { transform: rotate(180deg); }
-.nav .sub { display: flex; flex-direction: column; margin: 0 0 .3rem .6rem; padding-left: .6rem; border-left: 1px solid var(--sw-nav-line); }
-.nav .sub a { padding: .45rem .7rem; font-size: .9rem; }
-.nav .label { font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; color: var(--sw-nav-tx); opacity: .6; padding: .9rem .75rem .3rem; }
-.sidebar .grow { flex: 1; }
-.sidebar .ext { padding: .5rem .75rem; font-size: .8rem; }
-.sidebar .ext a { display: block; color: var(--sw-nav-tx); padding: .2rem 0; text-decoration: none; }
-.sidebar .ext a:hover { color: #fff; }
-.sidebar .foot { padding: .6rem .75rem 0; display: flex; gap: .5rem; align-items: center; }
-.sidebar .foot button { margin: 0; padding: .4rem .8rem; font-size: .85rem; background: transparent; color: var(--sw-nav-tx); border: 1px solid var(--sw-nav-line); }
-.sidebar .foot button:hover { color: #fff; border-color: rgba(255, 255, 255, .3); background: transparent; }
-.sidebar .version { font-size: .72rem; color: var(--sw-nav-tx); opacity: .6; margin-left: auto; }
-
-/* stavové čipy v menu */
-.side-status { display: grid; gap: .35rem; margin: .2rem .5rem .8rem; }
-.side-status a { display: flex; align-items: center; gap: .5rem; text-decoration: none; color: var(--sw-nav-tx); font-size: .8rem; padding: .35rem .55rem; border-radius: .5rem; background: var(--sw-nav-2); }
-.side-status a:hover { color: #fff; }
-.side-status .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.brand small { display: block; font-weight: 600; font-size: .62rem; color: var(--at-head-tx); letter-spacing: .12em; text-transform: uppercase; line-height: 1.1; }
+.brand .logo { width: 38px; height: 38px; flex: none; }
+nav.menu { display: flex; align-items: center; justify-content: flex-start; gap: .15rem; flex: 1; min-width: 0; margin: 0; padding: 0; }
+nav.menu > a, nav.menu .dd > button { margin: 0; }
+nav.menu > a, nav.menu .dd > button { display: inline-flex; align-items: center; gap: .35rem; color: var(--at-head-tx); text-decoration: none; padding: .5rem .8rem; border-radius: .6rem; font-weight: 600; font-size: .93rem; white-space: nowrap; background: none; border: 0; margin: 0; width: auto; cursor: pointer; line-height: 1.3; box-shadow: none; position: relative; }
+nav.menu > a:hover, nav.menu .dd > button:hover, nav.menu .dd.open > button { color: #fff; background: rgba(255, 255, 255, .07); }
+nav.menu > a.active, nav.menu .dd > button.active { color: #fff; background: rgba(56, 189, 248, .14); }
+nav.menu > a.active::after, nav.menu .dd > button.active::after { content: ""; position: absolute; left: .8rem; right: .8rem; bottom: -.45rem; height: 3px; border-radius: 3px; background: var(--c-sky); }
+nav.menu .dd { position: relative; }
+nav.menu .dd .caret { font-size: .7rem; opacity: .7; transition: transform .15s; }
+nav.menu .dd.open .caret { transform: rotate(180deg); }
+.dd-panel { display: block; position: absolute; top: calc(100% + .55rem); left: 0; min-width: 260px; background: var(--pico-card-background-color); color: var(--pico-color); border: 1px solid var(--pico-card-border-color); border-radius: .9rem; box-shadow: 0 20px 50px rgba(0, 0, 0, .35); padding: .45rem; z-index: 60; }
+.dd-panel.end { left: auto; right: 0; }
+.dd-panel a, .dd-panel button.item { display: flex; align-items: center; gap: .6rem; padding: .55rem .7rem; border-radius: .6rem; color: var(--at-text); text-decoration: none; font-size: .92rem; font-weight: 500; background: none; border: 0; width: 100%; margin: 0; text-align: left; cursor: pointer; box-shadow: none; line-height: 1.3; }
+.dd-panel a:hover, .dd-panel button.item:hover { background: var(--pico-card-sectioning-background-color); color: var(--at-text); text-decoration: none; }
+.dd-panel a.active { background: var(--sw-info-bg); color: var(--sw-info); font-weight: 700; }
+.dd-panel .ic { width: 22px; text-align: center; font-size: 1rem; flex: none; }
+.dd-panel .label { font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; color: var(--pico-muted-color); padding: .5rem .7rem .2rem; font-weight: 700; }
+.dd-panel hr { margin: .35rem 0; border: 0; border-top: 1px solid var(--pico-card-border-color); }
+.dd-panel .ver { padding: .3rem .7rem .2rem; font-size: .75rem; color: var(--pico-muted-color); }
+header.top .right { display: flex; align-items: center; gap: .45rem; flex: none; margin-left: auto; }
+header.top .right .btn { margin: 0; }
+header.top .right .btn.ghost { background: rgba(255, 255, 255, .06); color: #fff; border-color: rgba(255, 255, 255, .14); }
+header.top .right .btn.ghost:hover { background: rgba(255, 255, 255, .12); border-color: rgba(255, 255, 255, .3); color: #fff; }
+.ico-btn, button.ico-btn:not(.block) { flex: none; width: 40px; height: 40px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: rgba(255, 255, 255, .07); border: 1px solid rgba(255, 255, 255, .1); color: #fff; cursor: pointer; padding: 0; margin: 0; box-shadow: none; position: relative; }
+.ico-btn:hover { background: rgba(255, 255, 255, .14); color: #fff; }
+.ico-btn svg { width: 19px; height: 19px; }
+.ico-btn .n { position: absolute; top: 5px; right: 6px; width: 9px; height: 9px; border-radius: 50%; background: var(--c-red); border: 2px solid var(--at-head); }
+.ico-btn.user { background: var(--pico-primary-background); color: var(--pico-primary-inverse); font-weight: 800; font-size: .85rem; border-color: transparent; }
+button.menu-btn:not(.block) { display: none; }
+/* stavové tečky v hlavičce */
+.head-status { display: flex; gap: .35rem; margin-right: .4rem; }
+.head-status a { display: inline-flex; align-items: center; gap: .35rem; color: var(--at-head-tx); text-decoration: none; font-size: .78rem; font-weight: 600; padding: .28rem .6rem; border-radius: 999px; background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 255, 255, .08); white-space: nowrap; }
+.head-status a:hover { color: #fff; }
+.dot { width: 9px; height: 9px; border-radius: 50%; flex: none; display: inline-block; }
 .dot.ok { background: var(--sw-ok); box-shadow: 0 0 0 3px rgba(74, 222, 128, .18); }
 .dot.warn { background: var(--sw-warn); box-shadow: 0 0 0 3px rgba(251, 191, 36, .18); }
 .dot.err { background: var(--sw-err); box-shadow: 0 0 0 3px rgba(248, 113, 113, .18); }
 .dot.mut { background: var(--sw-muted); }
 
-/* horní lišta (mobil) */
-header.top { display: none; }
+/* ---------- hero pruh přehledu ---------- */
+.hero { position: relative; overflow: hidden; border-radius: var(--at-radius); background: var(--at-hero); color: #fff; padding: 1.4rem 1.6rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 1.2rem; flex-wrap: wrap; box-shadow: var(--sw-shadow); min-height: 118px; }
+.hero::before { content: ""; position: absolute; inset: 0; background: radial-gradient(700px 200px at 80% 120%, rgba(251, 191, 36, .35), transparent 60%), radial-gradient(500px 220px at 15% -40%, rgba(125, 211, 252, .35), transparent 60%); pointer-events: none; }
+.hero > * { position: relative; }
+.hero h1 { color: #fff; font-size: 1.9rem; margin: 0; }
+.hero .sub { color: rgba(255, 255, 255, .78); font-size: .95rem; }
+.hero .tag { font-family: "Segoe Script", "Bradley Hand", "Comic Sans MS", cursive; color: #bfe4ff; font-size: 1rem; margin-top: .35rem; opacity: .9; }
+.hero .grow { flex: 1; min-width: 220px; }
+.hero .pill { background: rgba(2, 6, 23, .45); border: 1px solid rgba(255, 255, 255, .12); border-radius: 12px; padding: .6rem .9rem; display: flex; align-items: center; gap: .7rem; backdrop-filter: blur(6px); }
+.hero .pill .big { font-size: 1.25rem; line-height: 1.1; }
+.hero .pill .k { font-size: .72rem; color: rgba(255, 255, 255, .7); text-transform: uppercase; letter-spacing: .06em; }
+.hero .sun { display: grid; grid-template-columns: repeat(4, auto); gap: .2rem .9rem; font-size: .82rem; }
+.hero .sun span { display: flex; flex-direction: column; align-items: center; color: #fff; font-weight: 700; }
+.hero .sun small { color: rgba(255, 255, 255, .65); font-weight: 500; font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; }
+
+/* ---------- KPI dlaždice s barevnou ikonou ---------- */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: .8rem; margin-bottom: 1rem; }
+.tile { display: flex; align-items: center; gap: .9rem; text-decoration: none; color: inherit; background: var(--pico-card-background-color); border: 1px solid var(--pico-card-border-color); border-radius: var(--at-radius); padding: .95rem 1rem; box-shadow: var(--sw-shadow); position: relative; min-width: 0; }
+.tile:hover { text-decoration: none; color: inherit; border-color: var(--pico-primary); }
+.tile .ico { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; flex: none; font-size: 1.4rem; background: var(--c-sky-bg); color: var(--c-sky); }
+.tile .ico svg { width: 26px; height: 26px; }
+.tile .ico.blue { background: var(--c-blue-bg); color: var(--c-blue); } .tile .ico.green { background: var(--c-green-bg); color: var(--c-green); }
+.tile .ico.amber { background: var(--c-amber-bg); color: var(--c-amber); } .tile .ico.red { background: var(--c-red-bg); color: var(--c-red); }
+.tile .ico.violet { background: var(--c-violet-bg); color: var(--c-violet); } .tile .ico.teal { background: var(--c-teal-bg); color: var(--c-teal); }
+.tile .tx { flex: 1; min-width: 0; }
+.tile .k { font-size: .8rem; color: var(--pico-muted-color); font-weight: 600; }
+.tile .v { font-size: 1.45rem; font-weight: 800; margin: .05rem 0 0; letter-spacing: -.01em; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile .d { font-size: .8rem; color: var(--pico-muted-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile .bar { margin-top: .45rem; height: 5px; }
+.tile .arrow { color: var(--pico-muted-color); font-size: 1.2rem; flex: none; }
+.tile.err .v { color: var(--sw-err); } .tile.warn .v { color: var(--sw-warn); } .tile.ok .v { color: inherit; }
+.tile.err { border-color: rgba(239, 68, 68, .45); } .tile.warn { border-color: rgba(245, 158, 11, .45); }
 
 /* ---------- karty ---------- */
-.card { background: var(--pico-card-background-color); border: 1px solid var(--pico-card-border-color); border-radius: .9rem; padding: 1.1rem 1.2rem; margin-bottom: 1rem; box-shadow: var(--sw-shadow); }
+.card { background: var(--pico-card-background-color); border: 1px solid var(--pico-card-border-color); border-radius: var(--at-radius); padding: 1.1rem 1.2rem; margin-bottom: 1rem; box-shadow: var(--sw-shadow); min-width: 0; }
 .card.tight { padding: .8rem .95rem; }
 .card.accent { border-color: var(--pico-primary); }
 .card.warn { border-color: var(--sw-warn); }
-.section-head { display: flex; justify-content: space-between; align-items: center; gap: .75rem; flex-wrap: wrap; margin-bottom: .6rem; }
-.section-head h2 { margin: 0; }
+.section-head { display: flex; justify-content: space-between; align-items: center; gap: .75rem; flex-wrap: wrap; margin-bottom: .7rem; }
+.section-head h2 { margin: 0; display: flex; align-items: center; gap: .5rem; }
+.section-head .btn { margin: 0; }
+.section-head .count { color: var(--pico-muted-color); font-weight: 500; font-size: .95rem; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; }
 .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1rem; }
+.grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }
 .grid-wide { display: grid; grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); gap: 1.2rem; }
-@media (max-width: 560px) { .grid-wide { grid-template-columns: 1fr; } }
+@media (max-width: 1250px) { .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .grid-4, .grid-wide { grid-template-columns: 1fr; } }
+.grid > .card, .grid-2 > .card, .grid-4 > .card { margin: 0; }
 .row { display: flex; gap: .9rem; flex-wrap: wrap; }
 .row > * { flex: 1; min-width: 160px; }
-
-/* stavové dlaždice */
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .8rem; margin-bottom: 1rem; }
-.tile { display: block; text-decoration: none; color: inherit; background: var(--pico-card-background-color); border: 1px solid var(--pico-card-border-color); border-radius: .9rem; padding: .9rem 1rem .85rem; box-shadow: var(--sw-shadow); position: relative; overflow: hidden; }
-.tile:hover { text-decoration: none; color: inherit; border-color: var(--pico-primary); }
-.tile::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--pico-muted-border-color); }
-.tile.ok::before { background: var(--sw-ok); } .tile.warn::before { background: var(--sw-warn); } .tile.err::before { background: var(--sw-err); } .tile.info::before { background: var(--pico-primary); }
-.tile .k { font-size: .72rem; color: var(--pico-muted-color); text-transform: uppercase; letter-spacing: .06em; display: flex; align-items: center; gap: .4rem; }
-.tile .v { font-size: 1.35rem; font-weight: 800; margin: .15rem 0 .05rem; letter-spacing: -.01em; }
-.tile .d { font-size: .82rem; color: var(--pico-muted-color); }
-.tile .ico { position: absolute; right: .9rem; top: .8rem; font-size: 1.3rem; opacity: .7; }
+.row > .btn, .row > button, .row > form { flex: 0 0 auto; min-width: 0; }
 
 /* ---------- odznaky, stavy ---------- */
 .badge { display: inline-flex; align-items: center; gap: .3rem; padding: .1rem .6rem; border-radius: 999px; font-size: .75rem; font-weight: 700; white-space: nowrap; line-height: 1.5; vertical-align: middle; }
@@ -6044,10 +6189,9 @@ header.top { display: none; }
 .badge.mut { background: var(--pico-muted-border-color); color: var(--pico-muted-color); }
 a.badge { text-decoration: none; cursor: pointer; }
 a.badge:hover { filter: brightness(1.1); text-decoration: underline; }
-.tile.err .v { color: var(--sw-err); } .tile.warn .v { color: var(--sw-warn); }
 
 /* ---------- tlačítka ---------- */
-.btn, a.btn { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; background: var(--pico-primary-background); color: var(--pico-primary-inverse); border: 1px solid var(--pico-primary-background); padding: .55rem 1rem; border-radius: .6rem; font: inherit; font-weight: 700; font-size: .92rem; cursor: pointer; text-decoration: none; margin: .4rem .5rem 0 0; width: auto; line-height: 1.3; box-shadow: none; }
+.btn, a.btn { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; background: var(--pico-primary-background); color: var(--pico-primary-inverse); border: 1px solid var(--pico-primary-background); padding: .55rem 1rem; border-radius: .65rem; font: inherit; font-weight: 700; font-size: .92rem; cursor: pointer; text-decoration: none; margin: .4rem .5rem 0 0; width: auto; line-height: 1.3; box-shadow: none; white-space: nowrap; }
 .btn:hover, a.btn:hover { background: var(--pico-primary-hover-background); border-color: var(--pico-primary-hover-background); color: var(--pico-primary-inverse); text-decoration: none; }
 .btn.sec { background: var(--pico-card-background-color); color: var(--sw-text); border-color: var(--pico-muted-border-color); }
 .btn.sec:hover { border-color: var(--pico-primary); color: var(--pico-primary); background: var(--pico-card-background-color); }
@@ -6057,14 +6201,13 @@ a.badge:hover { filter: brightness(1.1); text-decoration: underline; }
 .btn.block { width: 100%; }
 button[disabled], .btn[disabled] { opacity: .6; cursor: wait; }
 form { margin: 0; }
-/* Pico dává tlačítkům 100% šířku – v našich formulářích ne */
 button:not(.block) { width: auto; }
 button:not(.btn) { margin-bottom: 0; }
 [role="group"] .btn { margin: 0; }
 
 /* ---------- formuláře ---------- */
 label { display: block; font-size: .82rem; color: var(--pico-muted-color); margin: .7rem 0 .3rem; font-weight: 650; }
-input:not([type="checkbox"]):not([type="radio"]), select, textarea { margin-bottom: 0; }
+input:not([type="checkbox"]):not([type="radio"]), select, textarea { margin-bottom: 0; border-radius: .6rem; }
 textarea { min-height: 110px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; }
 .check { display: flex; align-items: center; gap: .65rem; margin: .6rem 0; font-size: .95rem; color: var(--pico-color); font-weight: 500; cursor: pointer; }
 .check input[type="checkbox"] { appearance: none; -webkit-appearance: none; width: 42px; height: 24px; border-radius: 999px; background: var(--pico-muted-border-color); position: relative; flex: none; transition: .15s; margin: 0; cursor: pointer; border: 0; }
@@ -6076,13 +6219,18 @@ textarea { min-height: 110px; font-family: ui-monospace, SFMono-Regular, Menlo, 
 .chip { display: inline-flex; align-items: center; gap: .4rem; padding: .4rem .75rem; border-radius: 999px; border: 1px solid var(--pico-muted-border-color); background: var(--pico-card-background-color); cursor: pointer; font-size: .88rem; user-select: none; margin: 0; color: var(--pico-color); font-weight: 500; }
 .chip input { width: 15px; height: 15px; margin: 0; accent-color: var(--pico-primary); }
 .chip:has(input:checked) { background: var(--sw-info-bg); border-color: var(--pico-primary); }
+/* segmentový přepínač (Vše / Živé / Offline) */
+.seg { display: inline-flex; gap: .2rem; padding: .2rem; border-radius: 999px; background: var(--pico-card-sectioning-background-color); border: 1px solid var(--pico-card-border-color); }
+.seg a, .seg span { padding: .28rem .75rem; border-radius: 999px; font-size: .82rem; font-weight: 600; color: var(--pico-muted-color); text-decoration: none; display: inline-flex; gap: .35rem; align-items: center; }
+.seg .on { background: var(--pico-primary-background); color: var(--pico-primary-inverse); }
+.seg b { font-weight: 800; }
 
 /* ---------- tabulky ---------- */
 .tw { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 table { width: 100%; font-size: .9rem; margin: 0; }
-th, td { padding: .55rem .5rem; vertical-align: top; }
+th, td { padding: .55rem .5rem; vertical-align: top; border-bottom: 1px solid var(--pico-card-border-color); }
 th { color: var(--pico-muted-color); font-weight: 650; font-size: .74rem; text-transform: uppercase; letter-spacing: .05em; }
-/* statistika AI po dnech */
+tbody tr:last-child td { border-bottom: 0; }
 .stats7 { overflow-x: auto; }
 .stats7 table { font-size: .88rem; }
 .stats7 td, .stats7 th { text-align: right; white-space: nowrap; padding: .4rem .5rem; }
@@ -6090,23 +6238,21 @@ th { color: var(--pico-muted-color); font-weight: 650; font-size: .74rem; text-t
 .stats7 tr.today td { background: var(--sw-info-bg); }
 .stats7 tr.today td:first-child { font-weight: 750; }
 .stats7 tr.sum td { border-top: 2px solid var(--pico-muted-border-color); font-weight: 650; }
-/* kamery: velké dlaždice 50/50 */
+.kv td:first-child { color: var(--pico-muted-color); width: 40%; }
 .cams.big { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .cams.big .cam .img { aspect-ratio: 16 / 9; }
 .cams.big .cam .name { font-size: 1.05rem; }
 @media (max-width: 760px) { .cams.big { grid-template-columns: 1fr; } }
-/* živý obraz – velká kamera */
-.live-big { background: #000; aspect-ratio: 16 / 9; display: flex; align-items: center; justify-content: center; color: #94a3b8; }
+.live-big { background: #000; aspect-ratio: 16 / 9; display: flex; align-items: center; justify-content: center; color: #94a3b8; border-radius: 12px; overflow: hidden; }
 .live-big img { width: 100%; height: 100%; object-fit: contain; display: block; }
-.kv td:first-child { color: var(--pico-muted-color); width: 40%; }
 
 /* ---------- hlášky, toasty ---------- */
-.flash { padding: .75rem 1rem; border-radius: .7rem; margin-bottom: .9rem; background: var(--sw-ok-bg); color: var(--sw-ok); font-weight: 600; white-space: pre-line; display: flex; gap: .6rem; align-items: flex-start; }
+.flash { padding: .75rem 1rem; border-radius: .8rem; margin-bottom: .9rem; background: var(--sw-ok-bg); color: var(--sw-ok); font-weight: 600; white-space: pre-line; display: flex; gap: .6rem; align-items: flex-start; border: 1px solid transparent; }
 .flash.err { background: var(--sw-err-bg); color: var(--sw-err); }
 .flash.warn { background: var(--sw-warn-bg); color: var(--sw-warn); }
 .flash a { color: inherit; text-decoration: underline; }
 .flash .x { margin-left: auto; background: none; border: 0; color: inherit; font-size: 1.1rem; line-height: 1; padding: 0 .2rem; cursor: pointer; opacity: .7; width: auto; }
-.toasts { position: fixed; right: 1rem; top: 1rem; z-index: 900; display: flex; flex-direction: column; gap: .5rem; max-width: min(460px, calc(100vw - 2rem)); }
+.toasts { position: fixed; right: 1rem; top: 76px; z-index: 900; display: flex; flex-direction: column; gap: .5rem; max-width: min(460px, calc(100vw - 2rem)); }
 .toast { background: var(--pico-card-background-color); border: 1px solid var(--pico-card-border-color); border-left: 4px solid var(--sw-ok); border-radius: .7rem; padding: .7rem .9rem; box-shadow: var(--sw-shadow); font-size: .9rem; display: flex; gap: .6rem; align-items: flex-start; white-space: pre-line; }
 .toast.err { border-left-color: var(--sw-err); } .toast.warn { border-left-color: var(--sw-warn); }
 .toast .x { margin-left: auto; background: none; border: 0; color: var(--pico-muted-color); font-size: 1.1rem; line-height: 1; padding: 0 .2rem; cursor: pointer; width: auto; }
@@ -6136,7 +6282,6 @@ body.lb-open { overflow: hidden; }
 .lightbox.player .speeds button:hover { background: rgba(255, 255, 255, .22); }
 .lightbox.player .speeds button.on { background: var(--pico-primary); border-color: var(--pico-primary); }
 .lightbox.player .speeds .pos { color: #e2e8f0; font-size: .85rem; font-variant-numeric: tabular-nums; margin-left: .4rem; }
-/* videa ke stažení */
 .gallery.videos { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; }
 .shot .line { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
 .shot.video .thumb { position: relative; display: block; aspect-ratio: 16 / 9; background: var(--sw-img-bg); overflow: hidden; }
@@ -6155,34 +6300,52 @@ body.lb-open { overflow: hidden; }
 a[data-lightbox] { cursor: zoom-in; }
 
 /* ---------- kamery ---------- */
-.cams { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .9rem; }
-.cam { background: var(--pico-card-background-color); border: 1px solid var(--pico-card-border-color); border-radius: .9rem; overflow: hidden; box-shadow: var(--sw-shadow); }
+.cams { display: grid; grid-template-columns: repeat(auto-fill, minmax(255px, 1fr)); gap: .9rem; }
+.cam { background: var(--pico-card-background-color); border: 1px solid var(--pico-card-border-color); border-radius: var(--at-radius); overflow: hidden; box-shadow: var(--sw-shadow); display: flex; flex-direction: column; }
 .cam .img { aspect-ratio: 16 / 9; background: var(--sw-img-bg) linear-gradient(135deg, #0b1220, #1e293b); display: flex; align-items: center; justify-content: center; color: #64748b; font-size: .85rem; position: relative; text-decoration: none; }
 .cam .img img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.cam .img .live { position: absolute; left: .5rem; top: .5rem; background: rgba(2, 6, 23, .65); color: #fff; font-size: .7rem; font-weight: 700; padding: .12rem .45rem; border-radius: .35rem; display: inline-flex; align-items: center; gap: .3rem; }
+.cam .img .live { position: absolute; left: .55rem; top: .55rem; background: rgba(2, 6, 23, .7); color: #fff; font-size: .68rem; font-weight: 800; letter-spacing: .04em; padding: .18rem .5rem; border-radius: .4rem; display: inline-flex; align-items: center; gap: .35rem; }
 .cam .img .live .dot { width: 7px; height: 7px; box-shadow: none; }
-.cam .body { padding: .65rem .8rem .75rem; }
-.cam .name { font-weight: 750; font-size: .95rem; display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
-.cam .meta { font-size: .8rem; color: var(--pico-muted-color); margin-top: .15rem; display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; }
+.cam .img .fps { position: absolute; right: .55rem; top: .55rem; background: rgba(2, 6, 23, .7); color: #4ade80; font-size: .7rem; font-weight: 800; padding: .18rem .5rem; border-radius: .4rem; }
+.cam .body { padding: .7rem .85rem .8rem; display: flex; flex-direction: column; gap: .3rem; flex: 1; }
+.cam .name { font-weight: 750; font-size: .98rem; display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
+.cam .meta { font-size: .8rem; color: var(--pico-muted-color); display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; }
+.cam .acts { display: grid; grid-template-columns: 1fr 1fr; gap: .45rem; margin-top: .45rem; }
+.cam .acts .btn { margin: 0; padding: .4rem .5rem; font-size: .82rem; }
+.cam.add { border-style: dashed; border-width: 2px; align-items: center; justify-content: center; text-align: center; text-decoration: none; color: var(--pico-muted-color); padding: 1.2rem; min-height: 200px; box-shadow: none; background: transparent; }
+.cam.add:hover { border-color: var(--pico-primary); color: var(--pico-primary); text-decoration: none; }
+.cam.add .plus { width: 46px; height: 46px; border-radius: 50%; border: 2px solid currentColor; display: grid; place-items: center; font-size: 1.5rem; margin-bottom: .6rem; }
+.cam.add b { color: var(--pico-color); font-size: 1rem; }
 
 /* ---------- galerie ---------- */
 .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: .8rem; }
-.shot { background: var(--pico-card-background-color); border: 1px solid var(--pico-card-border-color); border-radius: .8rem; overflow: hidden; display: flex; flex-direction: column; }
+.shot { background: var(--pico-card-background-color); border: 1px solid var(--pico-card-border-color); border-radius: .9rem; overflow: hidden; display: flex; flex-direction: column; }
 .shot img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; background: var(--sw-img-bg); }
 .shot .b { padding: .55rem .7rem .7rem; font-size: .85rem; display: flex; flex-direction: column; gap: .2rem; }
 .shot .s { font-weight: 800; font-size: .95rem; color: var(--pico-primary); }
 .shot .when { font-weight: 700; }
 .shot .btn.small { align-self: flex-start; margin-top: .3rem; }
 
+/* ---------- seznam událostí s náhledem ---------- */
+.feed { list-style: none; margin: 0; padding: 0; }
+.feed li { display: flex; align-items: center; gap: .7rem; padding: .5rem 0; border-bottom: 1px solid var(--pico-card-border-color); }
+.feed li:last-child { border: 0; }
+.feed .th { width: 64px; height: 40px; border-radius: 6px; object-fit: cover; background: var(--sw-img-bg); flex: none; display: grid; place-items: center; font-size: 1.1rem; }
+.feed .tx { flex: 1; min-width: 0; }
+.feed .tx b { display: block; font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.feed .tx small { color: var(--pico-muted-color); font-size: .78rem; }
+.feed .t { color: var(--pico-muted-color); font-size: .78rem; white-space: nowrap; }
+.feed a { text-decoration: none; color: inherit; }
+
 /* ---------- ostatní prvky ---------- */
 .big { font-size: 1.8rem; font-weight: 800; letter-spacing: -.01em; }
 .bar { height: 8px; background: var(--pico-muted-border-color); border-radius: 4px; overflow: hidden; margin-top: .5rem; }
-.bar i { display: block; height: 100%; background: var(--pico-primary-background); }
-.bar i.warn { background: var(--sw-warn); } .bar i.err { background: var(--sw-err); }
+.bar i { display: block; height: 100%; background: var(--pico-primary-background); border-radius: 4px; }
+.bar i.warn { background: var(--sw-warn); } .bar i.err { background: var(--sw-err); } .bar i.ok { background: var(--sw-ok); }
 .steps { counter-reset: s; margin: 0; padding: 0; list-style: none; }
 .steps li { position: relative; padding: .4rem 0 .4rem 2.4rem; counter-increment: s; }
 .steps li::before { content: counter(s); position: absolute; left: 0; top: .35rem; width: 26px; height: 26px; border-radius: 50%; background: var(--pico-primary-background); color: var(--pico-primary-inverse); font-weight: 800; display: flex; align-items: center; justify-content: center; font-size: .82rem; }
-details { border: 1px solid var(--pico-card-border-color); border-radius: .7rem; padding: 0 .9rem; margin: .75rem 0; background: var(--pico-card-background-color); }
+details { border: 1px solid var(--pico-card-border-color); border-radius: .8rem; padding: 0 .9rem; margin: .75rem 0; background: var(--pico-card-background-color); }
 details summary { cursor: pointer; padding: .7rem 0; font-weight: 650; color: var(--pico-muted-color); margin: 0; }
 details[open] summary { border-bottom: 1px solid var(--pico-card-border-color); margin-bottom: .5rem; }
 details.card summary { padding: .85rem 0; }
@@ -6192,50 +6355,82 @@ details summary::after { display: none; }
 .events li:last-child { border: 0; }
 .events .t { color: var(--pico-muted-color); font-size: .78rem; white-space: nowrap; min-width: 92px; padding-top: .1rem; }
 .tabs { display: flex; flex-wrap: wrap; gap: .35rem; }
-.tab { padding: .4rem .8rem; border-radius: .55rem; border: 1px solid var(--pico-muted-border-color); text-decoration: none; color: var(--pico-color); font-size: .9rem; background: var(--pico-card-background-color); }
+.tab { padding: .4rem .8rem; border-radius: .6rem; border: 1px solid var(--pico-muted-border-color); text-decoration: none; color: var(--pico-color); font-size: .9rem; background: var(--pico-card-background-color); }
 .tab.active { background: var(--pico-primary-background); color: var(--pico-primary-inverse); border-color: var(--pico-primary-background); }
 pre { background: var(--pico-card-sectioning-background-color, var(--pico-background-color)); border: 1px solid var(--pico-card-border-color); padding: .75rem; border-radius: .6rem; overflow: auto; font-size: .8rem; white-space: pre-wrap; word-break: break-word; max-height: 360px; margin: 0 0 .75rem; }
 .logbox { max-height: 70vh; font-size: .8rem; line-height: 1.45; }
 .guide { display: grid; gap: .5rem; padding: .3rem 0 .9rem; font-size: .9rem; line-height: 1.5; }
 .guide > div { padding-left: .8rem; border-left: 3px solid var(--sw-info-bg); }
 
-/* ---------- dashboard ---------- */
-.kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .8rem; }
-.kpi .item { padding: .6rem .8rem; border-radius: .7rem; background: var(--pico-card-sectioning-background-color, var(--pico-background-color)); }
+/* ---------- dashboard – mini statistiky ---------- */
+.kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .7rem; }
+.kpi .item { padding: .65rem .8rem; border-radius: .8rem; background: var(--pico-card-sectioning-background-color, var(--pico-background-color)); border: 1px solid var(--pico-card-border-color); min-width: 0; }
+.kpi .item.ic { display: flex; gap: .6rem; align-items: center; }
+.kpi .item > .ico { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--c-sky-bg); color: var(--c-sky); }
+.kpi .item > .ico svg { width: 18px; height: 18px; }
+.kpi .item > .ico.blue { background: var(--c-blue-bg); color: var(--c-blue); } .kpi .item > .ico.green { background: var(--c-green-bg); color: var(--c-green); }
+.kpi .item > .ico.amber { background: var(--c-amber-bg); color: var(--c-amber); } .kpi .item > .ico.red { background: var(--c-red-bg); color: var(--c-red); }
+.kpi .item > .ico.violet { background: var(--c-violet-bg); color: var(--c-violet); } .kpi .item > .ico.teal { background: var(--c-teal-bg); color: var(--c-teal); }
+.kpi .item.ic > div { min-width: 0; }
 .kpi .k { font-size: .72rem; color: var(--pico-muted-color); text-transform: uppercase; letter-spacing: .06em; }
-.kpi .v { font-size: 1.15rem; font-weight: 800; }
-.kpi .d { font-size: .8rem; color: var(--pico-muted-color); }
-.ring { --p: 0; width: 64px; height: 64px; border-radius: 50%; background: conic-gradient(var(--pico-primary-background) calc(var(--p) * 1%), var(--pico-muted-border-color) 0); display: grid; place-items: center; flex: none; }
-.ring > span { width: 50px; height: 50px; border-radius: 50%; background: var(--pico-card-background-color); display: grid; place-items: center; font-weight: 800; font-size: .85rem; }
+.kpi .v { font-size: 1.12rem; font-weight: 800; }
+.kpi .d { font-size: .78rem; color: var(--pico-muted-color); }
+.ring { --p: 0; --ring-c: var(--pico-primary-background); width: 96px; height: 96px; border-radius: 50%; background: conic-gradient(var(--ring-c) calc(var(--p) * 1%), var(--pico-muted-border-color) 0); display: grid; place-items: center; flex: none; }
+.ring > span { width: 74px; height: 74px; border-radius: 50%; background: var(--pico-card-background-color); display: grid; place-items: center; font-weight: 800; font-size: 1.05rem; }
+.ring.small { width: 64px; height: 64px; } .ring.small > span { width: 50px; height: 50px; font-size: .85rem; }
+.ring.warn { --ring-c: var(--sw-warn); } .ring.err { --ring-c: var(--sw-err); }
 .ai-today { display: flex; gap: 1rem; align-items: center; }
+.legend { list-style: none; margin: 0; padding: 0; font-size: .86rem; }
+.legend li { display: flex; align-items: center; gap: .5rem; padding: .22rem 0; }
+.legend li b { margin-left: auto; font-weight: 700; }
+.legend .sw { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--c-sky); }
 .sunline { display: flex; gap: 1rem; align-items: center; font-size: .85rem; color: var(--pico-muted-color); flex-wrap: wrap; }
+.brand-foot { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; font-size: .8rem; color: var(--pico-muted-color); padding: 1rem 1.6rem; max-width: var(--at-w); margin: 0 auto; width: 100%; box-sizing: border-box; border-top: 1px solid var(--pico-card-border-color); }
+.brand-foot a { color: var(--pico-muted-color); text-decoration: none; margin-right: .9rem; }
+.brand-foot a:hover { color: var(--pico-primary); }
+.brand-foot .tag { font-family: "Segoe Script", "Bradley Hand", "Comic Sans MS", cursive; color: var(--pico-primary); }
 
 /* ---------- mobil ---------- */
-.menu-btn, nav.bottom, .scrim { display: none; }
-@media (max-width: 920px) {
-  .app { grid-template-columns: 1fr; }
-  .sidebar { position: fixed; inset: 0 auto 0 0; width: min(300px, 86vw); z-index: 40; transform: translateX(-100%); transition: transform .2s; height: 100dvh; box-shadow: 0 0 40px rgba(0, 0, 0, .5); }
-  .sidebar.open { transform: none; }
-  .scrim.open { display: block; position: fixed; inset: 0; background: rgba(0, 0, 0, .45); z-index: 30; }
-  header.top { display: flex; align-items: center; gap: .6rem; padding: .55rem .9rem; background: var(--sw-nav); color: #fff; position: sticky; top: 0; z-index: 20; }
-  header.top .brand { padding: 0; font-size: 1.05rem; flex: 1; }
-  header.top .brand small { display: none; }
-  header.top .brand .logo { width: 28px; height: 28px; }
-  .menu-btn { display: inline-flex; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: .6rem; background: rgba(255, 255, 255, .08); color: #fff; font-size: 1.3rem; cursor: pointer; border: 0; padding: 0; margin: 0; }
-  main.page { padding: .9rem .9rem 5.4rem; }
+.scrim { display: none; }
+@media (max-width: 1500px) { .head-status { display: none; } }
+header.top .right .dd { flex: none; }
+@media (max-width: 1080px) {
+  header.top .inner { padding: 0 .9rem; height: 58px; }
+  .brand { font-size: 1.1rem; margin-right: .2rem; }
+  .brand .logo { width: 32px; height: 32px; }
+  .brand small { display: none; }
+  .head-status { display: none; }
+  button.menu-btn:not(.block) { display: inline-flex; }
+  nav.menu { position: fixed; top: 58px; left: 0; right: 0; bottom: 0; background: var(--pico-card-background-color); color: var(--pico-color); flex-direction: column; align-items: stretch; gap: 0; padding: .6rem .8rem 2rem; overflow-y: auto; z-index: 55; transform: translateY(-8px); opacity: 0; pointer-events: none; transition: .15s; border-top: 1px solid var(--pico-card-border-color); }
+  nav.menu.open { transform: none; opacity: 1; pointer-events: auto; }
+  nav.menu > a, nav.menu .dd > button { color: var(--at-text); padding: .7rem .8rem; font-size: 1rem; width: 100%; justify-content: flex-start; }
+  nav.menu > a.active, nav.menu .dd > button.active { background: var(--sw-info-bg); color: var(--sw-info); }
+  nav.menu > a.active::after, nav.menu .dd > button.active::after { display: none; }
+  nav.menu > a:hover, nav.menu .dd > button:hover, nav.menu .dd.open > button { background: var(--pico-card-sectioning-background-color); color: var(--at-text); }
+  nav.menu .dd { width: 100%; }
+  .dd-panel { position: static; box-shadow: none; border: 0; padding: 0 0 .3rem .8rem; min-width: 0; }
+  .dd-panel.end { padding-left: 0; }
+  header.top .right .btn span { display: none; }
+  header.top .right .btn { padding: .45rem .6rem; }
+  header.top .right { gap: .35rem; }
+  main.page { padding: .9rem .9rem 3rem; }
   h1 { font-size: 1.3rem; }
-  .card { padding: .9rem; border-radius: .8rem; }
-  nav.bottom { display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; bottom: 0; left: 0; right: 0; background: var(--sw-nav); border-top: 1px solid #1e293b; z-index: 25; padding: .25rem 0 max(.25rem, env(safe-area-inset-bottom)); }
-  nav.bottom a, nav.bottom button { color: var(--sw-nav-tx); text-decoration: none; font-size: .68rem; text-align: center; padding: .35rem .1rem; display: flex; flex-direction: column; align-items: center; gap: .1rem; cursor: pointer; background: none; border: 0; margin: 0; width: auto; }
-  nav.bottom .ic { font-size: 1.25rem; }
-  nav.bottom a.active { color: var(--pico-primary); }
+  .card { padding: .9rem; }
+  .hero { padding: 1.1rem 1.1rem; }
+  .hero h1 { font-size: 1.5rem; }
+  .hero .sun { grid-template-columns: repeat(4, 1fr); }
   .row > * { min-width: 100%; }
   .tiles { grid-template-columns: repeat(2, 1fr); gap: .6rem; }
+  .tile { padding: .7rem .75rem; gap: .6rem; }
+  .tile .ico { width: 42px; height: 42px; } .tile .ico svg { width: 22px; height: 22px; }
   .tile .v { font-size: 1.15rem; }
+  .tile .arrow { display: none; }
   .kpi { grid-template-columns: repeat(2, 1fr); }
-  .toasts { left: .75rem; right: .75rem; top: auto; bottom: 4.6rem; max-width: none; }
+  .toasts { left: .75rem; right: .75rem; top: auto; bottom: 1rem; max-width: none; }
   th, td { padding: .45rem .4rem; font-size: .85rem; }
+  .brand-foot { padding: 1rem .9rem; }
 }
+@media (max-width: 480px) { .tiles { grid-template-columns: 1fr; } header.top .right .btn.ghost { display: none; } }
 ATMOVIO_CSS_EOF
   cat > "$1/atmovio.js" <<'ATMOVIO_JS_EOF'
 /* Atmovio – interakce (Alpine.js komponenty + pomocné funkce). */
@@ -6244,12 +6439,13 @@ ATMOVIO_CSS_EOF
 
   // ---------- Alpine komponenty ----------
   document.addEventListener('alpine:init', function () {
-    // Kostra stránky: mobilní menu, rozbalená skupina Nastavení, toasty, lightbox.
+    // Kostra stránky: mobilní menu, rozbalovací nabídky v hlavičce (dd), přepínač vzhledu, toasty, lightbox.
     Alpine.data('shell', function (opts) {
       opts = opts || {};
       return {
         menu: false,
-        settingsOpen: !!opts.settingsOpen,
+        dd: '',
+        theme: document.documentElement.getAttribute('data-theme') || 'dark',
         toasts: [],
         lb: { open: false, src: '', caption: '', items: [], index: -1 },
         init: function () {
@@ -6270,6 +6466,11 @@ ATMOVIO_CSS_EOF
             self.lb.index = Math.max(0, links.indexOf(a));
             self.lbShow();
           });
+        },
+        toggleTheme: function () {
+          this.theme = this.theme === 'dark' ? 'light' : 'dark';
+          document.documentElement.setAttribute('data-theme', this.theme);
+          try { localStorage.setItem('atmovio-theme', this.theme); } catch (e) { /* soukromý režim */ }
         },
         toast: function (text, kind) {
           var id = Date.now() + Math.random();
