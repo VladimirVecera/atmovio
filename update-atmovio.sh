@@ -2914,7 +2914,7 @@ TEMPLATES["update.html"] = """{% extends "base.html" %}{% block actions %}<div c
 </div>
 {% endblock %}"""
 
-TEMPLATES["logs.html"] = """{% extends "base.html" %}{% block content %}
+TEMPLATES["logs.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><form method="post" action="/logs/clear" data-nobusy onsubmit="return confirm('Vymazat tento log? Zobrazí se pak jen nové záznamy.')"><input type="hidden" name="src" value="{{ src }}"><button class="btn small danger">Vymazat tento log</button></form></div>{% endblock %}{% block content %}
 <div class="card">
 <div class="tabs">{% for key, name, _d in sources %}<a class="tab{% if key == src %} active{% endif %}" href="/logs?src={{ key }}&n={{ n }}{% if q %}&q={{ q|urlencode }}{% endif %}">{{ name }}</a>{% endfor %}</div>
 <p class="hint" style="margin-top:8px">{{ desc }}</p>
@@ -2923,7 +2923,7 @@ TEMPLATES["logs.html"] = """{% extends "base.html" %}{% block content %}
 <div><label>Počet řádků</label><select name="n">{% for v in (100, 300, 1000) %}<option value="{{ v }}"{% if v == n %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
 {% if src == 'frigate' %}<div><label class="check" style="margin:0 0 8px"><input type="checkbox" name="raw" value="1" {% if raw %}checked{% endif %}> i provozní řádky webserveru</label></div>{% endif %}
 <div><button class="btn small">Zobrazit</button> <a class="btn small sec" href="/logs?src={{ src }}&n={{ n }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if raw %}&raw=1{% endif %}">Obnovit</a> <button type="button" class="btn small sec" onclick="swCopy('logtext', this)">Kopírovat</button> <a class="btn small sec" href="/logs/download?src={{ src }}">Stáhnout</a></div></form>
-<form method="post" action="/logs/clear" style="margin-top:8px" onsubmit="return confirm('Vymazat tento log? Zobrazí se pak jen nové záznamy.')"><input type="hidden" name="src" value="{{ src }}"><button class="btn small danger">Vymazat</button>{% if since %} <span class="hint">zobrazeno od {{ since }}</span>{% endif %}</form>
+{% if since %}<div class="hint" style="margin-top:6px">zobrazeno od {{ since }} (starší část logu byla vymazána)</div>{% endif %}
 {% if summary %}<div class="row" style="gap:8px;margin:8px 0">{% for label, cls in summary %}<span class="badge {{ cls }}">{{ label }}</span>{% endfor %}</div>{% endif %}
 <pre class="logbox" id="logtext">{{ text or 'Log je prázdný.' }}</pre>
 <p class="hint">Nejnovější řádky jsou dole; časy jsou v místním čase RPi. Systémové logy (Disk, VPN, Systém) ukazují i starší události od posledního startu – „Vymazat“ jen posune, odkdy se zobrazují. Tlačítko Kopírovat zkopíruje celý log do schránky.</p>
@@ -3064,7 +3064,7 @@ TEMPLATES["camera.html"] = """{% extends "base.html" %}{% block actions %}<div c
 <div class="card" id="videa"><div class="section-head"><h2>Videa z této kamery</h2><a class="btn small sec" href="/videos">Všechna videa</a></div>
 {% if videos %}<div class="tw"><table><tr><th>Název</th><th>Úsek</th><th>Velikost</th><th></th></tr>
 {% for v in videos %}<tr><td><b>{{ v.name }}</b>{% if v.auto %} <span class="badge ok">auto</span>{% endif %}</td><td class="hint">{{ v.range_h }} ({{ v.duration_h }})</td><td class="hint">{{ v.size_h or '–' }}</td>
-<td style="white-space:nowrap">{% if v.ready %}<a class="btn small" href="/videos/{{ v.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ v.name }}">▶ Přehrát</a> <a class="btn small sec" href="/videos/{{ v.id }}/download">⬇</a>{% elif v.stuck %}<span class="badge warn">zaseklo se</span> <form method="post" action="/videos/{{ v.id }}/retry" style="display:inline"><input type="hidden" name="back" value="/camera/{{ camera }}"><button class="btn small" data-busy="Zadávám video znovu">↻ Znovu</button></form> <form method="post" action="/videos/{{ v.id }}/delete" style="display:inline" onsubmit="return confirm('Smazat video {{ v.name }}?')"><button class="btn small sec">Smazat</button></form>{% elif v.in_progress %}<span class="hint">vytváří se…</span>{% else %}<span class="hint">není k dispozici</span>{% endif %}</td></tr>{% endfor %}</table></div>
+<td style="white-space:nowrap">{% if v.ready %}<a class="btn small" href="/videos/{{ v.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ v.name }}">▶ Přehrát</a> <a class="btn small sec" href="/videos/{{ v.id }}/download">⬇</a>{% elif v.expired %}<span class="badge err">záznam už neexistuje</span>{% elif v.stuck %}<span class="badge warn">zaseklo se</span> <form method="post" action="/videos/{{ v.id }}/retry" style="display:inline"><input type="hidden" name="back" value="/camera/{{ camera }}"><button class="btn small" data-busy="Zadávám video znovu">↻ Znovu</button></form> <form method="post" action="/videos/{{ v.id }}/delete" style="display:inline" onsubmit="return confirm('Smazat video {{ v.name }}?')"><button class="btn small sec">Smazat</button></form>{% elif v.in_progress %}<span class="hint">vytváří se…</span>{% else %}<span class="hint">není k dispozici</span>{% endif %}{% if v.expired %} <form method="post" action="/videos/{{ v.id }}/delete" style="display:inline" onsubmit="return confirm('Smazat video {{ v.name }}?')"><button class="btn small sec">Smazat</button></form>{% endif %}</td></tr>{% endfor %}</table></div>
 {% else %}<p class="hint">Žádné video. Vytvoříš ho z detailu detekce, nebo zapni automatické video v <a href="/ai#kamery">Nastavení AI</a>.</p>{% endif %}</div>
 
 <div class="card"><div class="section-head"><h2>Nastavení kamery</h2><span class="hint">ID ve Frigate: <code>{{ camera }}</code></span></div>
@@ -3078,7 +3078,7 @@ TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block content %}
 <div class="gallery videos">
 {% for v in videos %}<div class="shot video" id="v{{ v.id }}">
 {% if v.ready %}<a class="thumb" href="/videos/{{ v.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ v.name }}"><img src="{% if v.thumb %}/videos/{{ v.id }}/thumb.jpg{% endif %}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"><span class="play">▶</span><span class="dur">{{ v.duration_h }}</span></a>
-{% else %}<div class="thumb wait">{% if v.stuck %}<span>⚠️ zaseklo se – Frigate export nedokončil (restart uprostřed)</span>{% elif v.in_progress %}<span><span class="spin" style="display:inline-block;vertical-align:middle;width:18px;height:18px;margin-right:.4rem"></span>vytváří se…</span>{% elif v.missing %}video už není k dispozici{% else %}čekám na Frigate…{% endif %}</div>{% endif %}
+{% else %}<div class="thumb wait">{% if v.expired %}<span>⚠️ nedokončeno a záznam z té doby už je smazaný – video nejde vytvořit, smaž ho</span>{% elif v.stuck %}<span>⚠️ zaseklo se – Frigate export nedokončil (restart uprostřed)</span>{% elif v.in_progress %}<span><span class="spin" style="display:inline-block;vertical-align:middle;width:18px;height:18px;margin-right:.4rem"></span>vytváří se…</span>{% elif v.missing %}video už není k dispozici{% else %}čekám na Frigate…{% endif %}</div>{% endif %}
 <div class="b">
 <div class="title">{{ v.name }}{% if v.auto %} <span class="badge ok" title="Vytvořeno automaticky po upozornění">auto</span>{% endif %}</div>
 <dl class="facts">
@@ -3088,7 +3088,7 @@ TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block content %}
 <dt>Vytvořeno</dt><dd>{{ v.created|czdt }}</dd>
 <dt>Smaže se</dt><dd>{% if v.days_left > 1 %}za {{ v.days_left }} dní{% elif v.days_left == 1 %}zítra{% else %}dnes{% endif %}</dd>
 </dl>
-<div class="acts">{% if v.ready %}<a class="btn small" href="/videos/{{ v.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ v.name }}">▶ Přehrát</a><a class="btn small sec" href="/videos/{{ v.id }}/download">⬇ Stáhnout MP4</a>{% endif %}{% if v.stuck %}<form method="post" action="/videos/{{ v.id }}/retry"><button class="btn small" data-busy="Zadávám video znovu">↻ Vytvořit znovu</button></form>{% endif %}{% if v.detection_id %}<a class="btn small sec" href="/detection/{{ v.detection_id }}">Detekce</a>{% endif %}
+<div class="acts">{% if v.ready %}<a class="btn small" href="/videos/{{ v.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ v.name }}">▶ Přehrát</a><a class="btn small sec" href="/videos/{{ v.id }}/download">⬇ Stáhnout MP4</a>{% endif %}{% if v.stuck and not v.expired %}<form method="post" action="/videos/{{ v.id }}/retry"><button class="btn small" data-busy="Zadávám video znovu">↻ Vytvořit znovu</button></form>{% endif %}{% if v.detection_id %}<a class="btn small sec" href="/detection/{{ v.detection_id }}">Detekce</a>{% endif %}
 <form method="post" action="/videos/{{ v.id }}/delete" onsubmit="return confirm('Smazat video {{ v.name }}?')"><button class="btn small sec">Smazat</button></form></div></div></div>{% endfor %}
 </div>
 <div class="card" style="margin-top:1rem"><form method="post" action="/videos/keep" class="row" style="align-items:end"><div style="max-width:220px"><label>Videa mazat po (dní)</label><input type="number" name="days" min="1" max="365" value="{{ keep_days }}"></div><div style="flex:0"><button class="btn small">Uložit</button></div>
@@ -4815,6 +4815,10 @@ def list_videos(cfg) -> list:
     """Seznam exportů pro stránku Videa (stav, velikost, náhled)."""
     fr_all = frigate_exports(cfg)
     keep = int(cfg.get("export_keep_days", 30) or 30)
+    try:
+        retain_cutoff = time.time() - retain_days(cfg) * 86400
+    except Exception:
+        retain_cutoff = 0
     with db() as con:
         rows = [dict(r) for r in con.execute("SELECT * FROM exports ORDER BY id DESC")]
     out = []
@@ -4830,7 +4834,8 @@ def list_videos(cfg) -> list:
         t0 = dt.datetime.fromtimestamp(rec["start_ts"], tz)
         t1 = dt.datetime.fromtimestamp(rec["end_ts"], tz)
         in_progress = bool(fr and fr.get("in_progress"))
-        rec.update(in_progress=in_progress, stuck=bool(in_progress and age_days * 24 >= 2 or (fr is None and not video and age_days * 24 >= 2)),
+        stuck = bool(in_progress and age_days * 24 >= 2 or (fr is None and not video and age_days * 24 >= 2))
+        rec.update(in_progress=in_progress, stuck=stuck, expired=bool(stuck and rec["start_ts"] < retain_cutoff),
                    ready=bool(video and video.is_file() and not (fr or {}).get("in_progress")),
                    missing=fr is None, size_h=human_size(size) if size else "",
                    duration_min=round((rec["end_ts"] - rec["start_ts"]) / 60, 1),
@@ -5100,7 +5105,10 @@ def video_retry(request: Request, vid: int, back: str = Form("")):
     try:
         new_id = frigate_start_export(cfg, rec["camera"], rec["start_ts"], rec["end_ts"], rec["name"])
     except Exception as e:
-        flash(request, f"Video se nepodařilo zadat znovu: {e}", "err")
+        if "No recordings" in str(e):
+            flash(request, f"Video „{rec['name']}“ už nejde vytvořit – záznam z té doby byl smazán (uchovávání {retain_days(cfg)} dní). Smaž ho.", "err")
+        else:
+            flash(request, f"Video se nepodařilo zadat znovu: {e}", "err")
         return RedirectResponse(back or "/videos", status_code=303)
     with db() as con:
         con.execute("UPDATE exports SET frigate_id=?, created=? WHERE id=?", (new_id, dt.datetime.now().isoformat(timespec="seconds"), vid))

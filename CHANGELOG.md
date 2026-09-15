@@ -8,6 +8,8 @@ All notable changes to Atmovio (versions ≤ 3.4 were released under the name Sk
   (`/cameras/edit/<id>`), AI is configured on one place in Nastavení → AI.
 - **Stuck video exports** (Frigate restarted mid-export, "vytváří se…" for days) are flagged after 2 hours with
   "Vytvořit znovu" (re-submits the same range) and delete buttons, on Videa and on the camera page.
+  When the recording for that range is already gone (retention), the export says so and offers delete only.
+- Logs: "Vymazat tento log" moved to the page header instead of dangling under the toolbar.
 - Release workflow updates an existing release instead of failing when a tag is force-pushed.
 
 ## 4.4 – 2026-09 – AI settings for humans
