@@ -2418,7 +2418,7 @@ TEMPLATES["cameras.html"] = """{% extends "base.html" %}{% block content %}
 <div class="card"><div class="section-head"><h2 style="margin:0">Nastavené kamery</h2><a class="btn small" href="/discover">🔍 Vyhledat kamery v síti</a></div>
 <div class="tw"><table><tr><th>Název</th><th>IP · cesta</th><th>Hlavní stream (záznam)</th><th>Substream (náhled)</th><th></th></tr>
 {% for name,c in cams.items() %}<tr><td><a href="/camera/{{ name }}"><b>{{ cam(name) }}</b></a><div class="hint">ID ve Frigate: <code>{{ name }}</code></div></td><td class="hint">{{ c.ip or '?' }}<br>{{ c.via }}</td><td class="hint" style="word-break:break-all">{{ c.main }}</td><td class="hint" style="word-break:break-all">{{ c.sub or '–' }}</td>
-<td style="white-space:nowrap"><a class="btn small sec" href="/camera/{{ name }}">Otevřít / upravit</a>
+<td style="white-space:nowrap"><a class="btn small" href="/cameras/edit/{{ name }}">Upravit</a> <a class="btn small sec" href="/camera/{{ name }}">Detail</a>
 <form method="post" action="/cameras/delete" style="display:inline" onsubmit="return confirm('Odebrat kameru {{ cam(name) }} z konfigurace? Záznamy zůstanou na disku.')"><input type="hidden" name="name" value="{{ name }}"><button class="btn small danger">Odebrat</button></form></td></tr>{% endfor %}
 {% if not cams %}<tr><td colspan="5" class="hint">Žádné kamery. Přidej první níže – nebo ji nech <a href="/discover">vyhledat v síti</a>.</td></tr>{% endif %}</table></div>
 <p class="hint">Video se ukládá tak, jak ho kamera kóduje (H.264/H.265, bez překódování – CPU se nezatěžuje). Substream v nízkém rozlišení slouží jen pro náhled ve Frigate. Po každé změně se Frigate restartuje (cca 20–40 s). Masky, zóny a detekci objektů nastavíš ve <a href="{{ frigate_ui }}" target="_blank">Frigate ↗</a>.</p></div>
@@ -2967,7 +2967,7 @@ TEMPLATES["camera.html"] = """{% extends "base.html" %}{% block actions %}<div c
 <div class="hint" style="padding:0 .9rem .7rem">Snímek se sám obnovuje každých 10 s. Živý přenos běží jen po kliknutí a dokud stránku neopustíš.</div>
 </div>
 
-<div class="tabs" style="margin:.2rem 0 .8rem"><a class="tab" href="#stav">Stav</a><a class="tab" href="#ai">Hlídání oblohy</a><a class="tab" href="#detekce">Detekce</a><a class="tab" href="#videa">Videa</a><a class="tab" href="#nastaveni">Nastavení kamery</a></div>
+<div class="tabs" style="margin:.2rem 0 .8rem"><a class="tab" href="#stav">Stav</a><a class="tab" href="#ai">Hlídání oblohy</a><a class="tab" href="#detekce">Detekce</a><a class="tab" href="#videa">Videa</a><span style="margin-left:auto;display:flex;gap:.35rem;flex-wrap:wrap"><a class="tab" href="/cameras/edit/{{ camera }}">⚙ Upravit kameru</a><a class="tab" href="/ai#kamery">☁ Nastavení AI</a></span></div>
 
 <div class="grid-2">
 <div class="card" id="stav"><div class="section-head"><h2>Stav</h2></div>
@@ -2981,17 +2981,16 @@ TEMPLATES["camera.html"] = """{% extends "base.html" %}{% block actions %}<div c
 </div>
 
 <div class="card" id="ai"><div class="section-head"><h2>Hlídání oblohy (AI)</h2>{% if not cfg.ai.enabled %}<span class="badge warn">AI je celkově vypnuté</span>{% elif ai_on %}<span class="badge ok">hlídá se</span>{% else %}<span class="badge mut">nehlídá se</span>{% endif %}</div>
-<form method="post" action="/camera/{{ camera }}/ai">
-<label class="check"><input type="checkbox" name="ai_on" {% if ai_on %}checked{% endif %}> AI hlídá oblohu z této kamery</label>
-<label class="check"><input type="checkbox" name="auto_on" {% if auto_on %}checked{% endif %}> Po upozornění automaticky vystřihnout video (−{{ ax.before_min }}/+{{ ax.after_min }} min{% if ax.playback == 'timelapse_25x' %}, zrychlené 25×{% endif %})</label>
-<div style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:center"><button class="btn small">Uložit</button><a class="btn small sec" href="/ai">Společné nastavení AI (co hlídat, jak často, minuty videa)</a></div></form>
-<div class="kpi" style="margin-top:.8rem">
- <div class="item"><div class="k">Dotazů za 7 dní</div><div class="v">{{ week.calls }}</div><div class="d">z této kamery</div></div>
- <div class="item"><div class="k">Upozornění za 7 dní</div><div class="v">{{ week.notified }}</div><div class="d">odeslaných</div></div>
- <div class="item"><div class="k">Kontrola</div><div class="v" style="font-size:.95rem">každých {{ cfg.ai.interval_min }} min</div><div class="d">práh {{ cfg.ai.threshold }}/10</div></div>
+{% set rl = rule(camera) %}
+<div class="kpi">
+ <div class="item"><div class="k">Upozornit od</div><div class="v">{{ rl.threshold }}/10</div><div class="d">{% if rl.custom %}vlastní nastavení kamery{% else %}výchozí nastavení{% endif %}</div></div>
+ <div class="item"><div class="k">Jevy</div><div class="v">{{ rl.phenomena|length }}</div><div class="d">{% if rl.any %}+ cokoli fotogenického{% else %}jen vybrané jevy{% endif %}</div></div>
+ <div class="item"><div class="k">Automatické video</div><div class="v" style="font-size:.95rem">{% if auto_on %}zapnuto{% else %}vypnuto{% endif %}</div><div class="d">{% if auto_on %}−{{ ax.before_min }}/+{{ ax.after_min }} min{% if ax.playback == 'timelapse_25x' %}, 25×{% endif %}{% else %}po upozornění nic{% endif %}</div></div>
+ <div class="item"><div class="k">Dotazů za 7 dní</div><div class="v">{{ week.calls }}</div><div class="d">{{ week.notified }} upozornění · kontrola každých {{ cfg.ai.interval_min }} min</div></div>
 </div>
 {% if pending_auto %}<div class="hint" style="margin-top:.5rem">🎬 Čeká na vytvoření: {% for j in pending_auto %}{{ j.name }} (v {{ j.due_h }}){% if not loop.last %} · {% endif %}{% endfor %}</div>{% endif %}
-<form method="post" action="/ai/test" style="margin-top:.6rem"><input type="hidden" name="camera" value="{{ camera }}"><input type="hidden" name="back" value="/camera/{{ camera }}"><button class="btn small sec" {% if not cfg.ai.api_key %}disabled{% endif %}>Vyzkoušet AI na aktuálním snímku</button> <span class="hint">Výsledek se zobrazí v Nastavení → AI (bez e-mailu).</span></form>
+<div style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;margin-top:.7rem"><a class="btn small" href="/ai#kamery">Nastavení AI pro tuto kameru</a>
+<form method="post" action="/ai/test" data-nobusy style="margin:0"><input type="hidden" name="camera" value="{{ camera }}"><input type="hidden" name="back" value="/camera/{{ camera }}"><button class="btn small sec" {% if not cfg.ai.api_key %}disabled{% endif %}>Vyzkoušet AI na aktuálním snímku</button></form><span class="hint">Výsledek se ukáže v Nastavení → AI → Vyzkoušet (bez upozornění).</span></div>
 </div>
 </div>
 
@@ -3005,21 +3004,13 @@ TEMPLATES["camera.html"] = """{% extends "base.html" %}{% block actions %}<div c
 <div class="card" id="videa"><div class="section-head"><h2>Videa z této kamery</h2><a class="btn small sec" href="/videos">Všechna videa</a></div>
 {% if videos %}<div class="tw"><table><tr><th>Název</th><th>Úsek</th><th>Velikost</th><th></th></tr>
 {% for v in videos %}<tr><td><b>{{ v.name }}</b>{% if v.auto %} <span class="badge ok">auto</span>{% endif %}</td><td class="hint">{{ v.range_h }} ({{ v.duration_h }})</td><td class="hint">{{ v.size_h or '–' }}</td>
-<td style="white-space:nowrap">{% if v.ready %}<a class="btn small" href="/videos/{{ v.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ v.name }}">▶ Přehrát</a> <a class="btn small sec" href="/videos/{{ v.id }}/download">⬇</a>{% elif v.in_progress %}<span class="hint">vytváří se…</span>{% else %}<span class="hint">není k dispozici</span>{% endif %}</td></tr>{% endfor %}</table></div>
-{% else %}<p class="hint">Žádné video. Vytvoříš ho z detailu detekce, nebo zapni automatické video výše.</p>{% endif %}</div>
+<td style="white-space:nowrap">{% if v.ready %}<a class="btn small" href="/videos/{{ v.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ v.name }}">▶ Přehrát</a> <a class="btn small sec" href="/videos/{{ v.id }}/download">⬇</a>{% elif v.stuck %}<span class="badge warn">zaseklo se</span> <form method="post" action="/videos/{{ v.id }}/retry" style="display:inline"><input type="hidden" name="back" value="/camera/{{ camera }}"><button class="btn small" data-busy="Zadávám video znovu">↻ Znovu</button></form> <form method="post" action="/videos/{{ v.id }}/delete" style="display:inline" onsubmit="return confirm('Smazat video {{ v.name }}?')"><button class="btn small sec">Smazat</button></form>{% elif v.in_progress %}<span class="hint">vytváří se…</span>{% else %}<span class="hint">není k dispozici</span>{% endif %}</td></tr>{% endfor %}</table></div>
+{% else %}<p class="hint">Žádné video. Vytvoříš ho z detailu detekce, nebo zapni automatické video v <a href="/ai#kamery">Nastavení AI</a>.</p>{% endif %}</div>
 
-<div class="card" id="nastaveni"><div class="section-head"><h2>Nastavení kamery</h2><span class="hint">ID ve Frigate: <code>{{ camera }}</code></span></div>
-<form method="post" action="/cameras/add"><input type="hidden" name="replace" value="{{ camera }}"><input type="hidden" name="back" value="/camera/{{ camera }}">
-<div class="row"><div><label>Název kamery</label><input type="text" name="name" required value="{{ cam(camera) }}"></div>
-<div><label>Uživatel kamery</label><input type="text" name="user" value="" placeholder="ponechat" autocomplete="off"></div>
-<div><label>Heslo kamery</label><input type="password" name="password" value="" placeholder="ponechat" autocomplete="off"></div></div>
-<label>Hlavní stream (RTSP, plné rozlišení – tak se ukládá)</label><input type="text" name="main" required value="{{ settings.main }}">
-<label>Vedlejší stream (nízké rozlišení pro náhled; nepovinné)</label><input type="text" name="sub" value="{{ settings.sub }}">
-<div class="hint">Heslo je v adrese skryté jako <code>***</code> – při uložení se doplní to uložené. Když heslo kamery měníš, vyplň uživatele a heslo do polí výše. Po uložení se adresy znovu ověří a Frigate se restartuje (20–40 s); masky a zóny ve Frigate zůstanou.</div>
-<label class="check"><input type="checkbox" name="test" checked> Před uložením ověřit, že kamera odpovídá (cca 10 s)</label>
-<div style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:center"><button class="btn">Uložit změny</button><a class="btn small sec" href="{{ frigate_ui }}/config" target="_blank" rel="noopener">Masky a zóny ve Frigate ↗</a></div></form>
-<form method="post" action="/cameras/delete" style="margin-top:1rem" onsubmit="return confirm('Odebrat kameru {{ cam(camera) }}? Záznamy na disku zůstanou, kamera zmizí z nahrávání i z AI.')"><input type="hidden" name="name" value="{{ camera }}"><button class="btn small danger">Odebrat kameru</button></form>
-</div>
+<div class="card"><div class="section-head"><h2>Nastavení kamery</h2><span class="hint">ID ve Frigate: <code>{{ camera }}</code></span></div>
+<dl class="facts"><dt>Hlavní stream</dt><dd><code>{{ settings.main }}</code></dd><dt>Vedlejší stream</dt><dd><code>{{ settings.sub or '–' }}</code></dd></dl>
+<div style="display:flex;gap:.4rem;flex-wrap:wrap"><a class="btn small" href="/cameras/edit/{{ camera }}">⚙ Upravit název, adresy a heslo</a><a class="btn small sec" href="{{ frigate_ui }}/config" target="_blank" rel="noopener">Masky a zóny ve Frigate ↗</a></div>
+<p class="hint" style="margin:.6rem 0 0">Tahle stránka jen ukazuje stav. Nastavení kamer je na jednom místě v <a href="/cameras">Nastavení → Kamery</a>, hlídání oblohy v <a href="/ai#kamery">Nastavení → AI</a>.</p></div>
 {% endblock %}"""
 
 TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block content %}
@@ -3027,7 +3018,7 @@ TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block content %}
 <div class="gallery videos">
 {% for v in videos %}<div class="shot video" id="v{{ v.id }}">
 {% if v.ready %}<a class="thumb" href="/videos/{{ v.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ v.name }}"><img src="{% if v.thumb %}/videos/{{ v.id }}/thumb.jpg{% endif %}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"><span class="play">▶</span><span class="dur">{{ v.duration_h }}</span></a>
-{% else %}<div class="thumb wait">{% if v.in_progress %}<span><span class="spin" style="display:inline-block;vertical-align:middle;width:18px;height:18px;margin-right:.4rem"></span>vytváří se…</span>{% elif v.missing %}video už není k dispozici{% else %}čekám na Frigate…{% endif %}</div>{% endif %}
+{% else %}<div class="thumb wait">{% if v.stuck %}<span>⚠️ zaseklo se – Frigate export nedokončil (restart uprostřed)</span>{% elif v.in_progress %}<span><span class="spin" style="display:inline-block;vertical-align:middle;width:18px;height:18px;margin-right:.4rem"></span>vytváří se…</span>{% elif v.missing %}video už není k dispozici{% else %}čekám na Frigate…{% endif %}</div>{% endif %}
 <div class="b">
 <div class="title">{{ v.name }}{% if v.auto %} <span class="badge ok" title="Vytvořeno automaticky po upozornění">auto</span>{% endif %}</div>
 <dl class="facts">
@@ -3037,7 +3028,7 @@ TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block content %}
 <dt>Vytvořeno</dt><dd>{{ v.created|czdt }}</dd>
 <dt>Smaže se</dt><dd>{% if v.days_left > 1 %}za {{ v.days_left }} dní{% elif v.days_left == 1 %}zítra{% else %}dnes{% endif %}</dd>
 </dl>
-<div class="acts">{% if v.ready %}<a class="btn small" href="/videos/{{ v.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ v.name }}">▶ Přehrát</a><a class="btn small sec" href="/videos/{{ v.id }}/download">⬇ Stáhnout MP4</a>{% endif %}{% if v.detection_id %}<a class="btn small sec" href="/detection/{{ v.detection_id }}">Detekce</a>{% endif %}
+<div class="acts">{% if v.ready %}<a class="btn small" href="/videos/{{ v.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ v.name }}">▶ Přehrát</a><a class="btn small sec" href="/videos/{{ v.id }}/download">⬇ Stáhnout MP4</a>{% endif %}{% if v.stuck %}<form method="post" action="/videos/{{ v.id }}/retry"><button class="btn small" data-busy="Zadávám video znovu">↻ Vytvořit znovu</button></form>{% endif %}{% if v.detection_id %}<a class="btn small sec" href="/detection/{{ v.detection_id }}">Detekce</a>{% endif %}
 <form method="post" action="/videos/{{ v.id }}/delete" onsubmit="return confirm('Smazat video {{ v.name }}?')"><button class="btn small sec">Smazat</button></form></div></div></div>{% endfor %}
 </div>
 <div class="card" style="margin-top:1rem"><form method="post" action="/videos/keep" class="row" style="align-items:end"><div style="max-width:220px"><label>Videa mazat po (dní)</label><input type="number" name="days" min="1" max="365" value="{{ keep_days }}"></div><div style="flex:0"><button class="btn small">Uložit</button></div>
@@ -3778,7 +3769,7 @@ def camera_page(request: Request, camera: str):
                   week=dict(week) if week else {"calls": 0, "notified": 0}, videos=videos, rec_state=rec_state,
                   ai_on=camera in cfg["ai"]["cameras"], auto_on=bool(ax.get("enabled")) and camera in (ax.get("cameras") or []),
                   ax=ax, pending_auto=[j for j in pending_auto_exports(cfg) if j["camera"] == camera], outage_events=outage_events,
-                  now_ts=int(time.time()), subtitle="Obraz, stav, hlídání oblohy, nastavení, detekce i videa téhle kamery na jednom místě.")
+                  now_ts=int(time.time()), subtitle="Stav, hlídání oblohy, detekce a videa této kamery. Nastavení je v menu Nastavení.")
 
 
 @app.post("/camera/{camera}/ai")
@@ -3852,6 +3843,18 @@ def render_cameras_page(request: Request, values):
            "user": q.get("user", ""), "password": q.get("password", ""),
            "replace": q.get("replace", "") if q.get("replace", "") in cams else ""}
     return render(request, "cameras.html", "Kamery", cams=cams, pre=pre)
+
+
+@app.get("/cameras/edit/{name}", response_class=HTMLResponse)
+def cameras_edit(request: Request, name: str):
+    """Předvyplní formulář úprav kamery na stránce Kamery (jediné místo, kde se kamery nastavují)."""
+    cfg = load_config()
+    cams = camera_settings_all(cfg)
+    if name not in cams:
+        flash(request, "Kamera neexistuje.", "err")
+        return RedirectResponse("/cameras", status_code=303)
+    c = cams[name]
+    return render_cameras_page(request, {"name": cam_label(cfg, name), "main": c.get("main", ""), "sub": c.get("sub", "") or "", "replace": name})
 
 
 @app.get("/discover", response_class=HTMLResponse)
@@ -4760,18 +4763,20 @@ def list_videos(cfg) -> list:
         video = frigate_media_path(fr.get("video_path", "")) if fr else None
         size = video.stat().st_size if video and video.is_file() else 0
         try:
-            age_days = (dt.datetime.now() - dt.datetime.fromisoformat(rec["created"])).days
+            age_days = (dt.datetime.now() - dt.datetime.fromisoformat(rec["created"])).total_seconds() / 86400
         except ValueError:
             age_days = 0
         tz = ZoneInfo(cfg["tz"])
         t0 = dt.datetime.fromtimestamp(rec["start_ts"], tz)
         t1 = dt.datetime.fromtimestamp(rec["end_ts"], tz)
-        rec.update(in_progress=bool(fr and fr.get("in_progress")), ready=bool(video and video.is_file() and not (fr or {}).get("in_progress")),
+        in_progress = bool(fr and fr.get("in_progress"))
+        rec.update(in_progress=in_progress, stuck=bool(in_progress and age_days * 24 >= 2 or (fr is None and not video and age_days * 24 >= 2)),
+                   ready=bool(video and video.is_file() and not (fr or {}).get("in_progress")),
                    missing=fr is None, size_h=human_size(size) if size else "",
                    duration_min=round((rec["end_ts"] - rec["start_ts"]) / 60, 1),
                    duration_h=human_minutes(rec["end_ts"] - rec["start_ts"]),
                    range_h=f"{t0.day}. {t0.month}. {t0.year} {t0:%H:%M}–{t1:%H:%M}",
-                   days_left=max(0, keep - age_days),
+                   days_left=max(0, int(keep - age_days)),
                    thumb_path=str(export_thumb_path(cfg, rec, fr) or ""))
         rec["thumb"] = bool(rec["thumb_path"])
         out.append(rec)
@@ -5019,6 +5024,31 @@ def video_thumb(vid: int):
     return FileResponse(str(p), headers={"Cache-Control": "private, max-age=3600"})
 
 
+@app.post("/videos/{vid}/retry")
+def video_retry(request: Request, vid: int, back: str = Form("")):
+    """Zaseklý export (Frigate se restartoval uprostřed) – zadat znovu se stejným rozsahem."""
+    cfg = load_config()
+    with db() as con:
+        rec = con.execute("SELECT * FROM exports WHERE id=?", (vid,)).fetchone()
+    if not rec:
+        return RedirectResponse(back or "/videos", status_code=303)
+    rec = dict(rec)
+    try:
+        requests.delete(cfg["frigate_url"].rstrip("/") + f"/api/export/{rec['frigate_id']}", timeout=15)
+    except Exception:
+        pass
+    try:
+        new_id = frigate_start_export(cfg, rec["camera"], rec["start_ts"], rec["end_ts"], rec["name"])
+    except Exception as e:
+        flash(request, f"Video se nepodařilo zadat znovu: {e}", "err")
+        return RedirectResponse(back or "/videos", status_code=303)
+    with db() as con:
+        con.execute("UPDATE exports SET frigate_id=?, created=? WHERE id=?", (new_id, dt.datetime.now().isoformat(timespec="seconds"), vid))
+    log(f"Video „{rec['name']}“ zadáno znovu ({new_id}) – původní export se zasekl")
+    flash(request, f"Video „{rec['name']}“ se vytváří znovu – hotové bude za pár minut.")
+    return RedirectResponse(back or "/videos", status_code=303)
+
+
 @app.post("/videos/{vid}/delete")
 def video_delete(request: Request, vid: int):
     cfg = load_config()
@@ -5027,7 +5057,7 @@ def video_delete(request: Request, vid: int):
     if rec:
         delete_export(cfg, dict(rec))
         flash(request, f"Video „{rec['name']}“ smazáno.")
-    return RedirectResponse("/videos", status_code=303)
+    return RedirectResponse(request.headers.get("referer") or "/videos", status_code=303)
 
 
 def _delete_evaluations(cfg, where: str, args: tuple) -> int:
