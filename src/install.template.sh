@@ -494,9 +494,9 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
+chmod 644 /etc/systemd/system/atmovio.service
 systemctl daemon-reload
 "$SKY_DIR/venv/bin/python" "$SKY_DIR/storage_guard.py" --install
-chmod 644 /etc/systemd/system/atmovio.service /etc/systemd/system/nvr-storage.service 2>/dev/null || true
 systemctl daemon-reload
 systemctl enable --now atmovio.service
 sleep 3
