@@ -2,6 +2,17 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 4.3 – 2026-09 – history, disk and log polish
+
+- **History page** rebuilt: button filters (alerts / all / errors · camera · min. score), one row per evaluation grouped
+  by day with the full AI text; delete actions moved to the page header.
+- Dashboard shows an available update in the Raspberry Pi tile and in the System box (also in `/api/v1/status` → `update`).
+- Sunrise/sunset are highlighted in the header strip, dawn/dusk muted.
+- S.M.A.R.T.: a disk is no longer listed twice after `/dev/sdX` names swap on reboot (keyed by serial/model, one row per role).
+- S.M.A.R.T.: a disk with ≥ 200 reallocated sectors is flagged as worn ("plan a replacement") even when the count is stable.
+- Webhook heartbeat: a hosting hiccup shorter than 3 minutes is no longer logged; longer outages log start and end with duration.
+- systemd unit files get mode 644 before `daemon-reload` – no more "world-inaccessible" warnings in the system log.
+
 ## 4.2 – 2026-09 – AI in focus
 
 - **AI in focus**: every camera card on the dashboard shows the latest AI evaluation of that camera with score,
@@ -12,12 +23,6 @@ All notable changes to Atmovio (versions ≤ 3.4 were released under the name Sk
 - Detection page plays the **exported clip** when one exists (smooth, seekable); the raw Frigate segment is used only for a
   custom range, with an explanation why its time may jump.
 - Camera fps badge explains that 5 fps is the preview/AI stream; recording keeps the camera's full quality.
-- **History page** rebuilt: button filters (alerts / all / errors · camera · min. score), one row per evaluation grouped
-  by day with the full AI text; delete actions moved to the page header.
-- Dashboard shows an available update in the Raspberry Pi tile and in the System box (also in `/api/v1/status` → `update`).
-- Sunrise/sunset are highlighted in the header strip, dawn/dusk muted.
-- S.M.A.R.T.: a disk is no longer listed twice after `/dev/sdX` names swap on reboot (keyed by serial/model, one row per role).
-
 ## 4.1 – 2026-09 – new admin design
 
 - **Redesigned web UI.** Horizontal menu in the header (Přehled · Kamery · Záznamy · Detekce a AI · Videa · Nastavení ▾ · Nástroje ▾),

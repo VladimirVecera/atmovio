@@ -279,6 +279,8 @@ WantedBy=multi-user.target
     existing = command(['docker', 'ps', '-a', '--filter', 'name=^/frigate$', '--format', '{{.ID}}'])
     if existing.strip():
         command(['docker', 'update', '--restart=no', 'frigate'])
+    # unit soubor není tajný – s právy 600 systemd při každém načtení varuje "world-inaccessible"
+    (SYSTEMD / 'nvr-storage.service').chmod(0o644)
     command(['systemctl', 'daemon-reload'])
     command(['systemctl', 'start', 'docker'])
     command(['systemctl', 'enable', 'nvr-storage.service'])

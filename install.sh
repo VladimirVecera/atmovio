@@ -475,7 +475,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "4.2"
+APP_VERSION = "4.3"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -2111,15 +2111,21 @@ class AtmovioWatcher(threading.Thread):
         if web_ready(cfg):
             try:
                 web_heartbeat(cfg, fs, self.status, self.outages)
-                if self.web_error:
-                    log(f"Spojení s webem obnoveno (výpadek od {getattr(self, 'web_error_since', '?')})")
+                if getattr(self, "web_fail_logged", False):
+                    log(f"Spojení s webem obnoveno (výpadek od {getattr(self, 'web_error_since', '?')}, {getattr(self, 'web_fail_n', 0)} min)")
                 self.web_error = ""
+                self.web_fail_n = 0
+                self.web_fail_logged = False
             except Exception as e:
-                # Web občas v noci neodpovídá (hosting) – logovat jen začátek výpadku, ne každou minutu.
+                # Hosting občas na minutu neodpoví (timeout, 502/503) – to se do logu nepíše. Zaloguje se až výpadek delší než 3 minuty.
                 if not self.web_error:
                     self.web_error_since = dt.datetime.now().strftime("%H:%M")
-                    log(f"Heartbeat na web selhal: {e} (další pokusy každou minutu, zaloguji až obnovení)")
+                    self.web_fail_n = 0
                 self.web_error = str(e)
+                self.web_fail_n = getattr(self, "web_fail_n", 0) + 1
+                if self.web_fail_n == 3 and not getattr(self, "web_fail_logged", False):
+                    self.web_fail_logged = True
+                    log(f"Heartbeat na web selhává už 3 minuty (od {self.web_error_since}): {e} – zkouším dál každou minutu, zaloguji obnovení")
 
     def track_outage(self, cfg, key, label, up, now, message):
         al = cfg.get("alerts", {})
@@ -3563,6 +3569,9 @@ def disk_health() -> list:
                 if not r["healthy"]:
                     r["level"] = "err"
                     r["trend"] = "disk sám hlásí selhání (SMART FAILED)"
+                elif (r["reallocated"] or 0) >= 200 and (r["pending"] or 0) == 0 and (r["uncorrectable"] or 0) == 0:
+                    r["level"] = "warn"
+                    r["trend"] = f"{r['reallocated']} přemapovaných sektorů – disk je opotřebený; nahrává dál, ale naplánuj výměnu"
                 elif bad:
                     hist = [dict(h) for h in con.execute(
                         "SELECT ts, pending, reallocated, uncorrectable FROM disk_smart WHERE serial=? ORDER BY ts", (r["serial"],))]
@@ -3582,6 +3591,8 @@ def disk_health() -> list:
                     elif stable_h >= 72:
                         r["level"] = "warn"
                         r["trend"] = f"beze změny už {int(stable_h // 24)} dní – pravděpodobně jednorázová chyba, hlídám dál"
+                        if (r["reallocated"] or 0) >= 200:
+                            r["trend"] += f"; {r['reallocated']} přemapovaných sektorů ale znamená opotřebený disk – naplánuj výměnu"
                     else:
                         r["level"] = "warn"
                         r["trend"] = f"sleduji od {first_bad[8:10]}. {int(first_bad[5:7])}. {first_bad[11:16]}, zatím beze změny ({int(stable_h)} h)"
@@ -6324,6 +6335,8 @@ WantedBy=multi-user.target
     existing = command(['docker', 'ps', '-a', '--filter', 'name=^/frigate$', '--format', '{{.ID}}'])
     if existing.strip():
         command(['docker', 'update', '--restart=no', 'frigate'])
+    # unit soubor není tajný – s právy 600 systemd při každém načtení varuje "world-inaccessible"
+    (SYSTEMD / 'nvr-storage.service').chmod(0o644)
     command(['systemctl', 'daemon-reload'])
     command(['systemctl', 'start', 'docker'])
     command(['systemctl', 'enable', 'nvr-storage.service'])
@@ -7260,9 +7273,9 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
+chmod 644 /etc/systemd/system/atmovio.service
 systemctl daemon-reload
 "$SKY_DIR/venv/bin/python" "$SKY_DIR/storage_guard.py" --install
-chmod 644 /etc/systemd/system/atmovio.service /etc/systemd/system/nvr-storage.service 2>/dev/null || true
 systemctl daemon-reload
 systemctl enable --now atmovio.service
 sleep 3
