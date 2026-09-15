@@ -2,6 +2,14 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 4.4.1 – 2026-09 – camera page cleanup, stuck exports
+
+- **Camera page is a dashboard only** – no forms; "Upravit kameru" opens the edit form on Nastavení → Kamery
+  (`/cameras/edit/<id>`), AI is configured on one place in Nastavení → AI.
+- **Stuck video exports** (Frigate restarted mid-export, "vytváří se…" for days) are flagged after 2 hours with
+  "Vytvořit znovu" (re-submits the same range) and delete buttons, on Videa and on the camera page.
+- Release workflow updates an existing release instead of failing when a tag is force-pushed.
+
 ## 4.4 – 2026-09 – AI settings for humans
 
 - **AI settings rebuilt** into five tabs: Who evaluates · Cameras and phenomena · When to look · Automatic video ·
@@ -15,12 +23,6 @@ All notable changes to Atmovio (versions ≤ 3.4 were released under the name Sk
 - **Custom phenomena**: add your own (name + description for the AI, e.g. "contrails"); the AI looks for them on every
   snapshot and they can be selected like the built-in ones.
 - History page has a button to the AI settings; score badges use the camera's own threshold.
-- **Camera page is a dashboard only** – no forms; "Upravit kameru" opens the edit form on Nastavení → Kamery
-  (`/cameras/edit/<id>`), AI is configured on one place in Nastavení → AI.
-- **Stuck video exports** (Frigate restarted mid-export, "vytváří se…" for days) are flagged after 2 hours with
-  "Vytvořit znovu" (re-submits the same range) and delete buttons, on Videa and on the camera page.
-- Release workflow updates an existing release instead of failing when a tag is force-pushed.
-
 ## 4.3 – 2026-09 – history, disk and log polish
 
 - **History page** rebuilt: button filters (alerts / all / errors · camera · min. score), one row per evaluation grouped
