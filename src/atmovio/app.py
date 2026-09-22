@@ -56,7 +56,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "4.4.3"
+APP_VERSION = "4.4.4"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -1013,8 +1013,33 @@ def gemini_resolve_model(ai: dict) -> str:
     return picked
 
 
+AI_TRANSIENT_CODES = (500, 502, 503, 504, 529)
+
+
 def ai_evaluate(ai: dict, image_bytes: bytes) -> tuple[dict, str]:
-    """Vrátí (parsed, raw_text). Vyhazuje výjimku při chybě."""
+    """Vrátí (parsed, raw_text). Dočasné chyby poskytovatele (přetížení 503/529, timeout, výpadek spojení)
+    zkusí ještě 2× s odstupem – zajímavá obloha nemá propadnout kvůli minutovému zaškobrtnutí Googlu."""
+    delays = (5, 20)
+    last: Exception | None = None
+    for attempt in range(3):
+        try:
+            return _ai_evaluate_once(ai, image_bytes)
+        except (requests.Timeout, requests.ConnectionError) as e:
+            last = e
+            why = "neodpověděl včas" if isinstance(e, requests.Timeout) else "spojení selhalo"
+        except requests.HTTPError as e:
+            code = e.response.status_code if e.response is not None else 0
+            if code not in AI_TRANSIENT_CODES:
+                raise
+            last = e
+            why = f"HTTP {code} (přetížení)"
+        if attempt < 2:
+            log(f"AI: poskytovatel {why} – zkouším znovu za {delays[attempt]} s (pokus {attempt + 2}/3)")
+            time.sleep(delays[attempt])
+    raise last  # type: ignore[misc]
+
+
+def _ai_evaluate_once(ai: dict, image_bytes: bytes) -> tuple[dict, str]:
     b64 = base64.b64encode(image_bytes).decode()
     provider = ai["provider"]
     prompt = build_prompt(ai)
@@ -1032,7 +1057,7 @@ def ai_evaluate(ai: dict, image_bytes: bytes) -> tuple[dict, str]:
         }
         for attempt in (1, 2):
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-            r = requests.post(url, headers={"x-goog-api-key": key}, json=body, timeout=90)
+            r = requests.post(url, headers={"x-goog-api-key": key}, json=body, timeout=60)
             if r.status_code in (429, 503) and attempt == 1 and "lite" not in model:
                 # Vyčerpaný bezplatný limit – lite varianta má vyšší denní kvótu; zkus ji, jinak počkat na další den.
                 lite = next((n for n in sorted(gemini_models(key), reverse=True) if "flash-lite" in n
@@ -1419,6 +1444,7 @@ class AtmovioWatcher(threading.Thread):
         super().__init__(daemon=True)
         self.last_check: dict[str, float] = {}
         self.last_dark: dict[str, float] = {}
+        self.ai_failed: dict[str, int] = {}  # kamera → kolikrát po sobě AI selhala (rychlé opakování)
         self.last_notify: dict[str, float] = {}
         self.last_score: dict[str, int] = {}
         self.last_image: dict[str, Path] = {}
@@ -1497,6 +1523,8 @@ class AtmovioWatcher(threading.Thread):
                 break
             fast = bool(ai.get("fast_mode")) and (golden or self.last_score.get(cam, 0) >= cam_rule(ai, cam)["threshold"] - 2)
             interval = int(ai["fast_interval_min"] if fast else ai["interval_min"]) * 60
+            if 0 < self.ai_failed.get(cam, 0) <= 3:
+                interval = min(interval, 120)  # AI právě selhala (přetížený poskytovatel) – zkusit znovu za 2 min, max. 3×
             if time.time() - self.last_check.get(cam, 0) < interval:
                 continue
             self.last_check[cam] = time.time()
@@ -1567,8 +1595,11 @@ class AtmovioWatcher(threading.Thread):
             parsed, raw = ai_evaluate(ai, img)
         except Exception as e:
             ai_stat(day, cam, errors=1)
-            self.record(result, error=f"AI: {e}")
+            self.ai_failed[cam] = self.ai_failed.get(cam, 0) + 1
+            note = " · zkusím znovu za 2 min" if self.ai_failed[cam] <= 3 else ""
+            self.record(result, error=f"AI: {e}", note=note.strip(" ·"))
             return result
+        self.ai_failed.pop(cam, None)
         self.last_image[cam] = fpath
         parsed.setdefault("phenomena", [])
         result.update(parsed)
@@ -5642,7 +5673,8 @@ def read_log_source(src: str, n: int = 300) -> str:
 _LOG_RULES = [
     (r"Spojení s webem obnoveno", "ok", "spojení s webem zase funguje"),
     (r"Heartbeat na web selh", "note", "hosting webu chvíli neodpověděl – data se doposlala, spojení se obnovilo samo"),
-    (r"AI: .*(timed out|timeout|503|502|529|429|Service Unavailable|overloaded|Read timed)", "note", "poskytovatel AI byl chvíli přetížený – snímek se přeskočil, další kontrola proběhla normálně"),
+    (r"AI: poskytovatel .*zkouším znovu", "note", "poskytovatel AI chvíli neodpovídal – stejný snímek se posílá znovu"),
+    (r"AI: .*(timed out|timeout|503|502|529|429|Service Unavailable|overloaded|Read timed)", "note", "poskytovatel AI byl přetížený i po 3 pokusech – kamera se zkontroluje znovu za 2 minuty"),
     (r"AI: .*(401|403|API key|api key|invalid|PERMISSION_DENIED|Unauthorized)", "err", "AI odmítá klíč – zkontroluj ho v Nastavení → AI → Kdo hodnotí"),
     (r"AI: .*(quota|RESOURCE_EXHAUSTED|limit)", "warn", "vyčerpaný denní limit poskytovatele AI – do půlnoci se nehlídá, nebo zvol placený tarif / jiného poskytovatele"),
     (r"Aktualizace .*(selhala|rollback|obnoven)", "err", "aktualizace se nepovedla a původní verze byla obnovena – pošli tento log na GitHub"),

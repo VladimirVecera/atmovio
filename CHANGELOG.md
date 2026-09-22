@@ -2,6 +2,14 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 4.4.4 – 2026-09 – AI outages no longer swallow interesting skies
+
+- **Retries on provider hiccups**: a 503/529 "overloaded", a timeout or a dropped connection from the AI provider is
+  retried twice (after 5 s and 20 s) with the same snapshot before giving up; the request timeout is 60 s instead of 90 s.
+- **Quick re-check after a failure**: when the AI still fails, the camera is checked again after 2 minutes (up to 3×)
+  instead of waiting for the full interval – a shower or a sunset is not lost to a minute-long Google outage.
+- Logs explain both cases in plain words; the history record says "zkusím znovu za 2 min".
+
 ## 4.4.3 – 2026-09 – last AI evaluation in the web heartbeat
 
 - **Webhook heartbeat** carries `last_eval` for every AI-watched camera – the most recent evaluation (score, phenomenon,
