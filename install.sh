@@ -475,7 +475,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "4.5.3"
+APP_VERSION = "4.5.4"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -586,7 +586,7 @@ DEFAULT_CONFIG = {
     "studio": {   # Video studio: zrychlení, intro, text v obraze, hudba, šablony titulku/popisu
         "speed": 20, "intro": True, "intro_seconds": 4, "intro_title": True, "intro_text": "{kamera}\n{datum}",
         "text_enabled": True, "text": "{kamera} · {datum} · {rychlost}×", "text_pos": "bl", "text_size": 36,
-        "music_default": "", "music_volume": 0.8, "fade_in": 2, "fade_out": 4,
+        "music_default": "", "music_volume": 0.8, "fade_in": 2, "fade_out": 4, "video_fade_in": 1, "video_fade_out": 2,
         "title": "{kamera} – {jev} · {datum}",
         "description": "{popis}\n\n{kamera}, {datum} {cas}. Záznam {delka}, zrychleno {rychlost}×.\nVytvořeno v Atmovio – atmovio.com",
         "auto": False,
@@ -3601,7 +3601,8 @@ TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<d
   <div><div class="hint">Zdrojové video</div><b>{{ export.name }}</b><div class="hint">{{ cam(export.camera) }} · záznam {{ vars.delka }}{% if src.width %} · {{ src.width }}×{{ src.height }}{% endif %}</div></div></div>
 
  <div class="card" x-data="speedPreview('/videos/{{ export.id }}/play.mp4', {{ values.speed }})"><h2>1. Rychlost</h2>
-  <div class="seg speeds">{% for s in speeds %}<label :class="{on: speed === {{ s }}}"><input type="radio" name="speed" value="{{ s }}" x-model.number="speed" hidden>{{ s }}×</label>{% endfor %}</div>
+  <div class="speed-pick"><button type="button" class="btn small sec" @click="speed = Math.max(10, speed - 10)">−10</button><input type="range" name="speed" min="10" max="240" step="10" x-model.number="speed" list="speed-ticks"><button type="button" class="btn small sec" @click="speed = Math.min(240, speed + 10)">+10</button><b class="speed-val" x-text="speed + '×'"></b></div>
+  <datalist id="speed-ticks">{% for s in speeds %}<option value="{{ s }}"></option>{% endfor %}</datalist>
   <p class="hint" style="margin:.6rem 0 0">Ze záznamu dlouhého <b>{{ vars.delka }}</b> vznikne video dlouhé <b x-text="fmt({{ '%.1f'|format(src.duration or 0) }} / speed)"></b>; vytvoření potrvá <b x-text="eta({{ '%.1f'|format(src.duration or 0) }}, {{ '%.1f'|format(src.fps or 25) }}, {{ src.width or 1920 }})"></b> (odhad). Doporučení: západ slunce 20–30×, celý den 120–240×.</p>
   <div class="speed-preview" :class="{open: on}">
    <button type="button" class="btn small sec" x-show="!on" @click="play(speed)">▶ Ukázat, jak bude video rychlé</button>
@@ -3711,7 +3712,7 @@ TEMPLATES["studio_settings.html"] = """{% extends "base.html" %}{% block actions
 <div>
 <form method="post" action="/studio/settings">
  <div class="card"><h2>Výchozí nastavení videa</h2>
-  <label>Rychlost</label><div class="seg speeds" x-data="{s: {{ sc.speed }}}">{% for s in speeds %}<label :class="{on: s === {{ s }}}"><input type="radio" name="speed" value="{{ s }}" x-model.number="s" hidden>{{ s }}×</label>{% endfor %}</div>
+  <label>Výchozí rychlost (po 10×)</label><div class="speed-pick" x-data="{s: {{ sc.speed }}}"><button type="button" class="btn small sec" @click="s = Math.max(10, s - 10)">−10</button><input type="range" name="speed" min="10" max="240" step="10" x-model.number="s"><button type="button" class="btn small sec" @click="s = Math.min(240, s + 10)">+10</button><b class="speed-val" x-text="s + '×'"></b></div>
   <label class="check" style="margin-top:.8rem"><input type="checkbox" name="intro" value="1"{% if sc.intro %} checked{% endif %}>Intro přidávat automaticky (když je nahrané)</label>
   <div class="row"><div><label>Intro z obrázku: délka (s)</label><input type="number" name="intro_seconds" min="1" max="15" step="0.5" value="{{ sc.intro_seconds }}"></div>
   <div><label>Text na intru z obrázku <span class="hint">(řádky = řádky ve videu)</span></label><textarea name="intro_text" rows="2" maxlength="200" style="min-height:0">{{ sc.intro_text }}</textarea></div></div>
@@ -3729,6 +3730,11 @@ TEMPLATES["studio_settings.html"] = """{% extends "base.html" %}{% block actions
   <div class="row"><div><label>Hlasitost (0,1–2)</label><input type="number" name="music_volume" min="0.05" max="2" step="0.05" value="{{ sc.music_volume }}"></div>
   <div><label>Zesílení na začátku (s)</label><input type="number" name="fade_in" min="0" max="15" step="0.5" value="{{ sc.fade_in }}"></div>
   <div><label>Ztišení na konci (s)</label><input type="number" name="fade_out" min="0" max="15" step="0.5" value="{{ sc.fade_out }}"></div></div>
+ </div>
+ <div class="card"><h2>Obraz – rozjasnění a ztmavení</h2>
+  <div class="row"><div><label>Rozjasnění ze tmy na začátku (s)</label><input type="number" name="video_fade_in" min="0" max="10" step="0.5" value="{{ sc.video_fade_in }}"></div>
+  <div><label>Ztmavení na konci (s)</label><input type="number" name="video_fade_out" min="0" max="10" step="0.5" value="{{ sc.video_fade_out }}"></div></div>
+  <div class="hint">Týká se zrychleného záznamu (ne intra). Hudba ztichne nejpozději se ztmavením obrazu.</div>
  </div>
  <div class="card"><h2>Šablona titulku a popisu</h2>
   <label>Titulek</label><input type="text" name="title" value="{{ sc.title }}" maxlength="120">
@@ -5803,7 +5809,7 @@ def video_delete(request: Request, vid: int):
 #  ve složce studio/ a je připravený ke stažení (a od 4.6 k nahrání na YouTube).
 # =============================================================================
 
-STUDIO_SPEEDS = (10, 20, 30, 60, 120, 240)
+STUDIO_SPEEDS = tuple(range(10, 250, 10))   # 10×, 20×, … 240×
 STUDIO_TEXT_POS = {"bl": "vlevo dole", "br": "vpravo dole", "bc": "dole uprostřed", "tl": "vlevo nahoře", "tr": "vpravo nahoře", "tc": "nahoře uprostřed"}
 STUDIO_INTRO_EXT = (".mp4", ".mov", ".m4v", ".png", ".jpg", ".jpeg")
 STUDIO_MUSIC_EXT = (".mp3", ".m4a", ".aac", ".wav", ".ogg", ".flac")
@@ -5925,7 +5931,7 @@ def studio_rows(cfg, export_id=None, sid=None) -> list:
 
 def studio_enqueue(cfg, export: dict, speed: int, intro: bool, music: str, text: str, title: str, description: str, auto: int = 0) -> int:
     sc = studio_cfg(cfg)
-    speed = speed if speed in STUDIO_SPEEDS else int(sc.get("speed", 20) or 20)
+    speed = int(round(speed / 10) * 10) if 10 <= speed <= 240 else int(sc.get("speed", 20) or 20)
     if music and not (studio_assets_dir() / "music" / music).is_file():
         music = ""
     credit = music_credit(music) if music else ""
@@ -6018,7 +6024,13 @@ def studio_render(cfg, job: dict):
     inputs = 1
     filters = []
     scale = f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps},format=yuv420p"
+    vfi, vfo = float(sc.get("video_fade_in", 1) or 0), float(sc.get("video_fade_out", 2) or 0)
+    vfi, vfo = min(vfi, main_sec / 3), min(vfo, main_sec / 3)
     main = f"[0:v]setpts=PTS/{speed},{scale}"
+    if vfi > 0:
+        main += f",fade=t=in:st=0:d={vfi:.2f}"          # záznam se rozjasní ze tmy
+    if vfo > 0:
+        main += f",fade=t=out:st={max(0.0, main_sec - vfo):.3f}:d={vfo:.2f}"   # a na konci ztmavne
     notes = []
     if job.get("text") and str(job["text"]).strip():
         if font:
@@ -6071,6 +6083,7 @@ def studio_render(cfg, job: dict):
             parts.append("[ia]")
         if music:
             fi, fo = float(sc.get("fade_in", 2) or 0), float(sc.get("fade_out", 4) or 0)
+            fo = max(fo, vfo)                          # hudba nesmí dohrát dřív, než obraz ztmavne
             fo = min(fo, max(0.0, main_sec - fi - 0.5))
             vol = max(0.05, min(2.0, float(sc.get("music_volume", 0.8) or 0.8)))
             cmd += ["-stream_loop", "-1", "-i", str(music)]
@@ -6346,14 +6359,16 @@ def studio_settings(request: Request):
 def studio_settings_post(request: Request, speed: int = Form(20), intro: str = Form(""), intro_seconds: float = Form(4), intro_title: str = Form(""),
                          intro_text: str = Form(""), text_enabled: str = Form(""), text: str = Form(""), text_pos: str = Form("bl"), text_size: int = Form(36),
                          music_default: str = Form(""), music_volume: float = Form(0.8), fade_in: float = Form(2), fade_out: float = Form(4),
+                         video_fade_in: float = Form(1), video_fade_out: float = Form(2),
                          title: str = Form(""), description: str = Form(""), auto: str = Form("")):
     with edit_config() as cfg:
         cfg["studio"] = deep_merge(studio_cfg(cfg), {
-            "speed": speed if speed in STUDIO_SPEEDS else 20, "intro": bool(intro), "intro_seconds": max(1.0, min(15.0, intro_seconds)),
+            "speed": int(round(speed / 10) * 10) if 10 <= speed <= 240 else 20, "intro": bool(intro), "intro_seconds": max(1.0, min(15.0, intro_seconds)),
             "intro_title": bool(intro_title), "intro_text": intro_text.strip()[:200], "text_enabled": bool(text_enabled), "text": text.strip()[:200],
             "text_pos": text_pos if text_pos in STUDIO_TEXT_POS else "bl", "text_size": max(16, min(96, text_size)),
             "music_default": music_default if (studio_assets_dir() / "music" / Path(music_default).name).is_file() else "",
             "music_volume": max(0.05, min(2.0, music_volume)), "fade_in": max(0.0, min(15.0, fade_in)), "fade_out": max(0.0, min(15.0, fade_out)),
+            "video_fade_in": max(0.0, min(10.0, video_fade_in)), "video_fade_out": max(0.0, min(10.0, video_fade_out)),
             "title": title.strip()[:120], "description": description.strip()[:2000], "auto": bool(auto)})
     flash(request, "Nastavení studia uloženo.")
     return RedirectResponse("/studio/settings", status_code=303)
@@ -8416,6 +8431,10 @@ input[type="file"] { padding: .4rem 0; }
 .track .tx { flex: 1; min-width: 0; font-size: .92rem; line-height: 1.3; }
 .track .btn { margin: 0; flex: none; }
 @media (max-width: 640px) { .track { flex-wrap: wrap; } .track audio { width: 100%; } }
+.speed-pick { display: flex; align-items: center; gap: .6rem; }
+.speed-pick input[type="range"] { flex: 1; margin: 0; accent-color: var(--pico-primary); }
+.speed-pick .btn { margin: 0; flex: none; }
+.speed-val { font-size: 1.5rem; font-weight: 800; min-width: 4.2rem; text-align: right; }
 ATMOVIO_CSS_EOF
   cat > "$1/atmovio.js" <<'ATMOVIO_JS_EOF'
 /* Atmovio – interakce (Alpine.js komponenty + pomocné funkce). */

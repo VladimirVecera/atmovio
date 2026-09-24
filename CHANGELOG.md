@@ -2,6 +2,14 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 4.5.4 – 2026-09 – fades and finer speed steps
+
+- **Fade from black / fade to black**: the sped-up recording now brightens from black at the start (1 s) and
+  darkens at the end (2 s); the music fade-out is never shorter than the picture fade. Both lengths are in
+  Nastavení → Video studio → "Obraz – rozjasnění a ztmavení". The intro is not affected.
+- **Speed in steps of 10×**: a slider with −10 / +10 buttons from 10× to 240× (was a fixed set of six values),
+  on the new-video page and for the default speed in settings.
+
 ## 4.5.3 – 2026-09 – music for every video, intro sound, time estimate
 
 - **Find music per video**: in Studio → Hudba, "Najít hudbu k tomuto videu" searches Openverse (Creative Commons
