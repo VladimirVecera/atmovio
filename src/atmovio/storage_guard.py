@@ -173,6 +173,31 @@ class Guard:
         self.last_running_check = 0
         self.mount_id = None
 
+    def adopt_running(self, mount_id=None):
+        """Po startu strážce (aktualizace Atmovio, restart služby) převzít běžící Frigate místo jeho
+        znovuvytvoření – recreate by přerušil nahrávání i rozdělané exporty videí."""
+        try:
+            if command(['docker', 'inspect', '-f', '{{.State.Running}}', 'frigate'], timeout=5).strip() != 'true':
+                return
+            service = read_yaml(COMPOSE)['services']['frigate']
+            media = [v for v in service.get('volumes', []) if isinstance(v, dict) and v.get('target') == '/media/frigate']
+            env = service.get('environment', {})
+            if isinstance(env, list):
+                env = dict(item.split('=', 1) if '=' in item else (item, None) for item in env)
+            if media and media[0].get('type') == 'bind' and env.get('CONFIG_FILE') == '/config/config.yml':
+                mode = 'recording'
+            elif media and media[0].get('type') == 'tmpfs' and env.get('CONFIG_FILE') == '/config/config.live.yml':
+                mode = 'live'
+            else:
+                return
+            request = SKY / 'storage-restart'
+            self.mode, self.mount_id = mode, mount_id
+            self.successes = 3 if mode == 'recording' else 0
+            self.config_text = (SOURCE_CONFIG.read_text(), request.read_text() if request.exists() else '')
+            publish(mode, 'HDD je zapisovatelný.' if mode == 'recording' else 'Pouze živý náhled. Nahrávání a ukládání snímků jsou vypnuté.')
+        except Exception:
+            return
+
     def reconcile(self, healthy, mount_id=None):
         if mount_id != self.mount_id:
             self.successes = 0
@@ -305,6 +330,8 @@ def main():
     with (SKY / '.storage.lock').open('w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         probe, guard = Probe(), Guard()
+        mounts = Path('/proc/self/mountinfo').read_text().splitlines()
+        guard.adopt_running(next((line.split()[0] for line in mounts if line.split()[4] == str(MOUNT)), None))
         while True:
             try:
                 # Změna mount ID zachytí i rychlé odpojení/připojení mezi sondami.

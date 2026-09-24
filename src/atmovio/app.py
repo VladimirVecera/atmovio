@@ -56,7 +56,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "4.5.1"
+APP_VERSION = "4.5.2"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -604,6 +604,8 @@ def db_init():
         cols = {r["name"] for r in con.execute("PRAGMA table_info(exports)")}
         if "auto" not in cols:
             con.execute("ALTER TABLE exports ADD COLUMN auto INTEGER DEFAULT 0")
+        if "retries" not in cols:
+            con.execute("ALTER TABLE exports ADD COLUMN retries INTEGER DEFAULT 0")
         con.execute(
             """CREATE TABLE IF NOT EXISTS auto_exports (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -849,6 +851,7 @@ def frigate_status(cfg) -> dict:
         r = frigate_api(cfg, "/api/stats", timeout=6)
         if r.ok:
             st = r.json()
+            out["uptime"] = float((st.get("service") or {}).get("uptime") or 0)   # s od startu Frigate
             for cam, s in (st.get("cameras") or {}).items():
                 out["cameras"][cam] = {
                     "fps": s.get("camera_fps"),
@@ -1531,6 +1534,12 @@ class AtmovioWatcher(threading.Thread):
             process_auto_exports(cfg)
         except Exception as e:
             log(f"Automatická videa: {e}")
+        if time.time() - getattr(self, "_last_export_check", 0) > 120:
+            self._last_export_check = time.time()
+            try:
+                resume_killed_exports(cfg, frigate_status(cfg))
+            except Exception as e:
+                log(f"Kontrola rozdělaných videí: {e}")
         try:
             studio_auto(cfg)
             studio_kick()
@@ -5141,6 +5150,48 @@ def process_auto_exports(cfg):
         record_export(cfg, fid, job["detection_id"], job["camera"], job["name"], job["start_ts"], job["end_ts"], auto=1)
         _auto_export_finish(job, "done", fid)
         log(f"[{job['camera']}] Automatické video „{job['name']}“ zadáno k vytvoření ({fid})")
+
+
+def resume_killed_exports(cfg, fs: dict):
+    """Export, který Frigate rozdělal a pak byl restartován (aktualizace, výpadek proudu), už nikdy nedoběhne.
+    Pozná se podle toho, že Frigate běží kratší dobu, než je export starý → zadat znovu (max. 2×)."""
+    if not fs.get("online") or not fs.get("uptime"):
+        return
+    frigate_started = time.time() - float(fs["uptime"])
+    with db() as con:
+        rows = [dict(r) for r in con.execute("SELECT * FROM exports")]
+    if not rows:
+        return
+    fr_all = frigate_exports(cfg)
+    for rec in rows:
+        try:
+            created = dt.datetime.fromisoformat(rec["created"]).timestamp()
+        except ValueError:
+            continue
+        if created > frigate_started - 5 or time.time() - created < 120:
+            continue            # zadáno až po startu Frigate (nebo před chvílí) – nechat dobíhat
+        fr = fr_all.get(rec["frigate_id"])
+        video = frigate_media_path(fr.get("video_path", "")) if fr else None
+        if fr and not fr.get("in_progress") and video and video.is_file():
+            continue            # hotové
+        if int(rec.get("retries") or 0) >= 2:
+            continue            # už jsme to zkoušeli – nechat na uživateli (Vytvořit znovu / Smazat)
+        state = recording_state(cfg, rec["camera"], rec["start_ts"], rec["end_ts"])
+        if state != "ok":
+            continue
+        try:
+            requests.delete(cfg["frigate_url"].rstrip("/") + f"/api/export/{rec['frigate_id']}", timeout=15)
+        except Exception:
+            pass
+        try:
+            new_id = frigate_start_export(cfg, rec["camera"], rec["start_ts"], rec["end_ts"], rec["name"])
+        except Exception as e:
+            log(f"Video „{rec['name']}“ se po restartu Frigate nepodařilo zadat znovu: {e}")
+            continue
+        with db() as con:
+            con.execute("UPDATE exports SET frigate_id=?, created=?, retries=COALESCE(retries,0)+1 WHERE id=?",
+                        (new_id, dt.datetime.now().isoformat(timespec="seconds"), rec["id"]))
+        log(f"[{rec['camera']}] Video „{rec['name']}“ zadáno znovu – Frigate byl restartován uprostřed exportu")
 
 
 def _auto_export_finish(job: dict, status: str, message: str):

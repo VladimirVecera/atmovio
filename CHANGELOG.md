@@ -2,6 +2,16 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 4.5.2 – 2026-09 – videos no longer lost on updates
+
+- **Root cause of "zaseklo se – Frigate export nedokončil"**: every Atmovio update (and every restart of the
+  storage guard) re-created the Frigate container, which killed exports that were being cut at that moment –
+  with 1.5-hour clips that happened a lot. The guard now **adopts the running Frigate** instead of recreating it
+  when the disk mode has not changed, so updates no longer interrupt recording or exports.
+- **Automatic recovery**: an export that Frigate did start but was restarted underneath (power cut, manual
+  restart) is detected (Frigate's uptime is shorter than the export's age) and re-submitted automatically,
+  up to twice, while the recording still exists. Only then does the video show "Vytvořit znovu".
+
 ## 4.5.1 – 2026-09 – see the speed before rendering
 
 - Studio: **"Ukázat, jak bude video rychlé"** plays the source clip right on the page at the chosen speed
