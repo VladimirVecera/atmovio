@@ -100,12 +100,55 @@
       };
     });
 
+    // ---------- Hledání hudby (Openverse) přímo u videa ----------
+    Alpine.data('musicFinder', function (initial) {
+      return {
+        q: '', len: '', items: [], msg: '', busy: false, open: false, music: initial || '',
+        search: function () {
+          var self = this;
+          if (self.q.trim().length < 2) { self.msg = 'Zadej aspoň dvě písmena.'; return; }
+          self.busy = true; self.msg = 'Hledám…'; self.items = [];
+          fetch('/studio/music/search?q=' + encodeURIComponent(self.q.trim()) + '&length=' + encodeURIComponent(self.len), { credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (d) { self.items = d.items || []; self.msg = d.error || (self.items.length + ' skladeb – přehraj si je a klikni Použít'); })
+            .catch(function () { self.msg = 'Hledání selhalo – RPi nejspíš nemá přístup na internet.'; })
+            .finally(function () { self.busy = false; });
+        },
+        use: function (t) {
+          var self = this, fd = new FormData();
+          var csrf = document.querySelector('input[name=csrf_token]');
+          fd.append('csrf_token', csrf ? csrf.value : '');
+          ['id', 'url', 'title', 'creator', 'license', 'attribution', 'page', 'filetype'].forEach(function (k) { fd.append(k, t[k] || ''); });
+          self.busy = true; self.msg = 'Stahuji „' + t.title + '“ na RPi…';
+          fetch('/studio/music/fetch', { method: 'POST', body: fd, credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+              if (!d.ok) { self.msg = d.error || 'Stažení selhalo.'; return; }
+              var sel = self.$refs.sel;
+              if (![].some.call(sel.options, function (o) { return o.value === d.name; })) { var o = document.createElement('option'); o.value = d.name; o.textContent = d.name; sel.appendChild(o); }
+              self.music = d.name; sel.value = d.name; t.name = d.name;
+              self.msg = 'Vybráno: ' + d.name + '. Autor se doplní do popisu videa.';
+            })
+            .catch(function () { self.msg = 'Stažení selhalo.'; })
+            .finally(function () { self.busy = false; });
+        }
+      };
+    });
+
   // ---------- Náhled rychlosti ve studiu: přehraje zdrojové video tak, jak bude vypadat zrychlené ----------
     // Do 16× nativně, výš skoky v čase (jako v přehrávači). Orientační – hotové video je plynulé.
     Alpine.data('speedPreview', function (src, speed) {
       return {
         src: src, on: false, speed: speed || 20, running: false, timer: null, seekHandler: null, pos: '',
         fmt: function (t) { t = Math.max(1, Math.round(t || 0)); return Math.floor(t / 60) + ':' + ('0' + t % 60).slice(-2); },
+      // Odhad doby vytváření na RPi 5: dekódování všech snímků (do 120×) nebo jen klíčových, + kódování ~35 sn./s v 1080p.
+      eta: function (dur, fps, width) {
+        var px = Math.min(1, (width || 1920) / 1920) || 1;
+        var decode = this.speed >= 120 ? dur / 40 : dur * (fps || 25) / (260 / px);
+        var encode = (dur / this.speed) * 30 / (35 / px);
+        var s = Math.max(5, decode + encode + 3);
+        return s < 90 ? 'asi ' + Math.round(s / 10) * 10 + ' s' : 'asi ' + Math.round(s / 60) + ' min';
+      },
         get video() { return this.$refs.v; },
         stop: function () {
           this.running = false;

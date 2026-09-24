@@ -612,3 +612,10 @@ input[type="file"] { padding: .4rem 0; }
 @media (max-width: 600px) { .studio-src { flex-direction: column; align-items: flex-start; } .studio-src .thumb { width: 100%; } .studio-music, .studio-intro { flex-wrap: wrap; } }
 .speed-preview { margin-top: .7rem; }
 .speed-preview video { width: 100%; max-height: 420px; aspect-ratio: 16 / 9; background: #000; border-radius: .6rem; display: block; cursor: pointer; }
+.finder summary { cursor: pointer; font-weight: 600; }
+.tracks { display: flex; flex-direction: column; gap: .4rem; margin-top: .6rem; }
+.track { display: flex; align-items: center; gap: .7rem; padding: .45rem .6rem; border-radius: .6rem; background: var(--pico-card-sectioning-background-color); }
+.track audio { width: 230px; flex: none; height: 34px; }
+.track .tx { flex: 1; min-width: 0; font-size: .92rem; line-height: 1.3; }
+.track .btn { margin: 0; flex: none; }
+@media (max-width: 640px) { .track { flex-wrap: wrap; } .track audio { width: 100%; } }

@@ -116,7 +116,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "4.5.2"
+APP_VERSION = "4.5.3"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -3175,7 +3175,7 @@ TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block actions %}<div c
 <div class="gallery videos">
 {% for s in studio %}<div class="shot video">
 {% if s.ready %}<a class="thumb" href="/studio/v/{{ s.id }}"><img src="{% if s.thumb %}/studio/v/{{ s.id }}/thumb.jpg{% endif %}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"><span class="play">▶</span><span class="dur">{{ s.duration_h }} · {{ s.speed }}×</span></a>
-{% else %}<a class="thumb wait" href="/studio/v/{{ s.id }}">{% if s.status == 'failed' %}<span>⚠️ nepodařilo se – {{ s.message }}</span>{% elif s.status == 'rendering' %}<span><span class="spin" style="display:inline-block;vertical-align:middle;width:18px;height:18px;margin-right:.4rem"></span>vytváří se… {{ s.progress }} %</span>{% else %}<span>čeká ve frontě</span>{% endif %}</a>{% endif %}
+{% else %}<a class="thumb wait" href="/studio/v/{{ s.id }}">{% if s.status == 'failed' %}<span>⚠️ nepodařilo se – {{ s.message }}</span>{% elif s.status == 'rendering' %}<span><span class="spin" style="display:inline-block;vertical-align:middle;width:18px;height:18px;margin-right:.4rem"></span>vytváří se… {{ s.progress }} %{% if s.eta_h %} · zbývá {{ s.eta_h }}{% endif %}</span>{% else %}<span>čeká ve frontě</span>{% endif %}</a>{% endif %}
 <div class="b"><div class="title">{{ s.title or s.name }}{% if s.auto %} <span class="badge ok">auto</span>{% endif %}</div>
 <dl class="facts"><dt>Kamera</dt><dd>{{ s.camera_label }}</dd><dt>Úpravy</dt><dd>{{ s.speed }}×{% if s.intro %} · intro{% endif %}{% if s.music %} · hudba{% endif %}{% if s.text %} · text{% endif %}</dd><dt>Vytvořeno</dt><dd>{{ s.created|czdt }}</dd></dl>
 <div class="acts"><a class="btn small" href="/studio/v/{{ s.id }}">Otevřít</a>{% if s.ready %}<a class="btn small sec" href="/studio/v/{{ s.id }}/download">⬇ Stáhnout</a>{% endif %}
@@ -3235,7 +3235,7 @@ TEMPLATES["history.html"] = """{% extends "base.html" %}{% block actions %}<div 
 
 TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small sec" href="/videos">← Videa</a><a class="btn small sec" href="/studio/settings">⚙ Nastavení studia</a></div>{% endblock %}{% block content %}
 {% set intro_sec = (sc.intro_seconds if intro and intro.suffix|lower in ('.png', '.jpg', '.jpeg') else 0) %}
-<form method="post" x-data="{intro: {{ 'true' if values.intro and intro else 'false' }}, textOn: {{ 'true' if values.text_on else 'false' }}, music: '{{ values.music }}'}">
+<form method="post" x-data="{intro: {{ 'true' if values.intro and intro else 'false' }}, textOn: {{ 'true' if values.text_on else 'false' }}}">
 <div class="grid-2" style="grid-template-columns:minmax(0,3fr) minmax(320px,2fr)">
 <div>
  <div class="card studio-src"><a class="thumb" href="/videos/{{ export.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ export.name }}"><img src="/videos/{{ export.id }}/thumb.jpg" alt="" onerror="this.style.visibility='hidden'"><span class="play">▶</span></a>
@@ -3243,7 +3243,7 @@ TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<d
 
  <div class="card" x-data="speedPreview('/videos/{{ export.id }}/play.mp4', {{ values.speed }})"><h2>1. Rychlost</h2>
   <div class="seg speeds">{% for s in speeds %}<label :class="{on: speed === {{ s }}}"><input type="radio" name="speed" value="{{ s }}" x-model.number="speed" hidden>{{ s }}×</label>{% endfor %}</div>
-  <p class="hint" style="margin:.6rem 0 0">Ze záznamu dlouhého <b>{{ vars.delka }}</b> vznikne video dlouhé <b x-text="fmt({{ '%.1f'|format(src.duration or 0) }} / speed)"></b>. Doporučení: západ slunce 20–30×, celý den 120–240×.</p>
+  <p class="hint" style="margin:.6rem 0 0">Ze záznamu dlouhého <b>{{ vars.delka }}</b> vznikne video dlouhé <b x-text="fmt({{ '%.1f'|format(src.duration or 0) }} / speed)"></b>; vytvoření potrvá <b x-text="eta({{ '%.1f'|format(src.duration or 0) }}, {{ '%.1f'|format(src.fps or 25) }}, {{ src.width or 1920 }})"></b> (odhad). Doporučení: západ slunce 20–30×, celý den 120–240×.</p>
   <div class="speed-preview" :class="{open: on}">
    <button type="button" class="btn small sec" x-show="!on" @click="play(speed)">▶ Ukázat, jak bude video rychlé</button>
    <div x-show="on" x-cloak>
@@ -3261,10 +3261,23 @@ TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<d
   <div x-show="textOn"><input type="text" name="text" value="{{ values.text }}" maxlength="200" placeholder="{kamera} · {datum} · {rychlost}×">
   <div class="hint">Zástupné značky: <code>{kamera}</code> <code>{datum}</code> <code>{cas}</code> <code>{jev}</code> <code>{skore}</code> <code>{rychlost}</code>. Umístění a velikost písma nastavíš v Nastavení studia.{% if not font %} <b>Na RPi chybí font – text se nepřidá</b> (nainstaluj balíček fonts-dejavu-core).{% endif %}</div></div></div>
 
- <div class="card"><h2>4. Hudba</h2>
-  {% if music %}<select name="music" x-model="music"><option value="">bez hudby</option>{% for m in music %}<option value="{{ m.name }}">{{ m.name }}{% if m.duration %} ({{ (m.duration // 60)|int }}:{{ '%02d'|format(m.duration % 60) }}){% endif %}</option>{% endfor %}</select>
-  <p class="hint" style="margin:.5rem 0 0">Hudba plynule zesílí na začátku a na konci videa zase plynule ztichne ({{ sc.fade_in }} s / {{ sc.fade_out }} s); je-li kratší než video, opakuje se.</p>
-  {% else %}<p class="hint" style="margin:0">Žádná hudba není nahraná – přidej MP3 v <a href="/studio/settings">Nastavení studia</a>.</p>{% endif %}</div>
+ <div class="card" x-data="musicFinder('{{ values.music }}')"><h2>4. Hudba</h2>
+  <select name="music" x-model="music" x-ref="sel"><option value="">bez hudby</option>{% for m in music %}<option value="{{ m.name }}">{{ m.name }}{% if m.duration %} ({{ (m.duration // 60)|int }}:{{ '%02d'|format(m.duration % 60) }}){% endif %}</option>{% endfor %}</select>
+  <p class="hint" style="margin:.4rem 0 .6rem">Hudba začne až po intru, plynule zesílí a na konci ztichne ({{ sc.fade_in }} s / {{ sc.fade_out }} s); kratší skladba se opakuje. Do popisu videa se automaticky přidá autor skladby.</p>
+  <details class="finder" :open="open" @toggle="open = $el.open"><summary>🔎 Najít hudbu k tomuto videu (Openverse – volně použitelná, CC0 / CC BY)</summary>
+   <div class="row" style="margin-top:.5rem;align-items:end"><div><input type="text" x-model="q" @keydown.enter.prevent="search()" placeholder="např. calm piano, sunset, ambient…"></div>
+    <div style="flex:0 0 auto;min-width:0"><select x-model="len" style="width:auto"><option value="">libovolná délka</option><option value="short">do 2 min</option><option value="medium">2–10 min</option><option value="long">nad 10 min</option></select></div>
+    <button type="button" class="btn small" style="flex:0 0 auto" @click="search()" :disabled="busy">Hledat</button></div>
+   <div class="chips">{% for lbl, qq in quick %}<span class="chip" @click="q = '{{ qq }}'; search()">{{ lbl }}</span>{% endfor %}</div>
+   <p class="hint" x-show="msg" x-text="msg"></p>
+   <div class="tracks" x-show="items.length">
+    <template x-for="t in items" :key="t.id"><div class="track">
+     <audio controls preload="none" :src="t.url"></audio>
+     <div class="tx"><b x-text="t.title"></b> <span class="hint" x-text="(t.creator ? t.creator + ' · ' : '') + (t.duration_h ? t.duration_h + ' · ' : '') + t.license + (t.genres ? ' · ' + t.genres : '')"></span></div>
+     <button type="button" class="btn small" @click="use(t)" :disabled="busy" x-text="t.name ? '✓ Vybráno' : 'Použít'"></button>
+    </div></template>
+   </div>
+  </details></div>
 </div>
 <div>
  <div class="card"><h2>Titulek a popis</h2>
@@ -3283,7 +3296,7 @@ TEMPLATES["studio_video.html"] = """{% extends "base.html" %}{% block actions %}
  {% if v.ready %}<video controls preload="metadata" playsinline style="width:100%;display:block;background:#000;aspect-ratio:16/9" poster="{% if v.thumb %}/studio/v/{{ v.id }}/thumb.jpg{% endif %}" src="/studio/v/{{ v.id }}/play.mp4"></video>
  {% else %}<div class="studio-wait">
   {% if v.status == 'failed' %}<div class="badge err">nepodařilo se</div><p>{{ v.message or 'neznámá chyba' }}</p><a class="btn small" href="/studio/new/{{ v.export_id }}?again={{ v.id }}">Zkusit znovu</a>
-  {% elif v.status == 'rendering' %}<div class="spin"></div><p><b>Vytváří se…</b> {{ v.progress }} %</p><div class="pbar"><i style="width:{{ v.progress }}%"></i></div><p class="hint">Zrychlení {{ v.speed }}× – podle délky záznamu pár sekund až minut. Stránka se sama obnovuje.</p>
+  {% elif v.status == 'rendering' %}<div class="spin"></div><p><b>Vytváří se…</b> {{ v.progress }} %{% if v.eta_h %} · zbývá {{ v.eta_h }}{% endif %}</p><div class="pbar"><i style="width:{{ v.progress }}%"></i></div><p class="hint">Zrychlení {{ v.speed }}× – podle délky záznamu pár sekund až minut. Stránka se sama obnovuje.</p>
   {% else %}<div class="spin"></div><p><b>Čeká ve frontě</b>{% if queue_pos %} · před ním {{ queue_pos }}{% endif %}</p><p class="hint">Videa se vyrábějí po jednom, aby RPi zvládalo nahrávat.</p>{% endif %}
  </div>{% endif %}</div>
  {% if v.message and v.status == 'ready' %}<div class="card warn"><b>Poznámka:</b> {{ v.message }}</div>{% endif %}
@@ -3324,11 +3337,17 @@ TEMPLATES["studio_settings.html"] = """{% extends "base.html" %}{% block actions
  <form method="post" action="/studio/upload/intro" enctype="multipart/form-data" class="row" style="align-items:end;margin-top:.6rem"><div><label>{{ 'Nahradit' if intro else 'Nahrát' }} intro (MP4/MOV do 100 MB, nebo PNG/JPG)</label><input type="file" name="file" accept=".mp4,.mov,.m4v,.png,.jpg,.jpeg" required></div><button class="btn small" data-busy="Nahrávám intro">Nahrát</button></form></div>
 
  <div class="card"><h2>Hudba</h2>
- {% if music %}<div class="plainlist">{% for m in music %}<div class="studio-music"><audio controls preload="none" src="/studio/asset/music/{{ m.name }}"></audio><div><b>{{ m.name }}</b>{% if sc.music_default == m.name %} <span class="badge ok">výchozí</span>{% endif %}<div class="hint">{{ m.size_h }}{% if m.duration %} · {{ (m.duration // 60)|int }}:{{ '%02d'|format(m.duration % 60) }}{% endif %}</div></div>
+ {% if music %}<div class="plainlist">{% for m in music %}<div class="studio-music"><audio controls preload="none" src="/studio/asset/music/{{ m.name }}"></audio><div><b>{{ m.name }}</b>{% if sc.music_default == m.name %} <span class="badge ok">výchozí</span>{% endif %}{% if m.meta %} <span class="badge info">{{ m.meta.license }}</span>{% endif %}<div class="hint">{{ m.size_h }}{% if m.duration %} · {{ (m.duration // 60)|int }}:{{ '%02d'|format(m.duration % 60) }}{% endif %}{% if m.meta %} · {{ m.meta.creator }} · Openverse{% endif %}</div></div>
   <form method="post" action="/studio/upload/music/delete" onsubmit="return confirm('Odstranit tuto hudbu?')" data-nobusy><input type="hidden" name="name" value="{{ m.name }}"><button class="btn small sec">Odstranit</button></form></div>{% endfor %}</div>
  {% else %}<p class="hint">Zatím žádná hudba. Nahraj MP3 (nebo M4A/WAV/OGG/FLAC) – u každého videa pak vybereš, která se použije.</p>{% endif %}
- <form method="post" action="/studio/upload/music" enctype="multipart/form-data" class="row" style="align-items:end;margin-top:.6rem"><div><label>Přidat hudbu (do 40 MB)</label><input type="file" name="file" accept=".mp3,.m4a,.aac,.wav,.ogg,.flac" required></div><button class="btn small" data-busy="Nahrávám hudbu">Nahrát</button></form>
- <p class="hint" style="margin:.6rem 0 0">Používej jen hudbu, na kterou máš práva (vlastní, nebo z knihovny YouTube Audio Library) – jinak YouTube video ztlumí nebo zablokuje.</p></div>
+ <form method="post" action="/studio/upload/music" enctype="multipart/form-data" class="row" style="align-items:end;margin-top:.6rem"><div><label>Přidat vlastní hudbu (do 40 MB)</label><input type="file" name="file" accept=".mp3,.m4a,.aac,.wav,.ogg,.flac" required></div><button class="btn small" data-busy="Nahrávám hudbu">Nahrát</button></form>
+ <p class="hint" style="margin:.6rem 0 0">Vlastní hudbu nahrávej jen s právy k ní (YouTube cizí skladby ztlumí nebo zablokuje). Hudbu z Openverse hledáš přímo u každého videa v Studiu – je pod licencí CC0 / CC BY a autor se do popisu doplní sám.</p></div>
+
+ <div class="card"><h2>Hledání hudby (Openverse)</h2>
+ {% if ov.client_id %}<p>Atmovio je u Openverse zaregistrované (<b>{{ ov.email }}</b>, {{ ov.registered|czdt }}) – vysoký limit hledání. Pokud jsi ještě nepotvrdil odkaz z e-mailu, udělej to; do té doby platí malý anonymní limit.</p>
+  <form method="post" action="/studio/openverse/forget" data-nobusy><button class="btn small sec">Zrušit registraci</button></form>
+ {% else %}<p class="hint">Hledání funguje hned, ale anonymně jen pár dotazů za hodinu. Zadej e-mail, Atmovio se u Openverse samo zaregistruje (zdarma) a ty jen klikneš na potvrzovací odkaz v e-mailu.</p>
+  <form method="post" action="/studio/openverse/register" class="row" style="align-items:end"><div><label>E-mail pro registraci</label><input type="email" name="email" required placeholder="tvuj@email.cz"></div><button class="btn small" data-busy="Registruji">Zaregistrovat</button></form>{% endif %}</div>
 </div>
 <div>
 <form method="post" action="/studio/settings">
@@ -5435,6 +5454,7 @@ STUDIO_FONTS = ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/usr/sh
 _studio_lock = threading.Lock()
 _studio_thread: threading.Thread | None = None
 _studio_progress: dict = {}   # id → 0–100 právě renderovaného videa
+_studio_eta: dict = {}        # id → odhad zbývajících sekund
 
 
 def studio_cfg(cfg) -> dict:
@@ -5472,7 +5492,7 @@ def studio_music_files() -> list:
     out = []
     for p in sorted(studio_assets_dir().joinpath("music").iterdir()):
         if p.is_file() and p.suffix.lower() in STUDIO_MUSIC_EXT:
-            out.append({"name": p.name, "size_h": human_size(p.stat().st_size), "duration": ffprobe_info(p).get("duration", 0)})
+            out.append({"name": p.name, "size_h": human_size(p.stat().st_size), "duration": ffprobe_info(p).get("duration", 0), "meta": music_meta(p.name)})
     return out
 
 
@@ -5537,6 +5557,8 @@ def studio_rows(cfg, export_id=None, sid=None) -> list:
         r["size_h"] = human_size(f.stat().st_size) if r["ready"] else ""
         r["duration_h"] = f"{int(r['duration'] or 0) // 60}:{int(r['duration'] or 0) % 60:02d}" if r.get("duration") else ""
         r["progress"] = _studio_progress.get(r["id"], 0) if r["status"] == "rendering" else (100 if r["ready"] else 0)
+        eta = _studio_eta.get(r["id"]) if r["status"] == "rendering" else None
+        r["eta_h"] = (f"asi {int(eta // 60)} min" if eta >= 90 else f"asi {int(round(eta / 10) * 10) or 10} s") if eta else ""
         r["thumb"] = (studio_out_dir(cfg) / f"{r['id']}.jpg").is_file()
         r["camera_label"] = cam_label(cfg, r["camera"])
     return rows
@@ -5547,6 +5569,9 @@ def studio_enqueue(cfg, export: dict, speed: int, intro: bool, music: str, text:
     speed = speed if speed in STUDIO_SPEEDS else int(sc.get("speed", 20) or 20)
     if music and not (studio_assets_dir() / "music" / music).is_file():
         music = ""
+    credit = music_credit(music) if music else ""
+    if credit and credit not in (description or ""):
+        description = (description.rstrip() + "\n\n" + credit).strip()
     with db() as con:
         cur = con.execute("INSERT INTO studio_videos (export_id, camera, name, speed, intro, music, text, title, description, status, created, auto) "
                           "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -5587,6 +5612,7 @@ def _studio_worker():
             add_event("warn", f"Video ze studia nevzniklo: {job['name']}", msg)
         finally:
             _studio_progress.pop(job["id"], None)
+            _studio_eta.pop(job["id"], None)
 
 
 def _drawtext(font: str, textfile: Path, size: int, pos: str) -> str:
@@ -5645,6 +5671,7 @@ def studio_render(cfg, job: dict):
     main += "[main]"
     filters.append(main)
     intro_sec = 0.0
+    intro_audio, intro_in = False, 0
     intro = studio_intro() if job.get("intro") else None
     if intro:
         if intro.suffix.lower() in (".png", ".jpg", ".jpeg"):
@@ -5663,6 +5690,7 @@ def studio_render(cfg, job: dict):
                 raise RuntimeError("Intro video nejde přečíst.")
             cmd += ["-t", f"{intro_sec:.2f}", "-i", str(intro)]
             chain = f"[{inputs}:v]{scale}[intro]"
+            intro_audio, intro_in = bool(ii.get("audio")), inputs
         inputs += 1
         filters.append(chain)
         filters.append("[intro][main]concat=n=2:v=1:a=0[v]")
@@ -5670,14 +5698,33 @@ def studio_render(cfg, job: dict):
         filters.append("[main]null[v]")
     total = intro_sec + main_sec
     music = (studio_assets_dir() / "music" / job["music"]) if job.get("music") else None
-    if music and music.is_file():
-        fi, fo = float(sc.get("fade_in", 2) or 0), float(sc.get("fade_out", 4) or 0)
-        fo = min(fo, max(0.0, total - fi - 0.5))
-        vol = max(0.05, min(2.0, float(sc.get("music_volume", 0.8) or 0.8)))
-        cmd += ["-stream_loop", "-1", "-i", str(music)]
-        filters.append(f"[{inputs}:a]atrim=0:{total:.3f},asetpts=PTS-STARTPTS,afade=t=in:st=0:d={fi:.2f},"
-                       f"afade=t=out:st={max(0.0, total - fo):.3f}:d={fo:.2f},volume={vol:.2f}[a]")
-        inputs += 1
+    music = music if music and music.is_file() else None
+    afmt = "aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo"
+    if music or intro_audio:
+        # Zvuk: intro si nechá svůj (když ho má), hudba začne až za intrem a plynule zesílí; na konci plynule ztichne.
+        parts = []
+        if intro_sec > 0:
+            if intro_audio:
+                filters.append(f"[{intro_in}:a]atrim=0:{intro_sec:.3f},asetpts=PTS-STARTPTS,{afmt},"
+                               f"afade=t=out:st={max(0.0, intro_sec - 0.8):.3f}:d=0.8[ia]")
+            else:
+                filters.append(f"anullsrc=r=44100:cl=stereo,atrim=0:{intro_sec:.3f},{afmt}[ia]")
+            parts.append("[ia]")
+        if music:
+            fi, fo = float(sc.get("fade_in", 2) or 0), float(sc.get("fade_out", 4) or 0)
+            fo = min(fo, max(0.0, main_sec - fi - 0.5))
+            vol = max(0.05, min(2.0, float(sc.get("music_volume", 0.8) or 0.8)))
+            cmd += ["-stream_loop", "-1", "-i", str(music)]
+            filters.append(f"[{inputs}:a]atrim=0:{main_sec:.3f},asetpts=PTS-STARTPTS,{afmt},afade=t=in:st=0:d={fi:.2f},"
+                           f"afade=t=out:st={max(0.0, main_sec - fo):.3f}:d={fo:.2f},volume={vol:.2f}[ma]")
+            inputs += 1
+        else:
+            filters.append(f"anullsrc=r=44100:cl=stereo,atrim=0:{main_sec:.3f},{afmt}[ma]")
+        parts.append("[ma]")
+        if len(parts) > 1:
+            filters.append("".join(parts) + f"concat=n={len(parts)}:v=0:a=1[a]")
+        else:
+            filters.append("[ma]anull[a]")
         maps = ["-map", "[v]", "-map", "[a]", "-c:a", "aac", "-b:a", "160k"]
     else:
         maps = ["-map", "[v]", "-an"]
@@ -5691,7 +5738,11 @@ def studio_render(cfg, job: dict):
         for line in p.stdout:
             if line.startswith("out_time_us="):
                 try:
-                    _studio_progress[job["id"]] = min(99, int(int(line.split("=")[1]) / 1_000_000 / total * 100))
+                    done = int(line.split("=")[1]) / 1_000_000
+                    _studio_progress[job["id"]] = min(99, int(done / total * 100))
+                    el = time.time() - started
+                    if done > 0.5 and el > 2:
+                        _studio_eta[job["id"]] = max(1.0, (total - done) * el / done)
                 except ValueError:
                     pass
             if time.time() - started > 3600:
@@ -5788,7 +5839,7 @@ def studio_new(request: Request, vid: int, again: int = 0):
               "text": prev["text"] if prev and prev["text"] else sc.get("text", ""),
               "title": prev["title"] if prev else studio_fill(sc.get("title", ""), v),
               "description": prev["description"] if prev else studio_fill(sc.get("description", ""), v)}
-    return render(request, "studio_new.html", "Studio – nové video", export=export, values=values,
+    return render(request, "studio_new.html", "Studio – nové video", export=export, values=values, quick=MUSIC_QUICK,
                   subtitle="Zrychlení, intro, text a hudba k vystřiženému videu. Než se nahraje kamkoli, uvidíš výsledek.", **ctx)
 
 
@@ -5925,7 +5976,7 @@ def studio_settings(request: Request):
     cfg = load_config()
     intro = studio_intro()
     ii = ffprobe_info(intro) if intro and intro.suffix.lower() not in (".png", ".jpg", ".jpeg") else {}
-    return render(request, "studio_settings.html", "Video studio", sc=studio_cfg(cfg), speeds=STUDIO_SPEEDS, positions=STUDIO_TEXT_POS,
+    return render(request, "studio_settings.html", "Video studio", sc=studio_cfg(cfg), speeds=STUDIO_SPEEDS, positions=STUDIO_TEXT_POS, ov=openverse_cfg(cfg),
                   intro=intro, intro_is_image=bool(intro and intro.suffix.lower() in (".png", ".jpg", ".jpeg")), intro_info=ii,
                   music=studio_music_files(), font=bool(studio_font()),
                   auto_export_on=bool((cfg["ai"].get("auto_export") or {}).get("enabled")),
@@ -6033,10 +6084,177 @@ def studio_music_delete(request: Request, name: str = Form(...)):
     p = studio_assets_dir() / "music" / Path(name).name
     if p.is_file():
         p.unlink()
+    music_meta_path(p.name).unlink(missing_ok=True)
     with edit_config() as cfg:
         if studio_cfg(cfg).get("music_default") == Path(name).name:
             cfg.setdefault("studio", {})["music_default"] = ""
     flash(request, "Hudba odstraněna.")
+    return RedirectResponse("/studio/settings", status_code=303)
+
+
+# ---------- Hledání hudby (Openverse – Creative Commons, CC0 / CC BY) ----------
+OPENVERSE_API = "https://api.openverse.org/v1"
+MUSIC_QUICK = [("klidná", "calm ambient"), ("klavír", "piano"), ("kytara", "acoustic guitar"), ("západ slunce", "sunset chill"),
+               ("epická", "epic cinematic"), ("elektronika", "electronic ambient"), ("příroda", "nature ambient"), ("lo-fi", "lofi chill")]
+_ov_token: dict = {"token": "", "until": 0.0}
+
+
+def openverse_cfg(cfg) -> dict:
+    return dict((cfg.get("studio") or {}).get("openverse") or {})
+
+
+def openverse_headers(cfg) -> dict:
+    """Bearer token, když je Atmovio u Openverse zaregistrované (vyšší limit); jinak anonymně."""
+    h = {"User-Agent": f"Atmovio/{APP_VERSION} (https://atmovio.com)", "Accept": "application/json"}
+    ov = openverse_cfg(cfg)
+    if ov.get("client_id") and ov.get("client_secret"):
+        if _ov_token["token"] and time.time() < _ov_token["until"]:
+            h["Authorization"] = "Bearer " + _ov_token["token"]
+            return h
+        try:
+            r = requests.post(f"{OPENVERSE_API}/auth_tokens/token/", data={"client_id": ov["client_id"], "client_secret": ov["client_secret"],
+                              "grant_type": "client_credentials"}, timeout=15, headers={"User-Agent": h["User-Agent"]})
+            if r.ok and r.json().get("access_token"):
+                _ov_token.update(token=r.json()["access_token"], until=time.time() + int(r.json().get("expires_in", 36000)) - 60)
+                h["Authorization"] = "Bearer " + _ov_token["token"]
+        except Exception as e:
+            log(f"Openverse: token se nepodařilo získat ({e}) – hledám anonymně")
+    return h
+
+
+def music_search(cfg, q: str, length: str = "") -> dict:
+    """Vrátí {'items': [...], 'error': ''}; jen hudba pod CC0 / CC BY (bez rizika na YouTube)."""
+    params = {"q": q[:100], "license": "cc0,by", "category": "music", "page_size": 20, "mature": "false"}
+    if length in ("short", "medium", "long"):
+        params["length"] = length
+    try:
+        r = requests.get(f"{OPENVERSE_API}/audio/", params=params, headers=openverse_headers(cfg), timeout=20)
+    except Exception as e:
+        return {"items": [], "error": f"Openverse neodpovídá ({e}). Zkontroluj, že RPi má přístup na internet."}
+    if r.status_code == 429:
+        return {"items": [], "error": "Vyčerpaný limit anonymního hledání (Openverse). Zaregistruj Atmovio v Nastavení → Video studio – je to zdarma a limit je pak prakticky neomezený."}
+    if not r.ok:
+        return {"items": [], "error": f"Openverse vrátil chybu HTTP {r.status_code}."}
+    items = []
+    for x in (r.json().get("results") or []):
+        if not x.get("url"):
+            continue
+        dur = int((x.get("duration") or 0) / 1000)
+        items.append({"id": x.get("id"), "title": (x.get("title") or "bez názvu")[:120], "creator": (x.get("creator") or "")[:80],
+                      "url": x["url"], "duration": dur, "duration_h": f"{dur // 60}:{dur % 60:02d}" if dur else "",
+                      "license": (x.get("license") or "").upper() + (" " + x["license_version"] if x.get("license_version") else ""),
+                      "attribution": x.get("attribution") or "", "page": x.get("foreign_landing_url") or "", "genres": ", ".join(x.get("genres") or [])[:60],
+                      "filetype": (x.get("filetype") or "").lower(), "size": int(x.get("filesize") or 0)})
+    return {"items": items, "error": "" if items else "Nic nenalezeno – zkus jiné slovo (anglicky funguje nejlépe: calm, piano, sunset…)."}
+
+
+def music_meta_path(name: str) -> Path:
+    return studio_assets_dir() / "music" / (Path(name).name + ".json")
+
+
+def music_meta(name: str) -> dict:
+    p = music_meta_path(name)
+    try:
+        return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def music_credit(name: str) -> str:
+    """Řádek s autorem do popisu videa (u CC BY je povinný; u CC0 slušnost)."""
+    m = music_meta(name)
+    if not m:
+        return ""
+    return f"Hudba: {m.get('title') or name} – {m.get('creator') or 'neznámý autor'} ({m.get('license') or 'CC'}), Openverse" + (f", {m['page']}" if m.get("page") else "")
+
+
+def music_download(cfg, item: dict) -> str:
+    """Stáhne skladbu z Openverse do knihovny hudby; vrátí název souboru."""
+    url = str(item.get("url") or "")
+    if not re.match(r"^https://", url):
+        raise ValueError("neplatná adresa souboru")
+    base = unicodedata.normalize("NFKD", f"{item.get('creator') or ''} - {item.get('title') or 'skladba'}").encode("ascii", "ignore").decode()
+    base = re.sub(r"[^\w\-. ]+", "_", base).strip("_ .-")[:70] or "hudba"
+    ext = "." + (item.get("filetype") or "").lower().lstrip(".")
+    if ext not in STUDIO_MUSIC_EXT:
+        ext = Path(urlsplit(url).path).suffix.lower()
+    if ext not in STUDIO_MUSIC_EXT:
+        ext = ".mp3"
+    dest = studio_assets_dir() / "music" / f"{base}{ext}"
+    if dest.is_file():
+        return dest.name
+    tmp = dest.with_suffix(dest.suffix + ".part")
+    size = 0
+    with requests.get(url, stream=True, timeout=(15, 120), headers={"User-Agent": f"Atmovio/{APP_VERSION}"}) as r:
+        if not r.ok:
+            raise ValueError(f"stažení selhalo (HTTP {r.status_code})")
+        with tmp.open("wb") as f:
+            for chunk in r.iter_content(256 * 1024):
+                size += len(chunk)
+                if size > 40 * 1024 * 1024:
+                    f.close(); tmp.unlink(missing_ok=True)
+                    raise ValueError("soubor je větší než 40 MB")
+                f.write(chunk)
+    if not ffprobe_info(tmp).get("audio"):
+        tmp.unlink(missing_ok=True)
+        raise ValueError("stažený soubor není přehratelná hudba")
+    tmp.replace(dest)
+    music_meta_path(dest.name).write_text(json.dumps({"title": item.get("title"), "creator": item.get("creator"), "license": item.get("license"),
+                                                      "attribution": item.get("attribution"), "page": item.get("page"), "source": "openverse",
+                                                      "id": item.get("id")}, ensure_ascii=False), encoding="utf-8")
+    log(f"Studio: hudba „{dest.name}“ stažena z Openverse ({item.get('license')})")
+    return dest.name
+
+
+@app.get("/studio/music/search")
+def studio_music_search(request: Request, q: str = "", length: str = ""):
+    q = q.strip()
+    if len(q) < 2:
+        return JSONResponse({"items": [], "error": "Zadej aspoň dvě písmena."})
+    return JSONResponse(music_search(load_config(), q, length))
+
+
+@app.post("/studio/music/fetch")
+def studio_music_fetch(request: Request, id: str = Form(""), url: str = Form(...), title: str = Form(""), creator: str = Form(""),
+                       license: str = Form(""), attribution: str = Form(""), page: str = Form(""), filetype: str = Form("")):
+    try:
+        name = music_download(load_config(), {"id": id, "url": url, "title": title, "creator": creator, "license": license,
+                                              "attribution": attribution, "page": page, "filetype": filetype})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": f"Hudbu se nepodařilo stáhnout: {e}"}, status_code=400)
+    return JSONResponse({"ok": True, "name": name, "credit": music_credit(name)})
+
+
+@app.post("/studio/openverse/register")
+def studio_openverse_register(request: Request, email: str = Form(...)):
+    email = email.strip()
+    if "@" not in email:
+        flash(request, "Zadej platný e-mail.", "err")
+        return RedirectResponse("/studio/settings", status_code=303)
+    try:
+        r = requests.post(f"{OPENVERSE_API}/auth_tokens/register/", json={"name": f"Atmovio {secrets.token_hex(3)}",
+                          "description": "Atmovio – hudba k časosběrným videím z kamer oblohy (atmovio.com)", "email": email},
+                          timeout=20, headers={"User-Agent": f"Atmovio/{APP_VERSION}"})
+        data = r.json() if r.content else {}
+        if not r.ok or not data.get("client_id"):
+            raise ValueError(data.get("detail") or data.get("email") or f"HTTP {r.status_code}")
+    except Exception as e:
+        flash(request, f"Registrace u Openverse se nepodařila: {e}", "err")
+        return RedirectResponse("/studio/settings", status_code=303)
+    with edit_config() as cfg:
+        cfg.setdefault("studio", {})["openverse"] = {"client_id": data["client_id"], "client_secret": data.get("client_secret", ""),
+                                                     "email": email, "registered": dt.datetime.now().isoformat(timespec="seconds")}
+    _ov_token.update(token="", until=0)
+    flash(request, f"Hotovo. Openverse poslal na {email} e-mail s potvrzovacím odkazem – klikni na něj a hledání hudby má od té chvíle vysoký limit.")
+    return RedirectResponse("/studio/settings", status_code=303)
+
+
+@app.post("/studio/openverse/forget")
+def studio_openverse_forget(request: Request):
+    with edit_config() as cfg:
+        cfg.setdefault("studio", {}).pop("openverse", None)
+    _ov_token.update(token="", until=0)
+    flash(request, "Registrace Openverse odstraněna – hledání běží anonymně (malý limit).")
     return RedirectResponse("/studio/settings", status_code=303)
 
 
@@ -7831,6 +8049,13 @@ input[type="file"] { padding: .4rem 0; }
 @media (max-width: 600px) { .studio-src { flex-direction: column; align-items: flex-start; } .studio-src .thumb { width: 100%; } .studio-music, .studio-intro { flex-wrap: wrap; } }
 .speed-preview { margin-top: .7rem; }
 .speed-preview video { width: 100%; max-height: 420px; aspect-ratio: 16 / 9; background: #000; border-radius: .6rem; display: block; cursor: pointer; }
+.finder summary { cursor: pointer; font-weight: 600; }
+.tracks { display: flex; flex-direction: column; gap: .4rem; margin-top: .6rem; }
+.track { display: flex; align-items: center; gap: .7rem; padding: .45rem .6rem; border-radius: .6rem; background: var(--pico-card-sectioning-background-color); }
+.track audio { width: 230px; flex: none; height: 34px; }
+.track .tx { flex: 1; min-width: 0; font-size: .92rem; line-height: 1.3; }
+.track .btn { margin: 0; flex: none; }
+@media (max-width: 640px) { .track { flex-wrap: wrap; } .track audio { width: 100%; } }
 ATMOVIO_CSS_EOF
   cat > "$1/atmovio.js" <<'ATMOVIO_JS_EOF'
 /* Atmovio – interakce (Alpine.js komponenty + pomocné funkce). */
@@ -7935,12 +8160,55 @@ ATMOVIO_CSS_EOF
       };
     });
 
+    // ---------- Hledání hudby (Openverse) přímo u videa ----------
+    Alpine.data('musicFinder', function (initial) {
+      return {
+        q: '', len: '', items: [], msg: '', busy: false, open: false, music: initial || '',
+        search: function () {
+          var self = this;
+          if (self.q.trim().length < 2) { self.msg = 'Zadej aspoň dvě písmena.'; return; }
+          self.busy = true; self.msg = 'Hledám…'; self.items = [];
+          fetch('/studio/music/search?q=' + encodeURIComponent(self.q.trim()) + '&length=' + encodeURIComponent(self.len), { credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (d) { self.items = d.items || []; self.msg = d.error || (self.items.length + ' skladeb – přehraj si je a klikni Použít'); })
+            .catch(function () { self.msg = 'Hledání selhalo – RPi nejspíš nemá přístup na internet.'; })
+            .finally(function () { self.busy = false; });
+        },
+        use: function (t) {
+          var self = this, fd = new FormData();
+          var csrf = document.querySelector('input[name=csrf_token]');
+          fd.append('csrf_token', csrf ? csrf.value : '');
+          ['id', 'url', 'title', 'creator', 'license', 'attribution', 'page', 'filetype'].forEach(function (k) { fd.append(k, t[k] || ''); });
+          self.busy = true; self.msg = 'Stahuji „' + t.title + '“ na RPi…';
+          fetch('/studio/music/fetch', { method: 'POST', body: fd, credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+              if (!d.ok) { self.msg = d.error || 'Stažení selhalo.'; return; }
+              var sel = self.$refs.sel;
+              if (![].some.call(sel.options, function (o) { return o.value === d.name; })) { var o = document.createElement('option'); o.value = d.name; o.textContent = d.name; sel.appendChild(o); }
+              self.music = d.name; sel.value = d.name; t.name = d.name;
+              self.msg = 'Vybráno: ' + d.name + '. Autor se doplní do popisu videa.';
+            })
+            .catch(function () { self.msg = 'Stažení selhalo.'; })
+            .finally(function () { self.busy = false; });
+        }
+      };
+    });
+
   // ---------- Náhled rychlosti ve studiu: přehraje zdrojové video tak, jak bude vypadat zrychlené ----------
     // Do 16× nativně, výš skoky v čase (jako v přehrávači). Orientační – hotové video je plynulé.
     Alpine.data('speedPreview', function (src, speed) {
       return {
         src: src, on: false, speed: speed || 20, running: false, timer: null, seekHandler: null, pos: '',
         fmt: function (t) { t = Math.max(1, Math.round(t || 0)); return Math.floor(t / 60) + ':' + ('0' + t % 60).slice(-2); },
+      // Odhad doby vytváření na RPi 5: dekódování všech snímků (do 120×) nebo jen klíčových, + kódování ~35 sn./s v 1080p.
+      eta: function (dur, fps, width) {
+        var px = Math.min(1, (width || 1920) / 1920) || 1;
+        var decode = this.speed >= 120 ? dur / 40 : dur * (fps || 25) / (260 / px);
+        var encode = (dur / this.speed) * 30 / (35 / px);
+        var s = Math.max(5, decode + encode + 3);
+        return s < 90 ? 'asi ' + Math.round(s / 10) * 10 + ' s' : 'asi ' + Math.round(s / 60) + ' min';
+      },
         get video() { return this.$refs.v; },
         stop: function () {
           this.running = false;

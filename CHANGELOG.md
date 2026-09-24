@@ -2,6 +2,18 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 4.5.3 – 2026-09 – music for every video, intro sound, time estimate
+
+- **Find music per video**: in Studio → Hudba, "Najít hudbu k tomuto videu" searches Openverse (Creative Commons
+  music, only CC0 / CC BY so YouTube never complains), with quick moods (klidná, klavír, západ slunce, epická…),
+  a player for every result and **Použít** – the track is downloaded to the Pi and selected for this video.
+  The author credit is added to the video description automatically. Optional one-click registration at Openverse
+  (e-mail + confirmation link) in Nastavení → Video studio lifts the small anonymous search limit.
+- **Intro keeps its sound**: an intro video with audio is no longer silent; the music starts after the intro and
+  fades in (intro sound fades out over its last 0.8 s). Intro without music → sound during the intro, silence after.
+- **How long will it take**: the new-video page estimates the rendering time for the chosen speed, and the
+  progress page shows "zbývá asi …" computed from the real encoding pace.
+
 ## 4.5.2 – 2026-09 – videos no longer lost on updates
 
 - **Root cause of "zaseklo se – Frigate export nedokončil"**: every Atmovio update (and every restart of the
