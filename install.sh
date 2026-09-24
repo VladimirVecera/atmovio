@@ -94,7 +94,7 @@ fi
 # ----------------------------------------------------------------------------- 2. balíčky
 step "Aktualizace systému a instalace balíčků (může trvat několik minut)"
 apt-get update -q
-apt-get -y -q install ca-certificates curl gnupg jq git python3 python3-venv python3-pip ffmpeg \
+apt-get -y -q install ca-certificates curl gnupg jq git python3 python3-venv python3-pip ffmpeg fonts-dejavu-core \
   wireguard-tools iproute2 iputils-ping smartmontools hdparm parted e2fsprogs util-linux avahi-daemon \
   cockpit cockpit-networkmanager cockpit-storaged cockpit-packagekit \
   || die "Instalace balíčků selhala – viz $LOG"
@@ -460,7 +460,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 from PIL import Image, ImageChops, ImageStat
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, Form, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import DictLoader, Environment
@@ -475,7 +475,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "4.4.4"
+APP_VERSION = "4.5"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -582,6 +582,14 @@ DEFAULT_CONFIG = {
         "keep_days": 14,
         "export_keep_days": 30,
         "auto_export": {"enabled": False, "before_min": 2, "after_min": 3, "playback": "realtime", "cameras": []},
+    },
+    "studio": {   # Video studio: zrychlení, intro, text v obraze, hudba, šablony titulku/popisu
+        "speed": 20, "intro": True, "intro_seconds": 4, "intro_title": True, "intro_text": "{kamera}\n{datum}",
+        "text_enabled": True, "text": "{kamera} · {datum} · {rychlost}×", "text_pos": "bl", "text_size": 36,
+        "music_default": "", "music_volume": 0.8, "fade_in": 2, "fade_out": 4,
+        "title": "{kamera} – {jev} · {datum}",
+        "description": "{popis}\n\n{kamera}, {datum} {cas}. Záznam {delka}, zrychleno {rychlost}×.\nVytvořeno v Atmovio – atmovio.com",
+        "auto": False,
     },
     "alerts": {
         "camera_outage": True,
@@ -1030,6 +1038,32 @@ def db_init():
                 created TEXT NOT NULL
             )"""
         )
+        con.execute(
+            """CREATE TABLE IF NOT EXISTS studio_videos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                export_id INTEGER NOT NULL,
+                camera TEXT NOT NULL,
+                name TEXT NOT NULL,
+                speed INTEGER NOT NULL,
+                intro INTEGER DEFAULT 0,
+                music TEXT DEFAULT '',
+                text TEXT DEFAULT '',
+                title TEXT DEFAULT '',
+                description TEXT DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'queued',
+                message TEXT DEFAULT '',
+                file TEXT,
+                duration REAL,
+                created TEXT NOT NULL,
+                finished TEXT,
+                auto INTEGER DEFAULT 0,
+                yt_id TEXT,
+                yt_url TEXT,
+                yt_status TEXT
+            )"""
+        )
+        # po restartu (výpadek proudu uprostřed ffmpegu) se rozdělané video vyrobí znovu
+        con.execute("UPDATE studio_videos SET status='queued' WHERE status='rendering'")
 
 
 AI_STAT_COLS = ("calls", "skipped", "errors", "interesting", "notified")
@@ -1916,6 +1950,11 @@ class AtmovioWatcher(threading.Thread):
             process_auto_exports(cfg)
         except Exception as e:
             log(f"Automatická videa: {e}")
+        try:
+            studio_auto(cfg)
+            studio_kick()
+        except Exception as e:
+            log(f"Studio: {e}")
         self.cleanup(cfg)
         ai = cfg["ai"]
         if not ai["enabled"]:
@@ -2648,6 +2687,7 @@ BASE_CSS = ""  # vzhled je v static/atmovio.css (nad Pico CSS)
 NAV_PRIMARY = [("/", "Přehled", "⌂"), ("/live", "Kamery", "📷"), ("/storage", "Záznamy", "💾"),
                ("/history", "Detekce a AI", "🖼"), ("/videos", "Videa", "🎬")]
 NAV_SETTINGS = [("/cameras", "Kamery – přidání a úpravy", "🎥"), ("/ai", "AI hlídání oblohy", "☁"), ("/email", "Upozornění (e-mail, web)", "✉"),
+                ("/studio/settings", "Video studio (zrychlení, intro, hudba)", "⏩"),
                 ("/vpn", "Síť a VPN", "🔗"), ("/system", "Systém a disky", "⚙"), ("/logs", "Logy (diagnostika)", "📜")]
 BOTTOM_LABELS = {"/": "Přehled", "/live": "Kamery", "/storage": "Záznamy", "/history": "Historie", "/videos": "Videa"}
 NAV_ITEMS = NAV_PRIMARY + NAV_SETTINGS
@@ -2679,7 +2719,7 @@ ICONS = {
     "wifi": '<svg class="i" viewBox="0 0 24 24"><path d="M2 8.5a15 15 0 0 1 20 0M5.5 12a10 10 0 0 1 13 0M9 15.5a5 5 0 0 1 6 0"/><circle cx="12" cy="19" r="1"/></svg>',
 }
 NAV_ICONS = {"/": "sun", "/live": "camera", "/storage": "disk", "/history": "image", "/videos": "video",
-             "/cameras": "camera", "/ai": "brain", "/email": "bell", "/vpn": "wifi", "/system": "cpu", "/logs": "clock"}
+             "/cameras": "camera", "/ai": "brain", "/email": "bell", "/vpn": "wifi", "/system": "cpu", "/logs": "clock", "/studio": "video"}
 
 TEMPLATES["base.html"] = """<!doctype html>
 <html lang="cs" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -3479,7 +3519,19 @@ TEMPLATES["camera.html"] = """{% extends "base.html" %}{% block actions %}<div c
 <p class="hint" style="margin:.6rem 0 0">Tahle stránka jen ukazuje stav. Nastavení kamer je na jednom místě v <a href="/cameras">Nastavení → Kamery</a>, hlídání oblohy v <a href="/ai#kamery">Nastavení → AI</a>.</p></div>
 {% endblock %}"""
 
-TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block content %}
+TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small sec" href="/studio/settings">⚙ Nastavení studia</a></div>{% endblock %}{% block content %}
+<div class="section-head" id="studio"><h2>Studio – zrychlená videa</h2><span class="hint">s intrem, textem a hudbou · připravená ke stažení{% if studio_auto %} · automatika zapnutá{% endif %}</span></div>
+{% if not studio %}<div class="card"><p class="hint" style="margin:0">Zatím žádné. U hotového videa níže klikni na <b>🎞 Studio</b> – vybereš rychlost (10–240×), intro, text a hudbu, a než se cokoli nahraje, uvidíš výsledek.</p></div>{% endif %}
+<div class="gallery videos">
+{% for s in studio %}<div class="shot video">
+{% if s.ready %}<a class="thumb" href="/studio/v/{{ s.id }}"><img src="{% if s.thumb %}/studio/v/{{ s.id }}/thumb.jpg{% endif %}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"><span class="play">▶</span><span class="dur">{{ s.duration_h }} · {{ s.speed }}×</span></a>
+{% else %}<a class="thumb wait" href="/studio/v/{{ s.id }}">{% if s.status == 'failed' %}<span>⚠️ nepodařilo se – {{ s.message }}</span>{% elif s.status == 'rendering' %}<span><span class="spin" style="display:inline-block;vertical-align:middle;width:18px;height:18px;margin-right:.4rem"></span>vytváří se… {{ s.progress }} %</span>{% else %}<span>čeká ve frontě</span>{% endif %}</a>{% endif %}
+<div class="b"><div class="title">{{ s.title or s.name }}{% if s.auto %} <span class="badge ok">auto</span>{% endif %}</div>
+<dl class="facts"><dt>Kamera</dt><dd>{{ s.camera_label }}</dd><dt>Úpravy</dt><dd>{{ s.speed }}×{% if s.intro %} · intro{% endif %}{% if s.music %} · hudba{% endif %}{% if s.text %} · text{% endif %}</dd><dt>Vytvořeno</dt><dd>{{ s.created|czdt }}</dd></dl>
+<div class="acts"><a class="btn small" href="/studio/v/{{ s.id }}">Otevřít</a>{% if s.ready %}<a class="btn small sec" href="/studio/v/{{ s.id }}/download">⬇ Stáhnout</a>{% endif %}
+<form method="post" action="/studio/v/{{ s.id }}/delete" onsubmit="return confirm('Smazat video ze studia?')"><button class="btn small sec">Smazat</button></form></div></div></div>{% endfor %}
+</div>
+<div class="section-head" style="margin-top:1.2rem"><h2>Vystřižené záznamy</h2><span class="hint">v původní rychlosti, tak jak je vystřihl Frigate</span></div>
 {% if not videos %}<div class="card"><p>Zatím žádné video. Otevři detekci v <a href="/history">Historii</a> a klikni na <b>Vytvořit video</b> – vybereš, kolik minut před a po snímku se má vystřihnout.</p></div>{% endif %}
 <div class="gallery videos">
 {% for v in videos %}<div class="shot video" id="v{{ v.id }}">
@@ -3494,12 +3546,12 @@ TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block content %}
 <dt>Vytvořeno</dt><dd>{{ v.created|czdt }}</dd>
 <dt>Smaže se</dt><dd>{% if v.days_left > 1 %}za {{ v.days_left }} dní{% elif v.days_left == 1 %}zítra{% else %}dnes{% endif %}</dd>
 </dl>
-<div class="acts">{% if v.ready %}<a class="btn small" href="/videos/{{ v.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ v.name }}">▶ Přehrát</a><a class="btn small sec" href="/videos/{{ v.id }}/download">⬇ Stáhnout MP4</a>{% endif %}{% if v.stuck and not v.expired %}<form method="post" action="/videos/{{ v.id }}/retry"><button class="btn small" data-busy="Zadávám video znovu">↻ Vytvořit znovu</button></form>{% endif %}{% if v.detection_id %}<a class="btn small sec" href="/detection/{{ v.detection_id }}">Detekce</a>{% endif %}
+<div class="acts">{% if v.ready %}<a class="btn small" href="/videos/{{ v.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ v.name }}">▶ Přehrát</a><a class="btn small" href="/studio/new/{{ v.id }}" title="Zrychlit, přidat intro, text a hudbu">⏩ Studio</a><a class="btn small sec" href="/videos/{{ v.id }}/download">⬇ Stáhnout MP4</a>{% endif %}{% if v.stuck and not v.expired %}<form method="post" action="/videos/{{ v.id }}/retry"><button class="btn small" data-busy="Zadávám video znovu">↻ Vytvořit znovu</button></form>{% endif %}{% if v.detection_id %}<a class="btn small sec" href="/detection/{{ v.detection_id }}">Detekce</a>{% endif %}
 <form method="post" action="/videos/{{ v.id }}/delete" onsubmit="return confirm('Smazat video {{ v.name }}?')"><button class="btn small sec">Smazat</button></form></div></div></div>{% endfor %}
 </div>
 <div class="card" style="margin-top:1rem"><form method="post" action="/videos/keep" class="row" style="align-items:end"><div style="max-width:220px"><label>Videa mazat po (dní)</label><input type="number" name="days" min="1" max="365" value="{{ keep_days }}"></div><div style="flex:0"><button class="btn small">Uložit</button></div>
 <div class="hint" style="flex-basis:100%">Vystřižená videa leží na disku pro záznamy (složka exports) a po této době se automaticky smažou – stažené kopie v počítači to neovlivní.</div></form></div>
-{% if videos and videos|selectattr('in_progress')|list %}<div x-data="autorefresh(20)"></div>{% endif %}
+{% if (videos and videos|selectattr('in_progress')|list) or (studio and studio|rejectattr('ready')|selectattr('status', 'in', ('queued', 'rendering'))|list) %}<div x-data="autorefresh(20)"></div>{% endif %}
 {% endblock %}"""
 
 TEMPLATES["history.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small" href="/ai#kamery">⚙ Nastavení AI</a><form method="post" action="/history/delete" data-nobusy style="display:flex;gap:.4rem"><input type="hidden" name="camera" value="{{ f_cam }}"><button class="btn small sec" name="what" value="errors">Smazat chybná</button><button class="btn small danger" name="what" value="all" onclick="return confirm('Smazat celou historii{% if f_cam %} kamery {{ cam(f_cam) }}{% endif %} včetně snímků?')">Smazat vše{% if f_cam %} ({{ cam(f_cam) }}){% endif %}</button></form></div>{% endblock %}{% block content %}
@@ -3529,6 +3581,133 @@ TEMPLATES["history.html"] = """{% extends "base.html" %}{% block actions %}<div 
  <span class="pages">{% for p in range(1, pages + 1) %}{% if p == 1 or p == pages or (p >= page - 2 and p <= page + 2) %}<a class="{{ 'on' if p == page }}" href="{{ link(f_cam, f_min, f_show, p) }}">{{ p }}</a>{% elif p == page - 3 or p == page + 3 %}<span>…</span>{% endif %}{% endfor %}</span>
  <a class="btn small sec {{ 'dis' if page >= pages }}" href="{{ link(f_cam, f_min, f_show, page + 1) }}">Starší ›</a>
 </nav>{% endif %}
+{% endblock %}"""
+
+TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small sec" href="/videos">← Videa</a><a class="btn small sec" href="/studio/settings">⚙ Nastavení studia</a></div>{% endblock %}{% block content %}
+{% set intro_sec = (sc.intro_seconds if intro and intro.suffix|lower in ('.png', '.jpg', '.jpeg') else 0) %}
+<form method="post" x-data="{speed: {{ values.speed }}, src: {{ '%.1f'|format(src.duration or 0) }}, intro: {{ 'true' if values.intro and intro else 'false' }}, textOn: {{ 'true' if values.text_on else 'false' }}, music: '{{ values.music }}',
+ fmt(s){ s = Math.max(1, Math.round(s)); return Math.floor(s / 60) + ':' + ('0' + s % 60).slice(-2); }}">
+<div class="grid-2" style="grid-template-columns:minmax(0,3fr) minmax(320px,2fr)">
+<div>
+ <div class="card studio-src"><a class="thumb" href="/videos/{{ export.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ export.name }}"><img src="/videos/{{ export.id }}/thumb.jpg" alt="" onerror="this.style.visibility='hidden'"><span class="play">▶</span></a>
+  <div><div class="hint">Zdrojové video</div><b>{{ export.name }}</b><div class="hint">{{ cam(export.camera) }} · záznam {{ vars.delka }}{% if src.width %} · {{ src.width }}×{{ src.height }}{% endif %}</div></div></div>
+
+ <div class="card"><h2>1. Rychlost</h2>
+  <div class="seg speeds">{% for s in speeds %}<label :class="{on: speed === {{ s }}}"><input type="radio" name="speed" value="{{ s }}" x-model.number="speed" hidden>{{ s }}×</label>{% endfor %}</div>
+  <p class="hint" style="margin:.6rem 0 0">Ze záznamu dlouhého <b>{{ vars.delka }}</b> vznikne video dlouhé <b x-text="fmt(src / speed)"></b><template x-if="intro"><span> + intro</span></template>. Doporučení: západ slunce 20–30×, celý den 120–240×.</p></div>
+
+ <div class="card"><h2>2. Intro</h2>
+  {% if intro %}<label class="check"><input type="checkbox" name="intro" value="1" x-model="intro">Přidat intro na začátek <span class="hint">({{ intro.name }}{% if intro_sec %}, {{ intro_sec|int }} s{% endif %})</span></label>
+  {% else %}<p class="hint" style="margin:0">Zatím nemáš nahrané žádné intro – nahraj ho v <a href="/studio/settings">Nastavení studia</a> (video MP4 nebo obrázek s logem).</p>{% endif %}</div>
+
+ <div class="card"><h2>3. Text v obraze</h2>
+  <label class="check"><input type="checkbox" name="text_on" value="1" x-model="textOn">Vypsat text do videa</label>
+  <div x-show="textOn"><input type="text" name="text" value="{{ values.text }}" maxlength="200" placeholder="{kamera} · {datum} · {rychlost}×">
+  <div class="hint">Zástupné značky: <code>{kamera}</code> <code>{datum}</code> <code>{cas}</code> <code>{jev}</code> <code>{skore}</code> <code>{rychlost}</code>. Umístění a velikost písma nastavíš v Nastavení studia.{% if not font %} <b>Na RPi chybí font – text se nepřidá</b> (nainstaluj balíček fonts-dejavu-core).{% endif %}</div></div></div>
+
+ <div class="card"><h2>4. Hudba</h2>
+  {% if music %}<select name="music" x-model="music"><option value="">bez hudby</option>{% for m in music %}<option value="{{ m.name }}">{{ m.name }}{% if m.duration %} ({{ (m.duration // 60)|int }}:{{ '%02d'|format(m.duration % 60) }}){% endif %}</option>{% endfor %}</select>
+  <p class="hint" style="margin:.5rem 0 0">Hudba plynule zesílí na začátku a na konci videa zase plynule ztichne ({{ sc.fade_in }} s / {{ sc.fade_out }} s); je-li kratší než video, opakuje se.</p>
+  {% else %}<p class="hint" style="margin:0">Žádná hudba není nahraná – přidej MP3 v <a href="/studio/settings">Nastavení studia</a>.</p>{% endif %}</div>
+</div>
+<div>
+ <div class="card"><h2>Titulek a popis</h2>
+  <label>Titulek <span class="hint">(název souboru a později titulek na YouTube)</span></label><input type="text" name="title" value="{{ values.title }}" maxlength="100">
+  <label>Popis</label><textarea name="description" rows="8">{{ values.description }}</textarea>
+  <div class="hint">Předvyplněno z textu AI a šablon v nastavení – klidně přepiš. Upravit půjde i u hotového videa.</div></div>
+ <div class="savebar"><button class="btn" data-busy="Zařazuji do fronty">🎬 Vytvořit video</button><span class="hint">Nikam se nic nenahrává – nejdřív uvidíš výsledek.</span></div>
+</div></div>
+</form>
+{% endblock %}"""
+
+TEMPLATES["studio_video.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small sec" href="/videos#studio">← Videa</a><a class="btn small sec" href="/studio/new/{{ v.export_id }}?again={{ v.id }}">↻ Vytvořit jinak</a></div>{% endblock %}{% block content %}
+<div class="grid-2" style="grid-template-columns:minmax(0,3fr) minmax(320px,2fr)">
+<div>
+ <div class="card" style="padding:0;overflow:hidden">
+ {% if v.ready %}<video controls preload="metadata" playsinline style="width:100%;display:block;background:#000;aspect-ratio:16/9" poster="{% if v.thumb %}/studio/v/{{ v.id }}/thumb.jpg{% endif %}" src="/studio/v/{{ v.id }}/play.mp4"></video>
+ {% else %}<div class="studio-wait">
+  {% if v.status == 'failed' %}<div class="badge err">nepodařilo se</div><p>{{ v.message or 'neznámá chyba' }}</p><a class="btn small" href="/studio/new/{{ v.export_id }}?again={{ v.id }}">Zkusit znovu</a>
+  {% elif v.status == 'rendering' %}<div class="spin"></div><p><b>Vytváří se…</b> {{ v.progress }} %</p><div class="pbar"><i style="width:{{ v.progress }}%"></i></div><p class="hint">Zrychlení {{ v.speed }}× – podle délky záznamu pár sekund až minut. Stránka se sama obnovuje.</p>
+  {% else %}<div class="spin"></div><p><b>Čeká ve frontě</b>{% if queue_pos %} · před ním {{ queue_pos }}{% endif %}</p><p class="hint">Videa se vyrábějí po jednom, aby RPi zvládalo nahrávat.</p>{% endif %}
+ </div>{% endif %}</div>
+ {% if v.message and v.status == 'ready' %}<div class="card warn"><b>Poznámka:</b> {{ v.message }}</div>{% endif %}
+ <div class="card"><dl class="facts">
+  <dt>Zdroj</dt><dd>{{ v.name }} <a class="hint" href="/videos#v{{ v.export_id }}">(původní video)</a></dd>
+  <dt>Kamera</dt><dd>{{ v.camera_label }}</dd>
+  <dt>Rychlost</dt><dd>{{ v.speed }}×</dd>
+  <dt>Intro</dt><dd>{{ 'ano' if v.intro else 'ne' }}</dd>
+  <dt>Hudba</dt><dd>{{ v.music or 'bez hudby' }}</dd>
+  <dt>Text v obraze</dt><dd>{{ v.text or '–' }}</dd>
+  {% if v.ready %}<dt>Délka · velikost</dt><dd>{{ v.duration_h }} · {{ v.size_h }}</dd>{% endif %}
+  <dt>Vytvořeno</dt><dd>{{ v.created|czdt }}{% if v.auto %} <span class="badge ok">automaticky</span>{% endif %}</dd>
+ </dl></div>
+</div>
+<div>
+ <form method="post" action="/studio/v/{{ v.id }}/meta" class="card"><h2>Titulek a popis</h2>
+  <label>Titulek</label><input type="text" name="title" value="{{ v.title }}" maxlength="100">
+  <label>Popis</label><textarea name="description" rows="9">{{ v.description }}</textarea>
+  <div class="row" style="margin-top:.6rem"><button class="btn small">Uložit</button></div></form>
+ <div class="card"><h2>Co dál</h2>
+  <div class="acts studio-acts">{% if v.ready %}<a class="btn" href="/studio/v/{{ v.id }}/download">⬇ Stáhnout MP4</a>{% endif %}
+  <span class="btn sec dis" title="Přijde v příští verzi Atmovio (4.6)">▶ Nahrát na YouTube <small>· brzy</small></span>
+  <form method="post" action="/studio/v/{{ v.id }}/delete" onsubmit="return confirm('Smazat toto video ze studia? Původní vystřižené video zůstane.')"><button class="btn small sec">Smazat</button></form></div>
+  <p class="hint" style="margin:.6rem 0 0">Původní vystřižené video zůstává ve Videích; smazání tady se ho netýká.</p></div>
+</div></div>
+{% if v.status in ('queued', 'rendering') %}<div x-data="autorefresh(8)"></div>{% endif %}
+{% endblock %}"""
+
+TEMPLATES["studio_settings.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small sec" href="/videos">🎬 Videa</a></div>{% endblock %}{% block content %}
+<div class="guide"><b>Jak studio funguje:</b> vystřižené video ze Záznamů (ručně z detekce nebo automaticky po upozornění) se zrychlí, případně dostane intro, text v obraze a hudbu. Výsledek si prohlédneš, upravíš titulek s popisem a stáhneš – v příští verzi ho jedním kliknutím nahraješ na YouTube.</div>
+<div class="grid-2">
+<div>
+ <div class="card"><h2>Intro (úvodní znělka)</h2>
+ {% if intro %}<div class="studio-intro">{% if intro_is_image %}<img src="/studio/asset/intro" alt="">{% else %}<video src="/studio/asset/intro" controls muted playsinline preload="metadata"></video>{% endif %}
+  <div><b>{{ intro.name }}</b><div class="hint">{% if intro_is_image %}obrázek – ve videu {{ sc.intro_seconds|int }} s{% if sc.intro_title %} s názvem kamery a datem{% endif %}{% else %}video{% if intro_info.duration %} · {{ '%.0f'|format(intro_info.duration) }} s{% endif %}{% if intro_info.width %} · {{ intro_info.width }}×{{ intro_info.height }}{% endif %}{% endif %}</div>
+  <form method="post" action="/studio/upload/intro/delete" onsubmit="return confirm('Odstranit intro?')" data-nobusy style="margin-top:.4rem"><button class="btn small sec">Odstranit</button></form></div></div>
+ {% else %}<p class="hint">Zatím žádné intro. Může to být krátké video (MP4, do 15 s se použije celé) nebo jen obrázek s logem (PNG/JPG) – z něj Atmovio udělá úvod s názvem kamery a datem.</p>{% endif %}
+ <form method="post" action="/studio/upload/intro" enctype="multipart/form-data" class="row" style="align-items:end;margin-top:.6rem"><div><label>{{ 'Nahradit' if intro else 'Nahrát' }} intro (MP4/MOV do 100 MB, nebo PNG/JPG)</label><input type="file" name="file" accept=".mp4,.mov,.m4v,.png,.jpg,.jpeg" required></div><button class="btn small" data-busy="Nahrávám intro">Nahrát</button></form></div>
+
+ <div class="card"><h2>Hudba</h2>
+ {% if music %}<div class="plainlist">{% for m in music %}<div class="studio-music"><audio controls preload="none" src="/studio/asset/music/{{ m.name }}"></audio><div><b>{{ m.name }}</b>{% if sc.music_default == m.name %} <span class="badge ok">výchozí</span>{% endif %}<div class="hint">{{ m.size_h }}{% if m.duration %} · {{ (m.duration // 60)|int }}:{{ '%02d'|format(m.duration % 60) }}{% endif %}</div></div>
+  <form method="post" action="/studio/upload/music/delete" onsubmit="return confirm('Odstranit tuto hudbu?')" data-nobusy><input type="hidden" name="name" value="{{ m.name }}"><button class="btn small sec">Odstranit</button></form></div>{% endfor %}</div>
+ {% else %}<p class="hint">Zatím žádná hudba. Nahraj MP3 (nebo M4A/WAV/OGG/FLAC) – u každého videa pak vybereš, která se použije.</p>{% endif %}
+ <form method="post" action="/studio/upload/music" enctype="multipart/form-data" class="row" style="align-items:end;margin-top:.6rem"><div><label>Přidat hudbu (do 40 MB)</label><input type="file" name="file" accept=".mp3,.m4a,.aac,.wav,.ogg,.flac" required></div><button class="btn small" data-busy="Nahrávám hudbu">Nahrát</button></form>
+ <p class="hint" style="margin:.6rem 0 0">Používej jen hudbu, na kterou máš práva (vlastní, nebo z knihovny YouTube Audio Library) – jinak YouTube video ztlumí nebo zablokuje.</p></div>
+</div>
+<div>
+<form method="post" action="/studio/settings">
+ <div class="card"><h2>Výchozí nastavení videa</h2>
+  <label>Rychlost</label><div class="seg speeds" x-data="{s: {{ sc.speed }}}">{% for s in speeds %}<label :class="{on: s === {{ s }}}"><input type="radio" name="speed" value="{{ s }}" x-model.number="s" hidden>{{ s }}×</label>{% endfor %}</div>
+  <label class="check" style="margin-top:.8rem"><input type="checkbox" name="intro" value="1"{% if sc.intro %} checked{% endif %}>Intro přidávat automaticky (když je nahrané)</label>
+  <div class="row"><div><label>Intro z obrázku: délka (s)</label><input type="number" name="intro_seconds" min="1" max="15" step="0.5" value="{{ sc.intro_seconds }}"></div>
+  <div><label>Text na intru z obrázku <span class="hint">(řádky = řádky ve videu)</span></label><textarea name="intro_text" rows="2" maxlength="200" style="min-height:0">{{ sc.intro_text }}</textarea></div></div>
+  <label class="check"><input type="checkbox" name="intro_title" value="1"{% if sc.intro_title %} checked{% endif %}>Na intro z obrázku vypsat tento text (např. název kamery a datum)</label>
+ </div>
+ <div class="card"><h2>Text v obraze</h2>
+  <label class="check"><input type="checkbox" name="text_enabled" value="1"{% if sc.text_enabled %} checked{% endif %}>Vypisovat text do videa</label>
+  <input type="text" name="text" value="{{ sc.text }}" maxlength="200">
+  <div class="row"><div><label>Umístění</label><select name="text_pos">{% for k, l in positions.items() %}<option value="{{ k }}"{% if sc.text_pos == k %} selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+  <div><label>Velikost písma</label><input type="number" name="text_size" min="16" max="96" value="{{ sc.text_size }}"></div></div>
+  <div class="hint">Značky: <code>{kamera}</code> <code>{datum}</code> <code>{cas}</code> <code>{jev}</code> <code>{skore}</code> <code>{rychlost}</code> <code>{delka}</code>.{% if not font %} <b>Na RPi chybí font pro text – nainstaluj balíček fonts-dejavu-core</b> (aktualizace Atmovio ho doinstaluje).{% endif %}</div>
+ </div>
+ <div class="card"><h2>Hudba – hlasitost a prolínání</h2>
+  <label>Výchozí skladba</label><select name="music_default"><option value="">bez hudby</option>{% for m in music %}<option value="{{ m.name }}"{% if sc.music_default == m.name %} selected{% endif %}>{{ m.name }}</option>{% endfor %}</select>
+  <div class="row"><div><label>Hlasitost (0,1–2)</label><input type="number" name="music_volume" min="0.05" max="2" step="0.05" value="{{ sc.music_volume }}"></div>
+  <div><label>Zesílení na začátku (s)</label><input type="number" name="fade_in" min="0" max="15" step="0.5" value="{{ sc.fade_in }}"></div>
+  <div><label>Ztišení na konci (s)</label><input type="number" name="fade_out" min="0" max="15" step="0.5" value="{{ sc.fade_out }}"></div></div>
+ </div>
+ <div class="card"><h2>Šablona titulku a popisu</h2>
+  <label>Titulek</label><input type="text" name="title" value="{{ sc.title }}" maxlength="120">
+  <label>Popis</label><textarea name="description" rows="5">{{ sc.description }}</textarea>
+  <div class="hint">Navíc <code>{popis}</code> = text, který k detekci napsala AI. U každého videa jde titulek i popis ručně upravit.</div>
+ </div>
+ <div class="card"><h2>Automatika</h2>
+  <label class="check"><input type="checkbox" name="auto" value="1"{% if sc.auto %} checked{% endif %}>Automatická videa po upozornění rovnou zrychlit podle tohoto nastavení</label>
+  <div class="hint">{% if auto_export_on %}Automatická videa jsou zapnutá v <a href="/ai#video">Nastavení AI → Automatické video</a>. Hotové zrychlené video najdeš ve Videích → Studio{% else %}Aby to mělo co zpracovávat, zapni nejdřív automatické video po upozornění v <a href="/ai#video">Nastavení AI → Automatické video</a>{% endif %}. Nahrávání na YouTube přijde v příští verzi.</div>
+ </div>
+ <div class="savebar"><button class="btn" data-busy="Ukládám">Uložit nastavení</button></div>
+</form>
+</div></div>
 {% endblock %}"""
 
 # Všechny POST formuláře, včetně přihlášení, dostanou stejnou ochranu.
@@ -3578,7 +3757,8 @@ SUBTITLES = {
     "/logs": "Co se v systému děje: hlídání oblohy, kamery, disk, VPN, nahrávání.",
     "/system": "Stav Raspberry Pi, restart, hesla, aktualizace.",
     "/system/update": "Nové verze Atmovio z GitHubu: kontrola, co je nového, instalace jedním tlačítkem.",
-    "/videos": "Videa vystřižená ze záznamů – ke stažení, s náhledem. Sama se mažou po nastavené době.",
+    "/videos": "Videa vystřižená ze záznamů – ke stažení, s náhledem. Sama se mažou po nastavené době. Ve studiu je zrychlíš a doplníš intro a hudbu.",
+    "/studio/settings": "Jak se vyrábí zrychlená videa: rychlost, intro, text v obraze, hudba, titulek a popis. Ruční i automatický režim.",
 }
 
 
@@ -3592,6 +3772,8 @@ def render(request: Request, tpl: str, title: str, **ctx) -> HTMLResponse:
         active = "/cameras"
     if active == "/camera":
         active = "/live"
+    if active == "/studio":
+        active = "/studio/settings" if path.startswith("/studio/settings") or path.startswith("/studio/upload") else "/videos"
     cfg = load_config()
     labels = camera_labels(cfg)
     st = storage_status()
@@ -3811,7 +3993,7 @@ async def auth_middleware(request: Request, call_next):
     if request.method not in ("GET", "HEAD", "OPTIONS"):
         # body() zajistí opětovné přečtení formuláře samotným endpointem.
         body = await request.body()
-        if len(body) > 65_536:
+        if len(body) > (120 * 1024 * 1024 if path.startswith("/studio/upload/") else 65_536):
             return JSONResponse({"error": "Formulář je příliš velký."}, status_code=413)
         form = await request.form()
         expected = request.session.get("csrf", "")
@@ -5274,6 +5456,11 @@ def cleanup_exports(cfg):
     for rec in old:
         delete_export(cfg, rec)
         log(f"Video „{rec['name']}“ smazáno – starší než {keep} dní")
+    with db() as con:
+        old_s = [dict(r) for r in con.execute("SELECT * FROM studio_videos WHERE created < ? AND status <> 'rendering'", (cutoff,))]
+    for row in old_s:
+        studio_delete(cfg, row)
+        log(f"Studio: video „{row['title'] or row['name']}“ smazáno – starší než {keep} dní")
 
 
 @app.get("/clip/{camera}.mp4")
@@ -5416,7 +5603,7 @@ def detection_export(request: Request, rid: int, name: str = Form(""), before: i
 def videos_page(request: Request):
     cfg = load_config()
     return render(request, "videos.html", "Videa", videos=list_videos(cfg), keep_days=int(cfg.get("export_keep_days", 30) or 30),
-                  ready=storage_ready())
+                  ready=storage_ready(), studio=studio_rows(cfg), studio_auto=bool(studio_cfg(cfg).get("auto")))
 
 
 @app.post("/videos/keep")
@@ -5532,6 +5719,627 @@ def video_delete(request: Request, vid: int):
         delete_export(cfg, dict(rec))
         flash(request, f"Video „{rec['name']}“ smazáno.")
     return RedirectResponse(request.headers.get("referer") or "/videos", status_code=303)
+
+
+# =============================================================================
+#  VIDEO STUDIO – zrychlení, intro, text v obraze, hudba s plynulým náběhem/doběhem.
+#  Vstupem je hotové video vystřižené Frigate (tabulka exports); výstup leží na HDD
+#  ve složce studio/ a je připravený ke stažení (a od 4.6 k nahrání na YouTube).
+# =============================================================================
+
+STUDIO_SPEEDS = (10, 20, 30, 60, 120, 240)
+STUDIO_TEXT_POS = {"bl": "vlevo dole", "br": "vpravo dole", "bc": "dole uprostřed", "tl": "vlevo nahoře", "tr": "vpravo nahoře", "tc": "nahoře uprostřed"}
+STUDIO_INTRO_EXT = (".mp4", ".mov", ".m4v", ".png", ".jpg", ".jpeg")
+STUDIO_MUSIC_EXT = (".mp3", ".m4a", ".aac", ".wav", ".ogg", ".flac")
+STUDIO_FONTS = ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+                "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf")
+_studio_lock = threading.Lock()
+_studio_thread: threading.Thread | None = None
+_studio_progress: dict = {}   # id → 0–100 právě renderovaného videa
+
+
+def studio_cfg(cfg) -> dict:
+    return deep_merge(DEFAULT_CONFIG["studio"], cfg.get("studio") or {})
+
+
+def studio_assets_dir() -> Path:
+    p = APP_DIR / "studio"
+    (p / "music").mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def studio_out_dir(cfg) -> Path:
+    p = Path(cfg["snapshot_dir"]).parent / "studio"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def studio_font() -> str:
+    for f in STUDIO_FONTS:
+        if Path(f).is_file():
+            return f
+    return ""
+
+
+def studio_intro() -> Path | None:
+    """Nahrané intro (video nebo obrázek) – vždy jen jedno."""
+    for p in sorted(studio_assets_dir().glob("intro.*")):
+        if p.suffix.lower() in STUDIO_INTRO_EXT:
+            return p
+    return None
+
+
+def studio_music_files() -> list:
+    out = []
+    for p in sorted(studio_assets_dir().joinpath("music").iterdir()):
+        if p.is_file() and p.suffix.lower() in STUDIO_MUSIC_EXT:
+            out.append({"name": p.name, "size_h": human_size(p.stat().st_size), "duration": ffprobe_info(p).get("duration", 0)})
+    return out
+
+
+def ffprobe_info(path) -> dict:
+    """Rozlišení, fps a délka (s) souboru; prázdný dict, když ffprobe selže."""
+    rc, out = run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,width,height,r_frame_rate:format=duration",
+                   "-of", "json", str(path)], timeout=30)
+    if rc != 0:
+        return {}
+    try:
+        data = json.loads(out)
+        info = {"duration": float((data.get("format") or {}).get("duration") or 0)}
+        for s in data.get("streams") or []:
+            if s.get("codec_type") == "video" and "width" not in info:
+                info["width"], info["height"] = int(s.get("width") or 0), int(s.get("height") or 0)
+                num, _, den = str(s.get("r_frame_rate") or "25/1").partition("/")
+                info["fps"] = round(float(num) / float(den or 1), 2) if float(den or 1) else 25.0
+            if s.get("codec_type") == "audio":
+                info["audio"] = True
+        return info
+    except (ValueError, TypeError, ZeroDivisionError):
+        return {}
+
+
+def studio_vars(cfg, export: dict, speed: int) -> dict:
+    """Proměnné do šablon textu, titulku a popisu: {kamera} {datum} {cas} {jev} {skore} {popis} {rychlost} {delka}."""
+    tz = ZoneInfo(cfg["tz"])
+    t0 = dt.datetime.fromtimestamp(export["start_ts"], tz)
+    v = {"kamera": cam_label(cfg, export["camera"]), "datum": f"{t0.day}. {t0.month}. {t0.year}", "cas": t0.strftime("%H:%M"),
+         "jev": "", "skore": "", "popis": "", "rychlost": str(speed), "delka": human_minutes(export["end_ts"] - export["start_ts"])}
+    if export.get("detection_id"):
+        with db() as con:
+            e = con.execute("SELECT ts, score, phenomenon, description FROM evaluations WHERE id=?", (export["detection_id"],)).fetchone()
+        if e:
+            v.update(jev=e["phenomenon"] or "", skore=str(e["score"] or ""), popis=e["description"] or "")
+            if e["ts"]:
+                v["cas"] = str(e["ts"])[11:16]
+    return v
+
+
+def studio_fill(tpl: str, v: dict) -> str:
+    out = str(tpl or "")
+    for k, val in v.items():
+        out = out.replace("{" + k + "}", str(val))
+    # prázdná značka nesmí nechat dva oddělovače za sebou („Kamera –  · 12. 9.“ → „Kamera · 12. 9.“)
+    out = re.sub(r"(\s+[–·|-]){2,}\s+", " · ", out)
+    out = "\n".join(line.strip(" –·|-") for line in out.split("\n"))
+    return re.sub(r"[ \t]+\n", "\n", out).strip()
+
+
+def studio_rows(cfg, export_id=None, sid=None) -> list:
+    q, args = "SELECT * FROM studio_videos", ()
+    if export_id:
+        q, args = q + " WHERE export_id=?", (export_id,)
+    elif sid:
+        q, args = q + " WHERE id=?", (sid,)
+    with db() as con:
+        rows = [dict(r) for r in con.execute(q + " ORDER BY id DESC", args)]
+    for r in rows:
+        f = Path(r["file"]) if r.get("file") else None
+        r["ready"] = bool(r["status"] == "ready" and f and f.is_file())
+        r["size_h"] = human_size(f.stat().st_size) if r["ready"] else ""
+        r["duration_h"] = f"{int(r['duration'] or 0) // 60}:{int(r['duration'] or 0) % 60:02d}" if r.get("duration") else ""
+        r["progress"] = _studio_progress.get(r["id"], 0) if r["status"] == "rendering" else (100 if r["ready"] else 0)
+        r["thumb"] = (studio_out_dir(cfg) / f"{r['id']}.jpg").is_file()
+        r["camera_label"] = cam_label(cfg, r["camera"])
+    return rows
+
+
+def studio_enqueue(cfg, export: dict, speed: int, intro: bool, music: str, text: str, title: str, description: str, auto: int = 0) -> int:
+    sc = studio_cfg(cfg)
+    speed = speed if speed in STUDIO_SPEEDS else int(sc.get("speed", 20) or 20)
+    if music and not (studio_assets_dir() / "music" / music).is_file():
+        music = ""
+    with db() as con:
+        cur = con.execute("INSERT INTO studio_videos (export_id, camera, name, speed, intro, music, text, title, description, status, created, auto) "
+                          "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                          (export["id"], export["camera"], export["name"], speed, 1 if intro else 0, music, text, title[:100], description[:5000],
+                           "queued", dt.datetime.now().isoformat(timespec="seconds"), auto))
+        sid = int(cur.lastrowid)
+    studio_kick()
+    return sid
+
+
+def studio_kick():
+    """Spustí renderovací vlákno, pokud neběží (jeden ffmpeg naráz – RPi má 4 jádra)."""
+    global _studio_thread
+    with _studio_lock:
+        if _studio_thread and _studio_thread.is_alive():
+            return
+        _studio_thread = threading.Thread(target=_studio_worker, name="studio", daemon=True)
+        _studio_thread.start()
+
+
+def _studio_worker():
+    while True:
+        with db() as con:
+            job = con.execute("SELECT * FROM studio_videos WHERE status='queued' ORDER BY id LIMIT 1").fetchone()
+        if not job:
+            return
+        job = dict(job)
+        cfg = load_config()
+        with db() as con:
+            con.execute("UPDATE studio_videos SET status='rendering', message='' WHERE id=?", (job["id"],))
+        try:
+            studio_render(cfg, job)
+        except Exception as e:
+            msg = str(e)[:400]
+            with db() as con:
+                con.execute("UPDATE studio_videos SET status='failed', message=? WHERE id=?", (msg, job["id"],))
+            log(f"Studio: video „{job['name']}“ se nepodařilo vytvořit: {msg}")
+            add_event("warn", f"Video ze studia nevzniklo: {job['name']}", msg)
+        finally:
+            _studio_progress.pop(job["id"], None)
+
+
+def _drawtext(font: str, textfile: Path, size: int, pos: str) -> str:
+    x = {"bl": "24", "tl": "24", "br": "w-tw-24", "tr": "w-tw-24", "bc": "(w-tw)/2", "tc": "(w-tw)/2"}[pos]
+    y = "24" if pos in ("tl", "tr", "tc") else "h-th-24"
+    return (f"drawtext=fontfile='{font}':textfile='{textfile}':fontsize={size}:fontcolor=white:borderw=3:bordercolor=black@0.6:"
+            f"x={x}:y={y}:line_spacing=6")
+
+
+def studio_render(cfg, job: dict):
+    """Sestaví a spustí ffmpeg: [intro] + zrychlený záznam (+ text) (+ hudba s fade in/out)."""
+    sc = studio_cfg(cfg)
+    if not storage_ready():
+        raise RuntimeError("Disk pro záznamy není připravený.")
+    with db() as con:
+        export = con.execute("SELECT * FROM exports WHERE id=?", (job["export_id"],)).fetchone()
+    if not export:
+        raise RuntimeError("Zdrojové video už neexistuje (bylo smazané).")
+    export = dict(export)
+    fr = frigate_exports(cfg).get(export["frigate_id"])
+    src = frigate_media_path(fr.get("video_path", "")) if fr else None
+    if not src or not src.is_file() or fr.get("in_progress"):
+        raise RuntimeError("Zdrojové video ještě není hotové nebo už bylo smazané.")
+    info = ffprobe_info(src)
+    if not info.get("duration") or not info.get("width"):
+        raise RuntimeError("Zdrojové video nejde přečíst (ffprobe).")
+    speed = int(job["speed"] or 20)
+    fps = 30
+    w, h = info["width"], info["height"]
+    if w > 1920:
+        h = int(round(h * 1920 / w / 2) * 2)
+        w = 1920
+    w, h = w - w % 2, h - h % 2
+    main_sec = max(1.0, info["duration"] / speed)
+    out_dir = studio_out_dir(cfg)
+    out = out_dir / f"{job['id']}.mp4"
+    tmp = out_dir / f"{job['id']}.part.mp4"
+    font = studio_font()
+    v = studio_vars(cfg, export, speed)
+    cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-progress", "pipe:1", "-nostats", "-threads", "4"]
+    if speed >= 120:
+        cmd += ["-skip_frame", "nokey"]     # při 120× a víc stačí klíčové snímky – dekóduje se mnohonásobně rychleji
+    cmd += ["-i", str(src)]
+    inputs = 1
+    filters = []
+    scale = f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps},format=yuv420p"
+    main = f"[0:v]setpts=PTS/{speed},{scale}"
+    notes = []
+    if job.get("text") and str(job["text"]).strip():
+        if font:
+            tf = out_dir / f"{job['id']}.txt"
+            tf.write_text(studio_fill(job["text"], v), encoding="utf-8")
+            main += "," + _drawtext(font, tf, int(sc.get("text_size", 36) or 36), sc.get("text_pos") if sc.get("text_pos") in STUDIO_TEXT_POS else "bl")
+        else:
+            notes.append("text do obrazu nepřidán – na RPi chybí font (nainstaluj balíček fonts-dejavu-core)")
+    main += "[main]"
+    filters.append(main)
+    intro_sec = 0.0
+    intro = studio_intro() if job.get("intro") else None
+    if intro:
+        if intro.suffix.lower() in (".png", ".jpg", ".jpeg"):
+            intro_sec = float(sc.get("intro_seconds", 4) or 4)
+            cmd += ["-loop", "1", "-t", f"{intro_sec:.2f}", "-i", str(intro)]
+            chain = f"[{inputs}:v]{scale}"
+            if font and sc.get("intro_title", True):
+                tf2 = out_dir / f"{job['id']}.intro.txt"
+                tf2.write_text(studio_fill(sc.get("intro_text", "{kamera}\n{datum}"), v), encoding="utf-8")
+                chain += "," + _drawtext(font, tf2, int(sc.get("text_size", 36) or 36) + 10, "bc").replace("y=h-th-24", "y=h-th-h/8")
+            chain += f",fade=t=in:st=0:d=0.6,fade=t=out:st={max(0.0, intro_sec - 0.6):.2f}:d=0.6[intro]"
+        else:
+            ii = ffprobe_info(intro)
+            intro_sec = min(float(ii.get("duration") or 0), float(sc.get("intro_max_seconds", 15) or 15)) or 0.0
+            if intro_sec <= 0:
+                raise RuntimeError("Intro video nejde přečíst.")
+            cmd += ["-t", f"{intro_sec:.2f}", "-i", str(intro)]
+            chain = f"[{inputs}:v]{scale}[intro]"
+        inputs += 1
+        filters.append(chain)
+        filters.append("[intro][main]concat=n=2:v=1:a=0[v]")
+    else:
+        filters.append("[main]null[v]")
+    total = intro_sec + main_sec
+    music = (studio_assets_dir() / "music" / job["music"]) if job.get("music") else None
+    if music and music.is_file():
+        fi, fo = float(sc.get("fade_in", 2) or 0), float(sc.get("fade_out", 4) or 0)
+        fo = min(fo, max(0.0, total - fi - 0.5))
+        vol = max(0.05, min(2.0, float(sc.get("music_volume", 0.8) or 0.8)))
+        cmd += ["-stream_loop", "-1", "-i", str(music)]
+        filters.append(f"[{inputs}:a]atrim=0:{total:.3f},asetpts=PTS-STARTPTS,afade=t=in:st=0:d={fi:.2f},"
+                       f"afade=t=out:st={max(0.0, total - fo):.3f}:d={fo:.2f},volume={vol:.2f}[a]")
+        inputs += 1
+        maps = ["-map", "[v]", "-map", "[a]", "-c:a", "aac", "-b:a", "160k"]
+    else:
+        maps = ["-map", "[v]", "-an"]
+    cmd += ["-filter_complex", ";".join(filters)] + maps + ["-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
+                                                          "-movflags", "+faststart", "-t", f"{total:.3f}", "-f", "mp4", str(tmp)]
+    log(f"Studio: vytvářím „{job['name']}“ – {speed}×, {main_sec:.0f} s{' + intro' if intro else ''}{' + hudba' if music else ''}")
+    started = time.time()
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    err_tail = ""
+    try:
+        for line in p.stdout:
+            if line.startswith("out_time_us="):
+                try:
+                    _studio_progress[job["id"]] = min(99, int(int(line.split("=")[1]) / 1_000_000 / total * 100))
+                except ValueError:
+                    pass
+            if time.time() - started > 3600:
+                p.kill()
+                raise RuntimeError("Vytváření trvalo přes hodinu – přerušeno.")
+        err_tail = (p.stderr.read() or "")[-600:]
+        p.wait(timeout=60)
+    finally:
+        if p.poll() is None:
+            p.kill()
+    if p.returncode != 0 or not tmp.is_file() or tmp.stat().st_size < 1000:
+        tmp.unlink(missing_ok=True)
+        raise RuntimeError("ffmpeg selhal: " + (err_tail.strip().splitlines() or ["neznámá chyba"])[-1])
+    tmp.replace(out)
+    run(["ffmpeg", "-v", "error", "-nostdin", "-y", "-ss", f"{min(intro_sec + 1.0, max(0.0, total - 0.5)):.2f}", "-i", str(out),
+         "-frames:v", "1", "-vf", "scale=640:-2", "-q:v", "4", str(out_dir / f"{job['id']}.jpg")], timeout=60)
+    for extra in (out_dir / f"{job['id']}.txt", out_dir / f"{job['id']}.intro.txt"):
+        extra.unlink(missing_ok=True)
+    real = ffprobe_info(out).get("duration") or total
+    with db() as con:
+        con.execute("UPDATE studio_videos SET status='ready', file=?, duration=?, message=?, finished=? WHERE id=?",
+                    (str(out), real, "; ".join(notes), dt.datetime.now().isoformat(timespec="seconds"), job["id"]))
+    log(f"Studio: video „{job['name']}“ hotové ({real:.0f} s, {human_size(out.stat().st_size)}, {time.time() - started:.0f} s práce)")
+    studio_after_render(cfg, job["id"])
+
+
+def studio_after_render(cfg, sid: int):
+    """Háček pro navazující kroky (4.6: automatické nahrání na YouTube)."""
+    return None
+
+
+def studio_delete(cfg, row: dict):
+    out_dir = studio_out_dir(cfg)
+    for p in (Path(row["file"]) if row.get("file") else None, out_dir / f"{row['id']}.jpg", out_dir / f"{row['id']}.part.mp4"):
+        if p:
+            p.unlink(missing_ok=True)
+    with db() as con:
+        con.execute("DELETE FROM studio_videos WHERE id=?", (row["id"],))
+
+
+def studio_auto(cfg):
+    """Automatika: hotové automatické video po upozornění → rovnou vyrobit verzi ze studia (volá smyčka)."""
+    sc = studio_cfg(cfg)
+    if not sc.get("auto"):
+        return
+    with db() as con:
+        cands = [dict(r) for r in con.execute(
+            "SELECT * FROM exports WHERE auto=1 AND id NOT IN (SELECT export_id FROM studio_videos) ORDER BY id DESC LIMIT 5")]
+    if not cands:
+        return
+    fr_all = frigate_exports(cfg)
+    for ex in cands:
+        fr = fr_all.get(ex["frigate_id"])
+        video = frigate_media_path(fr.get("video_path", "")) if fr else None
+        if not (video and video.is_file() and not fr.get("in_progress")):
+            continue
+        v = studio_vars(cfg, ex, int(sc.get("speed", 20) or 20))
+        studio_enqueue(cfg, ex, int(sc.get("speed", 20) or 20), bool(sc.get("intro", True) and studio_intro()), sc.get("music_default", ""),
+                       sc.get("text", "") if sc.get("text_enabled", True) else "", studio_fill(sc.get("title", ""), v),
+                       studio_fill(sc.get("description", ""), v), auto=1)
+        log(f"[{ex['camera']}] Studio: automatické video „{ex['name']}“ zařazeno ke zrychlení")
+
+
+def _studio_export(cfg, vid: int):
+    with db() as con:
+        rec = con.execute("SELECT * FROM exports WHERE id=?", (vid,)).fetchone()
+    return dict(rec) if rec else None
+
+
+def _studio_form_ctx(cfg, export: dict, speed: int):
+    sc = studio_cfg(cfg)
+    v = studio_vars(cfg, export, speed)
+    src_path = frigate_media_path((frigate_exports(cfg).get(export["frigate_id"]) or {}).get("video_path", ""))
+    src = ffprobe_info(src_path) if src_path and src_path.is_file() else {}
+    src.setdefault("duration", float(export["end_ts"] - export["start_ts"]))
+    return dict(sc=sc, speeds=STUDIO_SPEEDS, intro=studio_intro(), music=studio_music_files(), font=bool(studio_font()), vars=v, src=src)
+
+
+@app.get("/studio/new/{vid}", response_class=HTMLResponse)
+def studio_new(request: Request, vid: int, again: int = 0):
+    cfg = load_config()
+    export = _studio_export(cfg, vid)
+    if not export:
+        flash(request, "Tohle video už neexistuje.", "err")
+        return RedirectResponse("/videos", status_code=303)
+    sc = studio_cfg(cfg)
+    prev = studio_rows(cfg, sid=again)[0] if again else None
+    speed = int(prev["speed"]) if prev else int(sc.get("speed", 20) or 20)
+    ctx = _studio_form_ctx(cfg, export, speed)
+    v = ctx["vars"]
+    values = {"speed": speed, "intro": bool(prev["intro"]) if prev else bool(sc.get("intro", True)),
+              "music": prev["music"] if prev else sc.get("music_default", ""),
+              "text_on": bool(prev["text"]) if prev else bool(sc.get("text_enabled", True)),
+              "text": prev["text"] if prev and prev["text"] else sc.get("text", ""),
+              "title": prev["title"] if prev else studio_fill(sc.get("title", ""), v),
+              "description": prev["description"] if prev else studio_fill(sc.get("description", ""), v)}
+    return render(request, "studio_new.html", "Studio – nové video", export=export, values=values,
+                  subtitle="Zrychlení, intro, text a hudba k vystřiženému videu. Než se nahraje kamkoli, uvidíš výsledek.", **ctx)
+
+
+@app.post("/studio/new/{vid}")
+def studio_new_post(request: Request, vid: int, speed: int = Form(20), intro: str = Form(""), music: str = Form(""), text_on: str = Form(""),
+                    text: str = Form(""), title: str = Form(""), description: str = Form("")):
+    cfg = load_config()
+    export = _studio_export(cfg, vid)
+    if not export:
+        flash(request, "Tohle video už neexistuje.", "err")
+        return RedirectResponse("/videos", status_code=303)
+    sid = studio_enqueue(cfg, export, speed, bool(intro), music.strip(), text.strip() if text_on else "", title.strip() or export["name"],
+                         description.strip())
+    flash(request, "Video se vytváří – podle délky záznamu to trvá od pár sekund do několika minut. Stránka se sama obnoví.")
+    return RedirectResponse(f"/studio/v/{sid}", status_code=303)
+
+
+@app.get("/studio/v/{sid}", response_class=HTMLResponse)
+def studio_video(request: Request, sid: int):
+    cfg = load_config()
+    rows = studio_rows(cfg, sid=sid)
+    if not rows:
+        flash(request, "Video ze studia neexistuje.", "err")
+        return RedirectResponse("/videos", status_code=303)
+    r = rows[0]
+    queue_pos = 0
+    if r["status"] == "queued":
+        with db() as con:
+            queue_pos = int(con.execute("SELECT COUNT(*) FROM studio_videos WHERE status IN ('queued','rendering') AND id<?", (sid,)).fetchone()[0])
+    return render(request, "studio_video.html", r["title"] or r["name"], v=r, queue_pos=queue_pos, sc=studio_cfg(cfg),
+                  subtitle="Náhled hotového videa, úprava titulku a popisu, stažení.")
+
+
+@app.post("/studio/v/{sid}/meta")
+def studio_meta(request: Request, sid: int, title: str = Form(""), description: str = Form("")):
+    with db() as con:
+        con.execute("UPDATE studio_videos SET title=?, description=? WHERE id=?", (title.strip()[:100], description.strip()[:5000], sid))
+    flash(request, "Titulek a popis uloženy.")
+    return RedirectResponse(f"/studio/v/{sid}", status_code=303)
+
+
+@app.post("/studio/v/{sid}/delete")
+def studio_delete_post(request: Request, sid: int):
+    cfg = load_config()
+    rows = studio_rows(cfg, sid=sid)
+    if rows:
+        studio_delete(cfg, rows[0])
+        flash(request, "Video ze studia smazáno.")
+    return RedirectResponse("/videos#studio", status_code=303)
+
+
+def _studio_file(cfg, sid: int) -> tuple[dict | None, Path | None]:
+    rows = studio_rows(cfg, sid=sid)
+    if not rows or not rows[0]["ready"]:
+        return (rows[0] if rows else None), None
+    return rows[0], Path(rows[0]["file"])
+
+
+@app.get("/studio/v/{sid}/play.mp4")
+def studio_play(request: Request, sid: int):
+    r, f = _studio_file(load_config(), sid)
+    if not f:
+        return JSONResponse({"error": "video není hotové"}, status_code=404)
+    return _range_file(request, f)
+
+
+@app.get("/studio/v/{sid}/download")
+def studio_download(sid: int):
+    r, f = _studio_file(load_config(), sid)
+    if not f:
+        return JSONResponse({"error": "video není hotové"}, status_code=404)
+    fname = re.sub(r"[^\w\-. ]+", "_", r["title"] or r["name"]).strip() or f"studio-{sid}"
+    return FileResponse(str(f), media_type="video/mp4", filename=f"{fname}.mp4")
+
+
+@app.get("/studio/v/{sid}/thumb.jpg")
+def studio_thumb(sid: int):
+    p = studio_out_dir(load_config()) / f"{sid}.jpg"
+    if not p.is_file():
+        return JSONResponse({"error": "no thumb"}, status_code=404)
+    return FileResponse(str(p), headers={"Cache-Control": "private, max-age=3600"})
+
+
+@app.get("/studio/asset/intro")
+def studio_asset_intro(request: Request):
+    p = studio_intro()
+    if not p:
+        return JSONResponse({"error": "no intro"}, status_code=404)
+    if p.suffix.lower() in (".png", ".jpg", ".jpeg"):
+        return FileResponse(str(p))
+    return _range_file(request, p)
+
+
+@app.get("/studio/asset/music/{name}")
+def studio_asset_music(request: Request, name: str):
+    p = studio_assets_dir() / "music" / Path(name).name
+    if not p.is_file():
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return FileResponse(str(p))
+
+
+def _range_file(request: Request, video: Path):
+    """Soubor s podporou Range (přehrávání v prohlížeči s posouváním)."""
+    size = video.stat().st_size
+    ctype = "video/mp4" if video.suffix.lower() in (".mp4", ".m4v", ".mov") else "application/octet-stream"
+    rng = request.headers.get("range", "")
+    m = re.fullmatch(r"bytes=(\d*)-(\d*)", rng.strip()) if rng else None
+    headers = {"Accept-Ranges": "bytes", "Cache-Control": "private, max-age=3600", "Content-Disposition": "inline"}
+    if not m:
+        return FileResponse(str(video), media_type=ctype, headers=headers)
+    a, b = m.group(1), m.group(2)
+    start = int(a) if a else max(0, size - int(b or 0))
+    end = min(size - 1, int(b)) if (a and b) else size - 1
+    if start >= size or start > end:
+        return Response(status_code=416, headers={"Content-Range": f"bytes */{size}"})
+    length = end - start + 1
+
+    def gen():
+        with video.open("rb") as f:
+            f.seek(start)
+            left = length
+            while left > 0:
+                chunk = f.read(min(512 * 1024, left))
+                if not chunk:
+                    break
+                left -= len(chunk)
+                yield chunk
+    headers.update({"Content-Range": f"bytes {start}-{end}/{size}", "Content-Length": str(length)})
+    return StreamingResponse(gen(), status_code=206, media_type=ctype, headers=headers)
+
+
+@app.get("/studio/settings", response_class=HTMLResponse)
+def studio_settings(request: Request):
+    cfg = load_config()
+    intro = studio_intro()
+    ii = ffprobe_info(intro) if intro and intro.suffix.lower() not in (".png", ".jpg", ".jpeg") else {}
+    return render(request, "studio_settings.html", "Video studio", sc=studio_cfg(cfg), speeds=STUDIO_SPEEDS, positions=STUDIO_TEXT_POS,
+                  intro=intro, intro_is_image=bool(intro and intro.suffix.lower() in (".png", ".jpg", ".jpeg")), intro_info=ii,
+                  music=studio_music_files(), font=bool(studio_font()),
+                  auto_export_on=bool((cfg["ai"].get("auto_export") or {}).get("enabled")),
+                  subtitle="Jak se vyrábí zrychlená videa: rychlost, intro, text v obraze, hudba, titulek a popis. Ruční i automatický režim.")
+
+
+@app.post("/studio/settings")
+def studio_settings_post(request: Request, speed: int = Form(20), intro: str = Form(""), intro_seconds: float = Form(4), intro_title: str = Form(""),
+                         intro_text: str = Form(""), text_enabled: str = Form(""), text: str = Form(""), text_pos: str = Form("bl"), text_size: int = Form(36),
+                         music_default: str = Form(""), music_volume: float = Form(0.8), fade_in: float = Form(2), fade_out: float = Form(4),
+                         title: str = Form(""), description: str = Form(""), auto: str = Form("")):
+    with edit_config() as cfg:
+        cfg["studio"] = deep_merge(studio_cfg(cfg), {
+            "speed": speed if speed in STUDIO_SPEEDS else 20, "intro": bool(intro), "intro_seconds": max(1.0, min(15.0, intro_seconds)),
+            "intro_title": bool(intro_title), "intro_text": intro_text.strip()[:200], "text_enabled": bool(text_enabled), "text": text.strip()[:200],
+            "text_pos": text_pos if text_pos in STUDIO_TEXT_POS else "bl", "text_size": max(16, min(96, text_size)),
+            "music_default": music_default if (studio_assets_dir() / "music" / Path(music_default).name).is_file() else "",
+            "music_volume": max(0.05, min(2.0, music_volume)), "fade_in": max(0.0, min(15.0, fade_in)), "fade_out": max(0.0, min(15.0, fade_out)),
+            "title": title.strip()[:120], "description": description.strip()[:2000], "auto": bool(auto)})
+    flash(request, "Nastavení studia uloženo.")
+    return RedirectResponse("/studio/settings", status_code=303)
+
+
+async def _save_upload(up, dest: Path, max_bytes: int) -> int:
+    size = 0
+    tmp = dest.with_suffix(dest.suffix + ".part")
+    with tmp.open("wb") as f:
+        while True:
+            chunk = await up.read(1024 * 1024)
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > max_bytes:
+                f.close()
+                tmp.unlink(missing_ok=True)
+                raise ValueError(f"Soubor je větší než {human_size(max_bytes)}.")
+            f.write(chunk)
+    tmp.replace(dest)
+    return size
+
+
+@app.post("/studio/upload/intro")
+async def studio_upload_intro(request: Request, file: UploadFile):
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in STUDIO_INTRO_EXT:
+        flash(request, "Intro musí být MP4/MOV video nebo PNG/JPG obrázek.", "err")
+        return RedirectResponse("/studio/settings", status_code=303)
+    old = studio_intro()
+    dest = studio_assets_dir() / f"intro{ext}"
+    try:
+        await _save_upload(file, dest, 100 * 1024 * 1024)
+        if ext in (".png", ".jpg", ".jpeg"):
+            Image.open(dest).verify()
+        elif not ffprobe_info(dest).get("width"):
+            raise ValueError("Video nejde přečíst – zkus ho uložit jako MP4 (H.264).")
+    except Exception as e:
+        dest.unlink(missing_ok=True)
+        flash(request, f"Intro se nepodařilo nahrát: {e}", "err")
+        return RedirectResponse("/studio/settings", status_code=303)
+    if old and old != dest:
+        old.unlink(missing_ok=True)
+    flash(request, "Intro nahráno. Bude se přidávat před každé video (vypnout jde u videa i tady).")
+    return RedirectResponse("/studio/settings", status_code=303)
+
+
+@app.post("/studio/upload/intro/delete")
+def studio_intro_delete(request: Request):
+    p = studio_intro()
+    if p:
+        p.unlink(missing_ok=True)
+    flash(request, "Intro odstraněno.")
+    return RedirectResponse("/studio/settings", status_code=303)
+
+
+@app.post("/studio/upload/music")
+async def studio_upload_music(request: Request, file: UploadFile):
+    name = Path(file.filename or "").name
+    ext = Path(name).suffix.lower()
+    if ext not in STUDIO_MUSIC_EXT:
+        flash(request, "Hudba musí být MP3, M4A, AAC, WAV, OGG nebo FLAC.", "err")
+        return RedirectResponse("/studio/settings", status_code=303)
+    safe = re.sub(r"[^\w\-. ]+", "_", unicodedata.normalize("NFKD", Path(name).stem).encode("ascii", "ignore").decode()).strip("_ .") or "hudba"
+    dest = studio_assets_dir() / "music" / f"{safe[:60]}{ext}"
+    n = 1
+    while dest.exists():
+        n += 1
+        dest = dest.with_name(f"{safe[:60]}-{n}{ext}")
+    try:
+        await _save_upload(file, dest, 40 * 1024 * 1024)
+        if not ffprobe_info(dest).get("audio"):
+            raise ValueError("soubor neobsahuje zvukovou stopu")
+    except Exception as e:
+        dest.unlink(missing_ok=True)
+        flash(request, f"Hudbu se nepodařilo nahrát: {e}", "err")
+        return RedirectResponse("/studio/settings", status_code=303)
+    with edit_config() as cfg:
+        if not studio_cfg(cfg).get("music_default"):
+            cfg.setdefault("studio", {})["music_default"] = dest.name
+    flash(request, f"Hudba „{dest.name}“ nahrána. Použij jen hudbu, na kterou máš práva – YouTube cizí skladby ztlumí nebo video zablokuje.")
+    return RedirectResponse("/studio/settings", status_code=303)
+
+
+@app.post("/studio/upload/music/delete")
+def studio_music_delete(request: Request, name: str = Form(...)):
+    p = studio_assets_dir() / "music" / Path(name).name
+    if p.is_file():
+        p.unlink()
+    with edit_config() as cfg:
+        if studio_cfg(cfg).get("music_default") == Path(name).name:
+            cfg.setdefault("studio", {})["music_default"] = ""
+    flash(request, "Hudba odstraněna.")
+    return RedirectResponse("/studio/settings", status_code=303)
 
 
 def _delete_evaluations(cfg, where: str, args: tuple) -> int:
@@ -7277,6 +8085,26 @@ h2.day { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; col
 .lrow.err { background: var(--sw-err-bg); } .lrow.err .li { color: var(--sw-err); }
 .lrow.err .lx small, .lrow.warn .lx small { color: inherit; opacity: .85; }
 @media (max-width: 640px) { .lrow { grid-template-columns: 20px minmax(0, 1fr); } .lrow .lt { grid-column: 2; font-size: .72rem; } }
+
+/* ---------- Video studio (zrychlení, intro, hudba) ---------- */
+.seg.speeds label { cursor: pointer; }
+.studio-src { display: flex; gap: 1rem; align-items: center; }
+.studio-src .thumb { position: relative; width: 180px; aspect-ratio: 16 / 9; flex: none; border-radius: .5rem; overflow: hidden; background: var(--sw-img-bg); display: block; }
+.studio-src .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.studio-src .thumb .play { position: absolute; inset: 0; margin: auto; width: 40px; height: 40px; border-radius: 50%; background: rgba(2, 6, 23, .6); color: #fff; display: flex; align-items: center; justify-content: center; padding-left: .2rem; }
+.studio-wait { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .6rem; min-height: 260px; padding: 1.5rem; text-align: center; background: var(--sw-img-bg); }
+.studio-wait p { margin: 0; }
+.pbar { width: min(420px, 90%); height: 10px; border-radius: 999px; background: var(--pico-muted-border-color); overflow: hidden; }
+.pbar i { display: block; height: 100%; background: var(--pico-primary); transition: width .5s; }
+.studio-intro, .studio-music { display: flex; gap: .9rem; align-items: center; padding: .5rem 0; }
+.studio-intro img, .studio-intro video { width: 200px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: .5rem; background: #000; flex: none; }
+.studio-music audio { width: 220px; flex: none; height: 36px; }
+.studio-music > div, .studio-intro > div { flex: 1; min-width: 0; }
+.studio-acts { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.studio-acts .btn { margin: 0; }
+.btn.dis { opacity: .55; pointer-events: none; }
+input[type="file"] { padding: .4rem 0; }
+@media (max-width: 600px) { .studio-src { flex-direction: column; align-items: flex-start; } .studio-src .thumb { width: 100%; } .studio-music, .studio-intro { flex-wrap: wrap; } }
 ATMOVIO_CSS_EOF
   cat > "$1/atmovio.js" <<'ATMOVIO_JS_EOF'
 /* Atmovio – interakce (Alpine.js komponenty + pomocné funkce). */

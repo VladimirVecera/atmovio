@@ -94,7 +94,7 @@ fi
 # ----------------------------------------------------------------------------- 2. balíčky
 step "Aktualizace systému a instalace balíčků (může trvat několik minut)"
 apt-get update -q
-apt-get -y -q install ca-certificates curl gnupg jq git python3 python3-venv python3-pip ffmpeg \
+apt-get -y -q install ca-certificates curl gnupg jq git python3 python3-venv python3-pip ffmpeg fonts-dejavu-core \
   wireguard-tools iproute2 iputils-ping smartmontools hdparm parted e2fsprogs util-linux avahi-daemon \
   cockpit cockpit-networkmanager cockpit-storaged cockpit-packagekit \
   || die "Instalace balíčků selhala – viz $LOG"

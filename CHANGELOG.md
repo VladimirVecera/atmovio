@@ -2,6 +2,22 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 4.5 – 2026-09 – Video studio
+
+- **Video studio** (Videa → ⏩ Studio, Nastavení → Video studio): a finished clip becomes a shareable time-lapse.
+  Speed **10× / 20× / 30× / 60× / 120× / 240×** (the page tells you how long the result will be), optional **intro**
+  (an MP4 up to 15 s, or just a logo image that gets the camera name and date), **text in the picture** from a
+  template (`{kamera} · {datum} · {rychlost}×`), **background music** with a smooth fade in and fade out (looped when
+  shorter than the video), and an editable **title and description** pre-filled from the AI text.
+- **Preview first**: the video renders in the background (progress shown, one at a time so recording is not
+  disturbed); you watch it, edit the title/description, download the MP4. Nothing is uploaded anywhere yet –
+  YouTube upload with playlists arrives in 4.6, the "Nahrát na YouTube" button already shows where it will be.
+- **Automatic mode**: with "Automatika" on, every automatic alert video is turned into a studio video with the
+  default settings as soon as Frigate finishes cutting it.
+- Studio videos live on the recordings disk (`atmovio/studio`), are listed at the top of Videa and are deleted with
+  the same retention as clips. Uploads of intro/music are stored in the Atmovio data folder.
+- Installer/updater add `fonts-dejavu-core` (needed for text in the picture).
+
 ## 4.4.4 – 2026-09 – AI outages no longer swallow interesting skies
 
 - **Retries on provider hiccups**: a 503/529 "overloaded", a timeout or a dropped connection from the AI provider is

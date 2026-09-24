@@ -168,6 +168,11 @@ EOF
   systemctl restart smartmontools.service 2>/dev/null || true
 }
 if [[ ! -f /etc/systemd/system/smartmontools.service.d/nvr.conf ]] || grep -q -- '-m root' /etc/smartd.conf 2>/dev/null; then setup_smartd; fi
+# 4.5: text do videa (studio) potřebuje font – doinstalovat, pokud chybí (bez sítě se jen přeskočí)
+if [[ ! -f /usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf ]]; then
+  echo "Instaluji font pro text ve videích (fonts-dejavu-core)…"
+  (apt-get install -y -q fonts-dejavu-core >/dev/null 2>&1 || apt-get update -q >/dev/null 2>&1 && apt-get install -y -q fonts-dejavu-core >/dev/null 2>&1) || echo "Font se nepodařilo nainstalovat – text ve videích bude vypnutý (sudo apt install fonts-dejavu-core)."
+fi
 systemctl restart atmovio.service
 for _ in $(seq 1 20); do
   if systemctl is-active --quiet atmovio.service && "$NEW_VENV/bin/python" - <<'PY'
