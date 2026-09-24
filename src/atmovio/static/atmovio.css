@@ -610,3 +610,5 @@ h2.day { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; col
 .btn.dis { opacity: .55; pointer-events: none; }
 input[type="file"] { padding: .4rem 0; }
 @media (max-width: 600px) { .studio-src { flex-direction: column; align-items: flex-start; } .studio-src .thumb { width: 100%; } .studio-music, .studio-intro { flex-wrap: wrap; } }
+.speed-preview { margin-top: .7rem; }
+.speed-preview video { width: 100%; max-height: 420px; aspect-ratio: 16 / 9; background: #000; border-radius: .6rem; display: block; cursor: pointer; }

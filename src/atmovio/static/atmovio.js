@@ -99,6 +99,54 @@
         }
       };
     });
+
+  // ---------- Náhled rychlosti ve studiu: přehraje zdrojové video tak, jak bude vypadat zrychlené ----------
+    // Do 16× nativně, výš skoky v čase (jako v přehrávači). Orientační – hotové video je plynulé.
+    Alpine.data('speedPreview', function (src, speed) {
+      return {
+        src: src, on: false, speed: speed || 20, running: false, timer: null, seekHandler: null, pos: '',
+        fmt: function (t) { t = Math.max(1, Math.round(t || 0)); return Math.floor(t / 60) + ':' + ('0' + t % 60).slice(-2); },
+        get video() { return this.$refs.v; },
+        stop: function () {
+          this.running = false;
+          if (this.timer) { clearTimeout(this.timer); this.timer = null; }
+          if (this.seekHandler) { this.video.removeEventListener('seeked', this.seekHandler); this.seekHandler = null; }
+          this.video.pause();
+        },
+        tick: function () {
+          var self = this, v = this.video, ms = this.speed >= 120 ? 250 : 125;
+          if (!self.running) return;
+          if (!isFinite(v.duration)) { self.stop(); return; }
+        if (v.currentTime >= v.duration - 0.05) { v.currentTime = 0; }   // dokola, dokud to uživatel nezavře
+          var t0 = performance.now();
+          self.seekHandler = function () {
+            v.removeEventListener('seeked', self.seekHandler); self.seekHandler = null;
+            self.pos = self.fmt(v.currentTime) + ' / ' + self.fmt(v.duration);
+            if (!self.running) return;
+            self.timer = setTimeout(function () { self.tick(); }, Math.max(0, ms - (performance.now() - t0)));
+          };
+          v.addEventListener('seeked', self.seekHandler);
+          v.currentTime = Math.min(v.duration, v.currentTime + self.speed * ms / 1000);
+        },
+        play: function (speed) {
+          var self = this, v = this.video;
+          this.speed = speed; this.on = true; this.stop();
+          if (!v.src) { v.src = this.src; }
+          v.muted = true; v.loop = true;
+          var go = function () {
+            v.currentTime = 0;
+            if (self.speed <= 16) { v.playbackRate = self.speed; v.play().catch(function () {}); }
+            else { v.playbackRate = 1; self.running = true; self.tick(); }
+          };
+          if (v.readyState >= 1) go(); else v.addEventListener('loadedmetadata', go, { once: true });
+        },
+        init: function () {
+          var self = this;
+          this.$watch('speed', function (s) { if (self.on) self.play(s); });
+          this.$refs.v.addEventListener('timeupdate', function () { if (self.speed <= 16) self.pos = self.fmt(self.video.currentTime) + ' / ' + self.fmt(self.video.duration); });
+                  }
+      };
+    });
   });
 
   // ---------- Odeslání formuláře: zablokovat tlačítko a ukázat, co se děje ----------

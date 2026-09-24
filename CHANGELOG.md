@@ -2,6 +2,12 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 4.5.1 – 2026-09 – see the speed before rendering
+
+- Studio: **"Ukázat, jak bude video rychlé"** plays the source clip right on the page at the chosen speed
+  (10–240×, switch speeds while it plays, loops until closed) so you can pick the right speed by eye before
+  anything renders. Above 16× the preview steps through the clip, the finished video is smooth 30 fps.
+
 ## 4.5 – 2026-09 – Video studio
 
 - **Video studio** (Videa → ⏩ Studio, Nastavení → Video studio): a finished clip becomes a shareable time-lapse.

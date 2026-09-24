@@ -56,7 +56,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "4.5"
+APP_VERSION = "4.5.1"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -3166,16 +3166,22 @@ TEMPLATES["history.html"] = """{% extends "base.html" %}{% block actions %}<div 
 
 TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small sec" href="/videos">← Videa</a><a class="btn small sec" href="/studio/settings">⚙ Nastavení studia</a></div>{% endblock %}{% block content %}
 {% set intro_sec = (sc.intro_seconds if intro and intro.suffix|lower in ('.png', '.jpg', '.jpeg') else 0) %}
-<form method="post" x-data="{speed: {{ values.speed }}, src: {{ '%.1f'|format(src.duration or 0) }}, intro: {{ 'true' if values.intro and intro else 'false' }}, textOn: {{ 'true' if values.text_on else 'false' }}, music: '{{ values.music }}',
- fmt(s){ s = Math.max(1, Math.round(s)); return Math.floor(s / 60) + ':' + ('0' + s % 60).slice(-2); }}">
+<form method="post" x-data="{intro: {{ 'true' if values.intro and intro else 'false' }}, textOn: {{ 'true' if values.text_on else 'false' }}, music: '{{ values.music }}'}">
 <div class="grid-2" style="grid-template-columns:minmax(0,3fr) minmax(320px,2fr)">
 <div>
  <div class="card studio-src"><a class="thumb" href="/videos/{{ export.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ export.name }}"><img src="/videos/{{ export.id }}/thumb.jpg" alt="" onerror="this.style.visibility='hidden'"><span class="play">▶</span></a>
   <div><div class="hint">Zdrojové video</div><b>{{ export.name }}</b><div class="hint">{{ cam(export.camera) }} · záznam {{ vars.delka }}{% if src.width %} · {{ src.width }}×{{ src.height }}{% endif %}</div></div></div>
 
- <div class="card"><h2>1. Rychlost</h2>
+ <div class="card" x-data="speedPreview('/videos/{{ export.id }}/play.mp4', {{ values.speed }})"><h2>1. Rychlost</h2>
   <div class="seg speeds">{% for s in speeds %}<label :class="{on: speed === {{ s }}}"><input type="radio" name="speed" value="{{ s }}" x-model.number="speed" hidden>{{ s }}×</label>{% endfor %}</div>
-  <p class="hint" style="margin:.6rem 0 0">Ze záznamu dlouhého <b>{{ vars.delka }}</b> vznikne video dlouhé <b x-text="fmt(src / speed)"></b><template x-if="intro"><span> + intro</span></template>. Doporučení: západ slunce 20–30×, celý den 120–240×.</p></div>
+  <p class="hint" style="margin:.6rem 0 0">Ze záznamu dlouhého <b>{{ vars.delka }}</b> vznikne video dlouhé <b x-text="fmt({{ '%.1f'|format(src.duration or 0) }} / speed)"></b>. Doporučení: západ slunce 20–30×, celý den 120–240×.</p>
+  <div class="speed-preview" :class="{open: on}">
+   <button type="button" class="btn small sec" x-show="!on" @click="play(speed)">▶ Ukázat, jak bude video rychlé</button>
+   <div x-show="on" x-cloak>
+    <video x-ref="v" muted playsinline preload="metadata" poster="/videos/{{ export.id }}/thumb.jpg" @click="running || !video.paused ? stop() : play(speed)"></video>
+    <div class="row" style="align-items:center;margin-top:.4rem"><span class="hint">Náhled zdroje <b x-text="speed + '×'"></b> · <span x-text="pos"></span> · kliknutím na obraz zastavíš / spustíš. Náhled u vyšších rychlostí trochu poskakuje – hotové video bude plynulé (30 sn./s).</span><button type="button" class="btn small sec" @click="stop(); on = false">Zavřít náhled</button></div>
+   </div>
+  </div></div>
 
  <div class="card"><h2>2. Intro</h2>
   {% if intro %}<label class="check"><input type="checkbox" name="intro" value="1" x-model="intro">Přidat intro na začátek <span class="hint">({{ intro.name }}{% if intro_sec %}, {{ intro_sec|int }} s{% endif %})</span></label>

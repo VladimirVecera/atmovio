@@ -116,7 +116,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "4.5"
+APP_VERSION = "4.5.1"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -3226,16 +3226,22 @@ TEMPLATES["history.html"] = """{% extends "base.html" %}{% block actions %}<div 
 
 TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small sec" href="/videos">← Videa</a><a class="btn small sec" href="/studio/settings">⚙ Nastavení studia</a></div>{% endblock %}{% block content %}
 {% set intro_sec = (sc.intro_seconds if intro and intro.suffix|lower in ('.png', '.jpg', '.jpeg') else 0) %}
-<form method="post" x-data="{speed: {{ values.speed }}, src: {{ '%.1f'|format(src.duration or 0) }}, intro: {{ 'true' if values.intro and intro else 'false' }}, textOn: {{ 'true' if values.text_on else 'false' }}, music: '{{ values.music }}',
- fmt(s){ s = Math.max(1, Math.round(s)); return Math.floor(s / 60) + ':' + ('0' + s % 60).slice(-2); }}">
+<form method="post" x-data="{intro: {{ 'true' if values.intro and intro else 'false' }}, textOn: {{ 'true' if values.text_on else 'false' }}, music: '{{ values.music }}'}">
 <div class="grid-2" style="grid-template-columns:minmax(0,3fr) minmax(320px,2fr)">
 <div>
  <div class="card studio-src"><a class="thumb" href="/videos/{{ export.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ export.name }}"><img src="/videos/{{ export.id }}/thumb.jpg" alt="" onerror="this.style.visibility='hidden'"><span class="play">▶</span></a>
   <div><div class="hint">Zdrojové video</div><b>{{ export.name }}</b><div class="hint">{{ cam(export.camera) }} · záznam {{ vars.delka }}{% if src.width %} · {{ src.width }}×{{ src.height }}{% endif %}</div></div></div>
 
- <div class="card"><h2>1. Rychlost</h2>
+ <div class="card" x-data="speedPreview('/videos/{{ export.id }}/play.mp4', {{ values.speed }})"><h2>1. Rychlost</h2>
   <div class="seg speeds">{% for s in speeds %}<label :class="{on: speed === {{ s }}}"><input type="radio" name="speed" value="{{ s }}" x-model.number="speed" hidden>{{ s }}×</label>{% endfor %}</div>
-  <p class="hint" style="margin:.6rem 0 0">Ze záznamu dlouhého <b>{{ vars.delka }}</b> vznikne video dlouhé <b x-text="fmt(src / speed)"></b><template x-if="intro"><span> + intro</span></template>. Doporučení: západ slunce 20–30×, celý den 120–240×.</p></div>
+  <p class="hint" style="margin:.6rem 0 0">Ze záznamu dlouhého <b>{{ vars.delka }}</b> vznikne video dlouhé <b x-text="fmt({{ '%.1f'|format(src.duration or 0) }} / speed)"></b>. Doporučení: západ slunce 20–30×, celý den 120–240×.</p>
+  <div class="speed-preview" :class="{open: on}">
+   <button type="button" class="btn small sec" x-show="!on" @click="play(speed)">▶ Ukázat, jak bude video rychlé</button>
+   <div x-show="on" x-cloak>
+    <video x-ref="v" muted playsinline preload="metadata" poster="/videos/{{ export.id }}/thumb.jpg" @click="running || !video.paused ? stop() : play(speed)"></video>
+    <div class="row" style="align-items:center;margin-top:.4rem"><span class="hint">Náhled zdroje <b x-text="speed + '×'"></b> · <span x-text="pos"></span> · kliknutím na obraz zastavíš / spustíš. Náhled u vyšších rychlostí trochu poskakuje – hotové video bude plynulé (30 sn./s).</span><button type="button" class="btn small sec" @click="stop(); on = false">Zavřít náhled</button></div>
+   </div>
+  </div></div>
 
  <div class="card"><h2>2. Intro</h2>
   {% if intro %}<label class="check"><input type="checkbox" name="intro" value="1" x-model="intro">Přidat intro na začátek <span class="hint">({{ intro.name }}{% if intro_sec %}, {{ intro_sec|int }} s{% endif %})</span></label>
@@ -7745,6 +7751,8 @@ h2.day { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; col
 .btn.dis { opacity: .55; pointer-events: none; }
 input[type="file"] { padding: .4rem 0; }
 @media (max-width: 600px) { .studio-src { flex-direction: column; align-items: flex-start; } .studio-src .thumb { width: 100%; } .studio-music, .studio-intro { flex-wrap: wrap; } }
+.speed-preview { margin-top: .7rem; }
+.speed-preview video { width: 100%; max-height: 420px; aspect-ratio: 16 / 9; background: #000; border-radius: .6rem; display: block; cursor: pointer; }
 ATMOVIO_CSS_EOF
   cat > "$1/atmovio.js" <<'ATMOVIO_JS_EOF'
 /* Atmovio – interakce (Alpine.js komponenty + pomocné funkce). */
@@ -7846,6 +7854,54 @@ ATMOVIO_CSS_EOF
             })
             .catch(function () { self.phase = 'restart'; self.later(); });
         }
+      };
+    });
+
+  // ---------- Náhled rychlosti ve studiu: přehraje zdrojové video tak, jak bude vypadat zrychlené ----------
+    // Do 16× nativně, výš skoky v čase (jako v přehrávači). Orientační – hotové video je plynulé.
+    Alpine.data('speedPreview', function (src, speed) {
+      return {
+        src: src, on: false, speed: speed || 20, running: false, timer: null, seekHandler: null, pos: '',
+        fmt: function (t) { t = Math.max(1, Math.round(t || 0)); return Math.floor(t / 60) + ':' + ('0' + t % 60).slice(-2); },
+        get video() { return this.$refs.v; },
+        stop: function () {
+          this.running = false;
+          if (this.timer) { clearTimeout(this.timer); this.timer = null; }
+          if (this.seekHandler) { this.video.removeEventListener('seeked', this.seekHandler); this.seekHandler = null; }
+          this.video.pause();
+        },
+        tick: function () {
+          var self = this, v = this.video, ms = this.speed >= 120 ? 250 : 125;
+          if (!self.running) return;
+          if (!isFinite(v.duration)) { self.stop(); return; }
+        if (v.currentTime >= v.duration - 0.05) { v.currentTime = 0; }   // dokola, dokud to uživatel nezavře
+          var t0 = performance.now();
+          self.seekHandler = function () {
+            v.removeEventListener('seeked', self.seekHandler); self.seekHandler = null;
+            self.pos = self.fmt(v.currentTime) + ' / ' + self.fmt(v.duration);
+            if (!self.running) return;
+            self.timer = setTimeout(function () { self.tick(); }, Math.max(0, ms - (performance.now() - t0)));
+          };
+          v.addEventListener('seeked', self.seekHandler);
+          v.currentTime = Math.min(v.duration, v.currentTime + self.speed * ms / 1000);
+        },
+        play: function (speed) {
+          var self = this, v = this.video;
+          this.speed = speed; this.on = true; this.stop();
+          if (!v.src) { v.src = this.src; }
+          v.muted = true; v.loop = true;
+          var go = function () {
+            v.currentTime = 0;
+            if (self.speed <= 16) { v.playbackRate = self.speed; v.play().catch(function () {}); }
+            else { v.playbackRate = 1; self.running = true; self.tick(); }
+          };
+          if (v.readyState >= 1) go(); else v.addEventListener('loadedmetadata', go, { once: true });
+        },
+        init: function () {
+          var self = this;
+          this.$watch('speed', function (s) { if (self.on) self.play(s); });
+          this.$refs.v.addEventListener('timeupdate', function () { if (self.speed <= 16) self.pos = self.fmt(self.video.currentTime) + ' / ' + self.fmt(self.video.duration); });
+                  }
       };
     });
   });
