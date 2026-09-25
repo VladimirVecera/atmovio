@@ -475,7 +475,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "4.5.5"
+APP_VERSION = "4.6"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -590,6 +590,7 @@ DEFAULT_CONFIG = {
         "title": "{kamera} – {jev} · {datum}",
         "description": "{popis}\n\n{kamera}, {datum} {cas}. Záznam {delka}, zrychleno {rychlost}×.\nVytvořeno v Atmovio – atmovio.com",
         "auto": False,
+        "youtube": {"client_id": "", "client_secret": "", "privacy": "unlisted", "playlist_id": "", "tags": "Atmovio, obloha, timelapse, časosběr", "auto": False},
     },
     "alerts": {
         "camera_outage": True,
@@ -1064,8 +1065,13 @@ def db_init():
                 yt_status TEXT
             )"""
         )
+        scols = {r["name"] for r in con.execute("PRAGMA table_info(studio_videos)")}
+        for col in ("yt_meta TEXT", "yt_error TEXT"):
+            if col.split()[0] not in scols:
+                con.execute(f"ALTER TABLE studio_videos ADD COLUMN {col}")
         # po restartu (výpadek proudu uprostřed ffmpegu) se rozdělané video vyrobí znovu
         con.execute("UPDATE studio_videos SET status='queued' WHERE status='rendering'")
+        con.execute("UPDATE studio_videos SET yt_status='queued' WHERE yt_status='uploading'")
 
 
 AI_STAT_COLS = ("calls", "skipped", "errors", "interesting", "notified")
@@ -1962,6 +1968,7 @@ class AtmovioWatcher(threading.Thread):
         try:
             studio_auto(cfg)
             studio_kick()
+            yt_kick()
         except Exception as e:
             log(f"Studio: {e}")
         self.cleanup(cfg)
@@ -3535,7 +3542,7 @@ TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block actions %}<div c
 {% for s in studio %}<div class="shot video">
 {% if s.ready %}<a class="thumb" href="/studio/v/{{ s.id }}"><img src="{% if s.thumb %}/studio/v/{{ s.id }}/thumb.jpg{% endif %}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"><span class="play">▶</span><span class="dur">{{ s.duration_h }} · {{ s.speed }}×</span></a>
 {% else %}<a class="thumb wait" href="/studio/v/{{ s.id }}">{% if s.status == 'failed' %}<span>⚠️ nepodařilo se – {{ s.message }}</span>{% elif s.status == 'rendering' %}<span><span class="spin" style="display:inline-block;vertical-align:middle;width:18px;height:18px;margin-right:.4rem"></span>vytváří se… {{ s.progress }} %{% if s.eta_h %} · zbývá {{ s.eta_h }}{% endif %}</span>{% else %}<span>čeká ve frontě</span>{% endif %}</a>{% endif %}
-<div class="b"><div class="title">{{ s.title or s.name }}{% if s.auto %} <span class="badge ok">auto</span>{% endif %}</div>
+<div class="b"><div class="title">{{ s.title or s.name }}{% if s.auto %} <span class="badge ok">auto</span>{% endif %}{% if s.yt_status == 'done' %} <a class="badge info" href="{{ s.yt_url }}" target="_blank" rel="noopener">▶ YouTube</a>{% elif s.yt_status in ('queued', 'uploading') %} <span class="badge info">nahrává se na YouTube</span>{% elif s.yt_status == 'failed' %} <span class="badge err">YouTube selhalo</span>{% endif %}</div>
 <dl class="facts"><dt>Kamera</dt><dd>{{ s.camera_label }}</dd><dt>Úpravy</dt><dd>{{ s.speed }}×{% if s.intro %} · intro{% endif %}{% if s.music %} · hudba{% endif %}{% if s.text %} · text{% endif %}</dd><dt>Vytvořeno</dt><dd>{{ s.created|czdt }}</dd></dl>
 <div class="acts"><a class="btn small" href="/studio/v/{{ s.id }}">Otevřít</a>{% if s.ready %}<a class="btn small sec" href="/studio/v/{{ s.id }}/download">⬇ Stáhnout</a>{% endif %}
 <form method="post" action="/studio/v/{{ s.id }}/delete" onsubmit="return confirm('Smazat video ze studia?')"><button class="btn small sec">Smazat</button></form></div></div></div>{% endfor %}
@@ -3678,11 +3685,24 @@ TEMPLATES["studio_video.html"] = """{% extends "base.html" %}{% block actions %}
   <div class="row" style="margin-top:.6rem"><button class="btn small">Uložit</button></div></form>
  <div class="card"><h2>Co dál</h2>
   <div class="acts studio-acts">{% if v.ready %}<a class="btn" href="/studio/v/{{ v.id }}/download">⬇ Stáhnout MP4</a>{% endif %}
-  <span class="btn sec dis" title="Přijde v příští verzi Atmovio (4.6)">▶ Nahrát na YouTube <small>· brzy</small></span>
   <form method="post" action="/studio/v/{{ v.id }}/delete" onsubmit="return confirm('Smazat toto video ze studia? Původní vystřižené video zůstane.')"><button class="btn small sec">Smazat</button></form></div>
   <p class="hint" style="margin:.6rem 0 0">Původní vystřižené video zůstává ve Videích; smazání tady se ho netýká.</p></div>
+ <div class="card" id="youtube"><h2>▶ YouTube</h2>
+ {% if v.yt_status == 'done' and v.yt_url %}<p><span class="badge ok">nahráno</span> <a href="{{ v.yt_url }}" target="_blank" rel="noopener"><b>{{ v.yt_url }}</b></a></p><p class="hint">Titulek, popis, viditelnost i playlist můžeš dál upravit přímo na YouTube (YouTube Studio).</p>
+ {% elif v.yt_status in ('queued', 'uploading') %}<p><span class="spin" style="display:inline-block;vertical-align:middle;width:18px;height:18px;margin-right:.4rem"></span><b>{% if v.yt_status == 'queued' %}Čeká na nahrání…{% else %}Nahrávám… {{ v.yt_progress }} %{% endif %}</b></p><div class="pbar"><i style="width:{{ v.yt_progress }}%"></i></div><form method="post" action="/studio/v/{{ v.id }}/youtube/reset" data-nobusy style="margin-top:.5rem"><button class="btn small sec">Zrušit</button></form>
+ {% elif not yt_linked %}<p class="hint">YouTube ještě není propojený. Nastavíš to jednou v <a href="/studio/settings#youtube">Nastavení → Video studio → YouTube</a> (průvodce krok za krokem).</p>
+ {% elif not v.ready %}<p class="hint">Až bude video hotové, půjde nahrát.</p>
+ {% else %}{% if v.yt_status == 'failed' %}<p><span class="badge err">nepodařilo se</span> {{ v.yt_error }}</p>{% endif %}
+  <form method="post" action="/studio/v/{{ v.id }}/youtube" x-data="{pl: '{{ yt.playlist_id or '' }}'}">
+   <input type="hidden" name="title" :value="document.querySelector('form[action$=\'/meta\'] input[name=title]').value"><input type="hidden" name="description" :value="document.querySelector('form[action$=\'/meta\'] textarea[name=description]').value">
+   <div class="hint">Kanál <b>{{ yt.channel_title }}</b>. Použije se titulek a popis z rámečku nahoře (ulož je dřív, nebo je bere tak, jak jsou vyplněné).</div>
+   <div class="row" style="margin-top:.5rem"><div><label>Viditelnost</label><select name="privacy">{% for k, l in yt_privacy.items() %}<option value="{{ k }}"{% if (yt.privacy or 'unlisted') == k %} selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+   <div><label>Playlist</label><select name="playlist_id" x-model="pl"><option value="">bez playlistu</option>{% for p in yt.playlists or [] %}<option value="{{ p.id }}">{{ p.title }}</option>{% endfor %}<option value="__new__">＋ nový playlist…</option></select></div></div>
+   <div x-show="pl === '__new__'" x-cloak><label>Název nového playlistu</label><input type="text" name="playlist_new" placeholder="např. Západy slunce – Sehradice"></div>
+   <div class="row" style="margin-top:.6rem;align-items:center"><button class="btn" data-busy="Zařazuji k nahrání">▶ Nahrát na YouTube</button><span class="hint">Nahrání spotřebuje kousek denní kvóty YouTube API (vejde se ~6 videí denně).</span></div>
+  </form>{% endif %}</div>
 </div></div>
-{% if v.status in ('queued', 'rendering') %}<div x-data="autorefresh(8)"></div>{% endif %}
+{% if v.status in ('queued', 'rendering') or v.yt_status in ('queued', 'uploading') %}<div x-data="autorefresh(8)"></div>{% endif %}
 {% endblock %}"""
 
 TEMPLATES["studio_settings.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small sec" href="/videos">🎬 Videa</a></div>{% endblock %}{% block content %}
@@ -3702,6 +3722,39 @@ TEMPLATES["studio_settings.html"] = """{% extends "base.html" %}{% block actions
  {% else %}<p class="hint">Zatím žádná hudba. Nahraj MP3 (nebo M4A/WAV/OGG/FLAC) – u každého videa pak vybereš, která se použije.</p>{% endif %}
  <form method="post" action="/studio/upload/music" enctype="multipart/form-data" class="row" style="align-items:end;margin-top:.6rem"><div><label>Přidat vlastní hudbu (do 40 MB)</label><input type="file" name="file" accept=".mp3,.m4a,.aac,.wav,.ogg,.flac" required></div><button class="btn small" data-busy="Nahrávám hudbu">Nahrát</button></form>
  <p class="hint" style="margin:.6rem 0 0">Vlastní hudbu nahrávej jen s právy k ní (YouTube cizí skladby ztlumí nebo zablokuje). Hudbu z Openverse hledáš přímo u každého videa v Studiu – je pod licencí CC0 / CC BY a autor se do popisu doplní sám.</p></div>
+
+ <div class="card" id="youtube" x-data="ytLink({{ 'true' if link_active else 'false' }})"><h2>▶ YouTube – propojení kanálu</h2>
+ {% if yt.refresh_token %}
+  <p><span class="badge ok">propojeno</span> kanál <b>{{ yt.channel_title or '?' }}</b>{% if yt.linked %} <span class="hint">· {{ yt.linked|czdt }}</span>{% endif %} · {{ (yt.playlists or [])|length }} playlistů</p>
+  <form method="post" action="/studio/youtube/defaults">
+   <div class="row"><div><label>Výchozí viditelnost</label><select name="privacy">{% for k, l in yt_privacy.items() %}<option value="{{ k }}"{% if (yt.privacy or 'unlisted') == k %} selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+   <div><label>Výchozí playlist</label><select name="playlist_id"><option value="">bez playlistu</option>{% for p in yt.playlists or [] %}<option value="{{ p.id }}"{% if yt.playlist_id == p.id %} selected{% endif %}>{{ p.title }}</option>{% endfor %}</select></div></div>
+   <label>Štítky (oddělené čárkou)</label><input type="text" name="tags" value="{{ yt.tags }}" maxlength="400">
+   <label class="check"><input type="checkbox" name="auto" value="1"{% if yt.auto %} checked{% endif %}>Automatická videa po upozornění rovnou nahrát na YouTube (s touto viditelností a playlistem)</label>
+   <div class="hint">Automatika nahraje jen videa, která vznikla automaticky (Automatika ve studiu musí být zapnutá). Ručně vytvořená videa nahraješ tlačítkem u videa.</div>
+   <div class="row" style="margin-top:.6rem"><button class="btn small">Uložit</button></div></form>
+  <div class="row" style="margin-top:.8rem"><form method="post" action="/studio/youtube/playlists" data-nobusy><button class="btn small sec">↻ Načíst playlisty</button></form>
+   <form method="post" action="/studio/youtube/link" data-nobusy><button class="btn small sec" title="Např. pro jiný kanál nebo brand účet">Propojit znovu / jiný kanál</button></form>
+   <form method="post" action="/studio/youtube/unlink" onsubmit="return confirm('Odpojit YouTube? Videa na YouTube zůstanou.')" data-nobusy><button class="btn small sec">Odpojit</button></form></div>
+ {% else %}
+  <div class="guide"><div><b>Jednorázové nastavení (asi 10 minut).</b> Google nedovolí Atmovio nahrávat na tvůj kanál bez vlastního „klíče aplikace“ – vytvoříš ho zdarma v Google Cloud Console. Postup krok za krokem je i v <a href="https://github.com/{{ github_repo }}/blob/main/docs/youtube.md" target="_blank" rel="noopener">dokumentaci</a>.</div></div>
+  <ol class="steps">
+   <li>Otevři <a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener">console.cloud.google.com/projectcreate</a>, projekt pojmenuj třeba <b>Atmovio</b> a vytvoř ho (přihlášený účtem, který má YouTube kanál).</li>
+   <li>Zapni <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noopener">YouTube Data API v3</a> (tlačítko <b>Povolit / Enable</b>).</li>
+   <li>Obrazovka souhlasu: <a href="https://console.cloud.google.com/auth/overview" target="_blank" rel="noopener">Google Auth platform → Začínáme</a>: název aplikace <b>Atmovio</b>, tvůj e-mail, typ <b>Externí</b>, kontaktní e-mail, souhlas → Vytvořit. Potom v <b>Publikum (Audience)</b> klikni na <b>Publikovat aplikaci</b> – jinak by propojení platilo jen 7 dní.</li>
+   <li><a href="https://console.cloud.google.com/auth/clients/create" target="_blank" rel="noopener">Vytvoř klienta</a>: typ <b>Televize a zařízení s omezeným vstupem</b>, název <b>Atmovio</b> → Vytvořit. Zobrazí se <b>Client ID</b> a <b>Client secret</b> – zkopíruj je sem:</li>
+  </ol>
+  <form method="post" action="/studio/youtube/client">
+   <div class="row"><div><label>Client ID</label><input type="text" name="client_id" value="{{ yt.client_id }}" placeholder="xxxxxxxx.apps.googleusercontent.com" required></div>
+   <div><label>Client secret</label><input type="password" name="client_secret" value="{{ yt.client_secret }}" placeholder="GOCSPX-…"{% if not yt.client_secret %} required{% endif %}></div></div>
+   <div class="row" style="margin-top:.5rem"><button class="btn small">Uložit klíče</button></div></form>
+  {% if yt.client_id and yt.client_secret %}
+  <div style="margin-top:.9rem" x-show="!st.status"><form method="post" action="/studio/youtube/link" data-nobusy><button class="btn">▶ Propojit YouTube</button></form>
+   <div class="hint">Klikneš, dostaneš krátký kód, zadáš ho na google.com/device, vybereš kanál a povolíš. Hotovo.</div></div>
+  <div x-show="st.status === 'waiting'" x-cloak class="yt-code"><div class="hint">1. Otevři <a :href="st.url" target="_blank" rel="noopener" x-text="st.url"></a></div><div class="hint">2. Zadej tento kód:</div><div class="code" x-text="st.user_code"></div><div class="hint">3. Vyber kanál (nebo brand účet) a klikni na <b>Povolit</b>. Tahle stránka se pak sama přepne. <span x-text="'Kód platí ještě ' + Math.floor(st.remaining / 60) + ' min.'"></span></div><p class="hint" x-show="st.error" x-text="st.error"></p></div>
+  <div x-show="st.status === 'failed'" x-cloak><p><span class="badge err">nepodařilo se</span> <span x-text="st.error"></span></p><form method="post" action="/studio/youtube/link" data-nobusy><button class="btn small">Zkusit znovu</button></form></div>
+  {% endif %}
+ {% endif %}</div>
 
  <div class="card"><h2>Hledání hudby (Openverse)</h2>
  {% if ov.client_id %}<p>Atmovio je u Openverse zaregistrované (<b>{{ ov.email }}</b>, {{ ov.registered|czdt }}). Po kliknutí na potvrzovací odkaz z e-mailu není potřeba nic dalšího – hledání hudby u videí (Videa → ⏩ Studio → 4. Hudba) používá registraci automaticky. <span x-data="{r: ''}"><button type="button" class="btn small sec" @click="r = 'zkouším…'; fetch('/studio/music/search?q=piano').then(x => x.json()).then(d => r = d.error ? '✖ ' + d.error : '✓ hledání funguje (' + d.items.length + ' skladeb pro „piano“)').catch(() => r = '✖ nepodařilo se spojit')">Vyzkoušet hledání</button> <span class="hint" x-text="r"></span></span></p>
@@ -5925,6 +5978,7 @@ def studio_rows(cfg, export_id=None, sid=None) -> list:
         eta = _studio_eta.get(r["id"]) if r["status"] == "rendering" else None
         r["eta_h"] = (f"asi {int(eta // 60)} min" if eta >= 90 else f"asi {int(round(eta / 10) * 10) or 10} s") if eta else ""
         r["thumb"] = (studio_out_dir(cfg) / f"{r['id']}.jpg").is_file()
+        r["yt_progress"] = _yt_progress.get(r["id"], 0)
         r["camera_label"] = cam_label(cfg, r["camera"])
     return rows
 
@@ -6141,11 +6195,6 @@ def studio_render(cfg, job: dict):
     studio_after_render(cfg, job["id"])
 
 
-def studio_after_render(cfg, sid: int):
-    """Háček pro navazující kroky (4.6: automatické nahrání na YouTube)."""
-    return None
-
-
 def studio_delete(cfg, row: dict):
     out_dir = studio_out_dir(cfg)
     for p in (Path(row["file"]) if row.get("file") else None, out_dir / f"{row['id']}.jpg", out_dir / f"{row['id']}.part.mp4"):
@@ -6241,7 +6290,7 @@ def studio_video(request: Request, sid: int):
     if r["status"] == "queued":
         with db() as con:
             queue_pos = int(con.execute("SELECT COUNT(*) FROM studio_videos WHERE status IN ('queued','rendering') AND id<?", (sid,)).fetchone()[0])
-    return render(request, "studio_video.html", r["title"] or r["name"], v=r, queue_pos=queue_pos, sc=studio_cfg(cfg),
+    return render(request, "studio_video.html", r["title"] or r["name"], v=r, queue_pos=queue_pos, sc=studio_cfg(cfg), yt=yt_cfg(cfg), yt_linked=yt_linked(cfg), yt_privacy=YT_PRIVACY,
                   subtitle="Náhled hotového videa, úprava titulku a popisu, stažení.")
 
 
@@ -6349,6 +6398,7 @@ def studio_settings(request: Request):
     intro = studio_intro()
     ii = ffprobe_info(intro) if intro and intro.suffix.lower() not in (".png", ".jpg", ".jpeg") else {}
     return render(request, "studio_settings.html", "Video studio", sc=studio_cfg(cfg), speeds=STUDIO_SPEEDS, positions=STUDIO_TEXT_POS, ov=openverse_cfg(cfg),
+                  yt=yt_cfg(cfg), yt_privacy=YT_PRIVACY, link_active=bool(_yt_link.get("status") == "waiting"),
                   intro=intro, intro_is_image=bool(intro and intro.suffix.lower() in (".png", ".jpg", ".jpeg")), intro_info=ii,
                   music=studio_music_files(), font=bool(studio_font()),
                   auto_export_on=bool((cfg["ai"].get("auto_export") or {}).get("enabled")),
@@ -6630,6 +6680,404 @@ def studio_openverse_forget(request: Request):
     _ov_token.update(token="", until=0)
     flash(request, "Registrace Openverse odstraněna – hledání běží anonymně (malý limit).")
     return RedirectResponse("/studio/settings", status_code=303)
+
+
+# =============================================================================
+#  YOUTUBE – propojení účtu (OAuth „zařízení s omezeným vstupem“: kód + google.com/device),
+#  playlisty, nahrání hotového videa ze studia. Vše přes YouTube Data API v3.
+# =============================================================================
+YT_SCOPE = "https://www.googleapis.com/auth/youtube"
+YT_API = "https://www.googleapis.com/youtube/v3"
+YT_PRIVACY = {"unlisted": "Nezveřejněné (jen kdo má odkaz)", "public": "Veřejné", "private": "Soukromé"}
+_yt_link: dict = {}            # probíhající propojení: device_code, user_code, url, expires, interval, status, error
+_yt_token: dict = {"token": "", "until": 0.0}
+_yt_progress: dict = {}        # studio id → % nahrání
+_yt_thread: threading.Thread | None = None
+_yt_lock = threading.Lock()
+
+
+def yt_cfg(cfg) -> dict:
+    return dict((cfg.get("studio") or {}).get("youtube") or {})
+
+
+def yt_linked(cfg) -> bool:
+    y = yt_cfg(cfg)
+    return bool(y.get("client_id") and y.get("client_secret") and y.get("refresh_token"))
+
+
+def yt_access_token(cfg) -> str:
+    """Krátkodobý token z refresh tokenu (cache ~55 min)."""
+    y = yt_cfg(cfg)
+    if not yt_linked(cfg):
+        raise RuntimeError("YouTube není propojený – Nastavení → Video studio → YouTube.")
+    if _yt_token["token"] and time.time() < _yt_token["until"]:
+        return _yt_token["token"]
+    r = requests.post("https://oauth2.googleapis.com/token", data={"client_id": y["client_id"], "client_secret": y["client_secret"],
+                      "refresh_token": y["refresh_token"], "grant_type": "refresh_token"}, timeout=20)
+    data = r.json() if r.content else {}
+    if not r.ok or not data.get("access_token"):
+        err = data.get("error_description") or data.get("error") or f"HTTP {r.status_code}"
+        if data.get("error") == "invalid_grant":
+            err = ("Google propojení zneplatnil (u aplikace v režimu „testování“ platí jen 7 dní – v Google Cloud Console "
+                   "na obrazovce souhlasu klikni na „Publikovat aplikaci“). Propoj YouTube znovu.")
+        raise RuntimeError(err)
+    _yt_token.update(token=data["access_token"], until=time.time() + int(data.get("expires_in", 3600)) - 120)
+    return _yt_token["token"]
+
+
+def yt_call(cfg, method: str, path: str, **kw) -> dict:
+    kw.setdefault("timeout", 30)
+    headers = kw.pop("headers", {})
+    headers["Authorization"] = "Bearer " + yt_access_token(cfg)
+    r = requests.request(method, YT_API + path if path.startswith("/") else path, headers=headers, **kw)
+    data = r.json() if r.content and "json" in r.headers.get("content-type", "") else {}
+    if not r.ok:
+        e = (data.get("error") or {}) if isinstance(data, dict) else {}
+        reason = ((e.get("errors") or [{}])[0].get("reason") or "") if isinstance(e, dict) else ""
+        msg = e.get("message") if isinstance(e, dict) else ""
+        if reason in ("quotaExceeded", "dailyLimitExceeded"):
+            raise RuntimeError("Vyčerpaná denní kvóta YouTube API (obnoví se o půlnoci pacifického času, tj. ~9:00 našeho).")
+        if reason == "youtubeSignupRequired":
+            raise RuntimeError("Tento Google účet nemá YouTube kanál – vytvoř ho na youtube.com a propoj znovu.")
+        raise RuntimeError(f"YouTube API: {msg or reason or ('HTTP ' + str(r.status_code))}")
+    return data
+
+
+def yt_channel(cfg) -> dict:
+    d = yt_call(cfg, "GET", "/channels", params={"part": "snippet", "mine": "true"})
+    items = d.get("items") or []
+    if not items:
+        raise RuntimeError("Tento Google účet nemá YouTube kanál – vytvoř ho na youtube.com a propoj znovu.")
+    c = items[0]
+    return {"id": c["id"], "title": c["snippet"]["title"], "thumb": ((c["snippet"].get("thumbnails") or {}).get("default") or {}).get("url", "")}
+
+
+def yt_playlists(cfg) -> list:
+    out, token = [], ""
+    for _ in range(5):
+        d = yt_call(cfg, "GET", "/playlists", params={"part": "snippet,status", "mine": "true", "maxResults": 50, "pageToken": token})
+        out += [{"id": p["id"], "title": p["snippet"]["title"], "privacy": (p.get("status") or {}).get("privacyStatus", "")} for p in d.get("items") or []]
+        token = d.get("nextPageToken") or ""
+        if not token:
+            break
+    return out
+
+
+def yt_create_playlist(cfg, title: str, privacy: str = "public") -> dict:
+    d = yt_call(cfg, "POST", "/playlists", params={"part": "snippet,status"},
+                json={"snippet": {"title": title[:150]}, "status": {"privacyStatus": privacy if privacy in YT_PRIVACY else "public"}})
+    return {"id": d["id"], "title": d["snippet"]["title"]}
+
+
+def yt_start_link(cfg) -> dict:
+    """Krok 1 propojení: Google vydá kód, uživatel ho zadá na google.com/device a povolí přístup."""
+    y = yt_cfg(cfg)
+    if not (y.get("client_id") and y.get("client_secret")):
+        raise RuntimeError("Nejdřív ulož Client ID a Client secret z Google Cloud Console.")
+    r = requests.post("https://oauth2.googleapis.com/device/code", data={"client_id": y["client_id"], "scope": YT_SCOPE}, timeout=20)
+    data = r.json() if r.content else {}
+    if not r.ok or not data.get("device_code"):
+        err = data.get("error_description") or data.get("error") or f"HTTP {r.status_code}"
+        if data.get("error") == "invalid_client":
+            err = "Google nezná toto Client ID – zkontroluj, že je zkopírované celé a že je klient typu „Televize a zařízení s omezeným vstupem“."
+        raise RuntimeError(err)
+    _yt_link.clear()
+    _yt_link.update(device_code=data["device_code"], user_code=data["user_code"], url=data.get("verification_url") or "https://www.google.com/device",
+                    expires=time.time() + int(data.get("expires_in", 1800)), interval=max(5, int(data.get("interval", 5))), status="waiting", error="")
+    threading.Thread(target=_yt_link_poll, args=(y["client_id"], y["client_secret"]), daemon=True).start()
+    return dict(_yt_link)
+
+
+def _yt_link_poll(client_id: str, client_secret: str):
+    dc = _yt_link.get("device_code")
+    while _yt_link.get("device_code") == dc and time.time() < _yt_link.get("expires", 0):
+        time.sleep(_yt_link.get("interval", 5))
+        try:
+            r = requests.post("https://oauth2.googleapis.com/token", data={"client_id": client_id, "client_secret": client_secret,
+                              "device_code": dc, "grant_type": "urn:ietf:params:oauth:grant-type:device_code"}, timeout=20)
+            data = r.json() if r.content else {}
+        except Exception as e:
+            _yt_link.update(error=f"Google neodpovídá: {e}")
+            continue
+        err = data.get("error")
+        if err == "authorization_pending":
+            continue
+        if err == "slow_down":
+            _yt_link["interval"] = _yt_link.get("interval", 5) + 5
+            continue
+        if err:
+            _yt_link.update(status="failed", error={"access_denied": "Přístup jsi v Googlu zamítl.", "expired_token": "Kód vypršel – zkus to znovu."}.get(err, data.get("error_description") or err))
+            return
+        if not data.get("refresh_token"):
+            _yt_link.update(status="failed", error="Google nevrátil trvalý token – zkus propojení znovu (a při souhlasu povol vše, co Google nabídne).")
+            return
+        with edit_config() as cfg:
+            y = dict(yt_cfg(cfg))
+            y.update(refresh_token=data["refresh_token"], linked=dt.datetime.now().isoformat(timespec="seconds"))
+            cfg.setdefault("studio", {})["youtube"] = y
+        _yt_token.update(token=data.get("access_token", ""), until=time.time() + int(data.get("expires_in", 3600)) - 120)
+        try:
+            cfg = load_config()
+            ch = yt_channel(cfg)
+            pls = yt_playlists(cfg)
+            with edit_config() as cfg:
+                y = dict(yt_cfg(cfg))
+                y.update(channel_id=ch["id"], channel_title=ch["title"], channel_thumb=ch.get("thumb", ""), playlists=pls)
+                cfg.setdefault("studio", {})["youtube"] = y
+            _yt_link.update(status="done", error="", channel=ch["title"])
+            log(f"YouTube: propojen kanál „{ch['title']}“ ({len(pls)} playlistů)")
+        except Exception as e:
+            _yt_link.update(status="done", error=f"Propojeno, ale kanál se nepodařilo načíst: {e}")
+        return
+    if _yt_link.get("device_code") == dc and _yt_link.get("status") == "waiting":
+        _yt_link.update(status="failed", error="Kód vypršel – klikni znovu na Propojit YouTube.")
+
+
+def yt_refresh_playlists(cfg) -> list:
+    pls = yt_playlists(cfg)
+    with edit_config() as c:
+        y = dict(yt_cfg(c)); y["playlists"] = pls; c.setdefault("studio", {})["youtube"] = y
+    return pls
+
+
+# ---------- nahrávání ----------
+def yt_enqueue(cfg, sid: int, privacy: str, playlist_id: str, playlist_new: str = ""):
+    with db() as con:
+        row = con.execute("SELECT * FROM studio_videos WHERE id=?", (sid,)).fetchone()
+    if not row or row["status"] != "ready":
+        raise RuntimeError("Video ještě není hotové.")
+    if row["yt_status"] in ("queued", "uploading"):
+        raise RuntimeError("Nahrávání už probíhá.")
+    meta = {"privacy": privacy if privacy in YT_PRIVACY else "unlisted", "playlist_id": playlist_id or "", "playlist_new": playlist_new.strip()[:150]}
+    with db() as con:
+        con.execute("UPDATE studio_videos SET yt_status='queued', yt_url=NULL, yt_meta=?, yt_error='' WHERE id=?", (json.dumps(meta, ensure_ascii=False), sid))
+    yt_kick()
+
+
+def yt_kick():
+    global _yt_thread
+    with _yt_lock:
+        if _yt_thread and _yt_thread.is_alive():
+            return
+        _yt_thread = threading.Thread(target=_yt_worker, name="youtube", daemon=True)
+        _yt_thread.start()
+
+
+def _yt_worker():
+    while True:
+        with db() as con:
+            job = con.execute("SELECT * FROM studio_videos WHERE yt_status='queued' ORDER BY id LIMIT 1").fetchone()
+        if not job:
+            return
+        job = dict(job)
+        cfg = load_config()
+        with db() as con:
+            con.execute("UPDATE studio_videos SET yt_status='uploading' WHERE id=?", (job["id"],))
+        try:
+            url = yt_upload(cfg, job)
+            with db() as con:
+                con.execute("UPDATE studio_videos SET yt_status='done', yt_url=?, yt_error='' WHERE id=?", (url, job["id"]))
+        except Exception as e:
+            msg = str(e)[:400]
+            with db() as con:
+                con.execute("UPDATE studio_videos SET yt_status='failed', yt_error=? WHERE id=?", (msg, job["id"]))
+            log(f"YouTube: nahrání „{job['title'] or job['name']}“ selhalo: {msg}")
+            add_event("warn", f"Nahrání na YouTube selhalo: {job['title'] or job['name']}", msg)
+        finally:
+            _yt_progress.pop(job["id"], None)
+
+
+def yt_upload(cfg, job: dict) -> str:
+    """Obnovitelné nahrání (resumable upload) po 8 MB; vrátí adresu videa."""
+    f = Path(job["file"] or "")
+    if not f.is_file():
+        raise RuntimeError("Soubor videa už neexistuje.")
+    try:
+        meta = json.loads(job.get("yt_meta") or "{}")
+    except ValueError:
+        meta = {}
+    y = yt_cfg(cfg)
+    privacy = meta.get("privacy") or y.get("privacy") or "unlisted"
+    playlist_id = meta.get("playlist_id") or ""
+    if meta.get("playlist_new"):
+        pl = yt_create_playlist(cfg, meta["playlist_new"], "public" if privacy == "public" else "unlisted")
+        playlist_id = pl["id"]
+        try:
+            yt_refresh_playlists(cfg)
+        except Exception:
+            pass
+    tags = [t.strip() for t in str(y.get("tags") or "").split(",") if t.strip()][:30]
+    body = {"snippet": {"title": (job["title"] or job["name"])[:100], "description": (job["description"] or "")[:4900], "tags": tags,
+                        "categoryId": "22", "defaultLanguage": "cs"},
+            "status": {"privacyStatus": privacy, "selfDeclaredMadeForKids": False}}
+    size = f.stat().st_size
+    token = yt_access_token(cfg)
+    r = requests.post("https://www.googleapis.com/upload/youtube/v3/videos", params={"uploadType": "resumable", "part": "snippet,status"},
+                      headers={"Authorization": "Bearer " + token, "Content-Type": "application/json; charset=UTF-8",
+                               "X-Upload-Content-Length": str(size), "X-Upload-Content-Type": "video/mp4"},
+                      json=body, timeout=30)
+    if not r.ok:
+        data = r.json() if r.content and "json" in r.headers.get("content-type", "") else {}
+        e = (data.get("error") or {}) if isinstance(data, dict) else {}
+        reason = ((e.get("errors") or [{}])[0].get("reason") or "") if isinstance(e, dict) else ""
+        if reason in ("quotaExceeded", "dailyLimitExceeded"):
+            raise RuntimeError("Vyčerpaná denní kvóta YouTube API (asi 6 videí denně; obnoví se ~9:00 našeho času).")
+        if r.status_code in (401, 403):
+            raise RuntimeError(f"YouTube odmítl nahrání ({e.get('message') or reason or r.status_code}). Zkontroluj, že je v Google Cloud zapnuté YouTube Data API v3 a že jsi při propojení povolil správu YouTube účtu.")
+        raise RuntimeError(f"YouTube API: {e.get('message') or reason or ('HTTP ' + str(r.status_code))}")
+    session = r.headers.get("Location")
+    if not session:
+        raise RuntimeError("YouTube nevrátil adresu pro nahrání.")
+    chunk = 8 * 1024 * 1024
+    sent = 0
+    video_id = ""
+    with f.open("rb") as fh:
+        while sent < size:
+            data = fh.read(chunk)
+            end = sent + len(data) - 1
+            for attempt in range(4):
+                try:
+                    pr = requests.put(session, data=data, timeout=(20, 300),
+                                      headers={"Authorization": "Bearer " + yt_access_token(cfg), "Content-Length": str(len(data)),
+                                               "Content-Range": f"bytes {sent}-{end}/{size}"})
+                except Exception as e:
+                    if attempt == 3:
+                        raise RuntimeError(f"Spojení s YouTube se přerušilo: {e}")
+                    time.sleep(3 * (attempt + 1))
+                    continue
+                if pr.status_code in (200, 201):
+                    video_id = (pr.json() or {}).get("id", "")
+                    sent = size
+                    break
+                if pr.status_code == 308:
+                    rng = pr.headers.get("Range", "")
+                    sent = int(rng.split("-")[-1]) + 1 if rng else end + 1
+                    break
+                if pr.status_code in (500, 502, 503, 504) and attempt < 3:
+                    time.sleep(3 * (attempt + 1))
+                    continue
+                raise RuntimeError(f"YouTube nahrání selhalo (HTTP {pr.status_code}): {pr.text[:200]}")
+            _yt_progress[job["id"]] = min(99, int(sent * 100 / size))
+            if sent < size and sent != end + 1:
+                fh.seek(sent)
+    if not video_id:
+        raise RuntimeError("YouTube nevrátil ID videa.")
+    url = f"https://youtu.be/{video_id}"
+    if playlist_id:
+        try:
+            yt_call(cfg, "POST", "/playlistItems", params={"part": "snippet"},
+                    json={"snippet": {"playlistId": playlist_id, "resourceId": {"kind": "youtube#video", "videoId": video_id}}})
+        except Exception as e:
+            log(f"YouTube: video {video_id} nahráno, ale zařazení do playlistu selhalo: {e}")
+            add_event("warn", "Video je na YouTube, ale ne v playlistu", str(e))
+    log(f"YouTube: „{job['title'] or job['name']}“ nahráno – {url} ({YT_PRIVACY.get(privacy, privacy)})")
+    add_event("info", f"Video nahráno na YouTube: {job['title'] or job['name']}", url)
+    return url
+
+
+def studio_after_render(cfg, sid: int):
+    """Po dorenderování automatického videa: nahrát na YouTube, je-li automatika zapnutá."""
+    y = yt_cfg(cfg)
+    if not (y.get("auto") and yt_linked(cfg)):
+        return
+    with db() as con:
+        row = con.execute("SELECT auto FROM studio_videos WHERE id=?", (sid,)).fetchone()
+    if row and row["auto"]:
+        try:
+            yt_enqueue(cfg, sid, y.get("privacy") or "unlisted", y.get("playlist_id") or "")
+            log(f"YouTube: automatické video #{sid} zařazeno k nahrání")
+        except Exception as e:
+            log(f"YouTube: automatické nahrání se nepodařilo zařadit: {e}")
+
+
+# ---------- routy ----------
+@app.post("/studio/youtube/client")
+def studio_yt_client(request: Request, client_id: str = Form(""), client_secret: str = Form("")):
+    with edit_config() as cfg:
+        y = dict(yt_cfg(cfg))
+        cid, sec = client_id.strip(), client_secret.strip()
+        if cid != y.get("client_id") or (sec and sec != y.get("client_secret")):
+            y.pop("refresh_token", None); y.pop("channel_title", None); y.pop("playlists", None)
+        y["client_id"] = cid
+        if sec:
+            y["client_secret"] = sec
+        cfg.setdefault("studio", {})["youtube"] = y
+    _yt_token.update(token="", until=0)
+    flash(request, "Uloženo. Teď klikni na „Propojit YouTube“.")
+    return RedirectResponse("/studio/settings#youtube", status_code=303)
+
+
+@app.post("/studio/youtube/link")
+def studio_yt_link(request: Request):
+    try:
+        yt_start_link(load_config())
+    except Exception as e:
+        flash(request, f"Propojení se nepodařilo spustit: {e}", "err")
+    return RedirectResponse("/studio/settings#youtube", status_code=303)
+
+
+@app.get("/studio/youtube/status")
+def studio_yt_status():
+    d = {k: v for k, v in _yt_link.items() if k != "device_code"}
+    d["remaining"] = max(0, int(_yt_link.get("expires", 0) - time.time())) if _yt_link else 0
+    return JSONResponse(d)
+
+
+@app.post("/studio/youtube/unlink")
+def studio_yt_unlink(request: Request):
+    with edit_config() as cfg:
+        y = dict(yt_cfg(cfg))
+        for k in ("refresh_token", "channel_id", "channel_title", "channel_thumb", "playlists", "linked"):
+            y.pop(k, None)
+        cfg.setdefault("studio", {})["youtube"] = y
+    _yt_token.update(token="", until=0)
+    _yt_link.clear()
+    flash(request, "YouTube odpojen (Client ID zůstává uložené).")
+    return RedirectResponse("/studio/settings#youtube", status_code=303)
+
+
+@app.post("/studio/youtube/playlists")
+def studio_yt_playlists(request: Request):
+    try:
+        pls = yt_refresh_playlists(load_config())
+        flash(request, f"Načteno {len(pls)} playlistů.")
+    except Exception as e:
+        flash(request, f"Playlisty se nepodařilo načíst: {e}", "err")
+    return RedirectResponse("/studio/settings#youtube", status_code=303)
+
+
+@app.post("/studio/youtube/defaults")
+def studio_yt_defaults(request: Request, privacy: str = Form("unlisted"), playlist_id: str = Form(""), tags: str = Form(""), auto: str = Form("")):
+    with edit_config() as cfg:
+        y = dict(yt_cfg(cfg))
+        y.update(privacy=privacy if privacy in YT_PRIVACY else "unlisted", playlist_id=playlist_id.strip(), tags=tags.strip()[:400], auto=bool(auto))
+        cfg.setdefault("studio", {})["youtube"] = y
+    flash(request, "Nastavení YouTube uloženo.")
+    return RedirectResponse("/studio/settings#youtube", status_code=303)
+
+
+@app.post("/studio/v/{sid}/youtube")
+def studio_yt_upload_post(request: Request, sid: int, privacy: str = Form("unlisted"), playlist_id: str = Form(""), playlist_new: str = Form(""),
+                          title: str = Form(""), description: str = Form("")):
+    cfg = load_config()
+    if not yt_linked(cfg):
+        flash(request, "YouTube není propojený – nastav ho v Nastavení → Video studio.", "err")
+        return RedirectResponse(f"/studio/v/{sid}", status_code=303)
+    with db() as con:
+        con.execute("UPDATE studio_videos SET title=?, description=? WHERE id=?", (title.strip()[:100], description.strip()[:5000], sid))
+    try:
+        yt_enqueue(cfg, sid, privacy, playlist_id, playlist_new)
+        flash(request, "Nahrávám na YouTube – podle velikosti videa to trvá od pár sekund do minut. Stránka se obnovuje sama.")
+    except Exception as e:
+        flash(request, str(e), "err")
+    return RedirectResponse(f"/studio/v/{sid}", status_code=303)
+
+
+@app.post("/studio/v/{sid}/youtube/reset")
+def studio_yt_reset(request: Request, sid: int):
+    with db() as con:
+        con.execute("UPDATE studio_videos SET yt_status=NULL, yt_error='' WHERE id=? AND yt_status IN ('failed','queued','uploading')", (sid,))
+    return RedirectResponse(f"/studio/v/{sid}", status_code=303)
 
 
 def _delete_evaluations(cfg, where: str, args: tuple) -> int:
@@ -8435,6 +8883,8 @@ input[type="file"] { padding: .4rem 0; }
 .speed-pick input[type="range"] { flex: 1; margin: 0; accent-color: var(--pico-primary); }
 .speed-pick .btn { margin: 0; flex: none; }
 .speed-val { font-size: 1.5rem; font-weight: 800; min-width: 4.2rem; text-align: right; }
+.yt-code { margin-top: .9rem; padding: .9rem 1rem; border-radius: .7rem; background: var(--pico-card-sectioning-background-color); border: 1px solid var(--pico-card-border-color); }
+.yt-code .code { font-size: 2.2rem; font-weight: 800; letter-spacing: .12em; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin: .3rem 0 .5rem; user-select: all; }
 ATMOVIO_CSS_EOF
   cat > "$1/atmovio.js" <<'ATMOVIO_JS_EOF'
 /* Atmovio – interakce (Alpine.js komponenty + pomocné funkce). */
@@ -8535,6 +8985,24 @@ ATMOVIO_CSS_EOF
               self.phase = 'run'; self.later();
             })
             .catch(function () { self.phase = 'restart'; self.later(); });
+        }
+      };
+    });
+
+    // ---------- Propojení YouTube: sleduje stav zadání kódu na google.com/device ----------
+    Alpine.data('ytLink', function (active) {
+      return {
+        st: {},
+        init: function () {
+          var self = this;
+          function poll() {
+            fetch('/studio/youtube/status', { credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (d) {
+              self.st = d || {};
+              if (d.status === 'done') { location.href = '/studio/settings#youtube'; location.reload(); return; }
+              if (d.status === 'waiting') setTimeout(poll, 4000);
+            }).catch(function () { setTimeout(poll, 8000); });
+          }
+          if (active) poll();
         }
       };
     });

@@ -100,6 +100,24 @@
       };
     });
 
+    // ---------- Propojení YouTube: sleduje stav zadání kódu na google.com/device ----------
+    Alpine.data('ytLink', function (active) {
+      return {
+        st: {},
+        init: function () {
+          var self = this;
+          function poll() {
+            fetch('/studio/youtube/status', { credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (d) {
+              self.st = d || {};
+              if (d.status === 'done') { location.href = '/studio/settings#youtube'; location.reload(); return; }
+              if (d.status === 'waiting') setTimeout(poll, 4000);
+            }).catch(function () { setTimeout(poll, 8000); });
+          }
+          if (active) poll();
+        }
+      };
+    });
+
     // ---------- Hledání hudby (Openverse) přímo u videa ----------
     Alpine.data('musicFinder', function (initial) {
       return {

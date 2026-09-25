@@ -2,6 +2,19 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 4.6 – 2026-09 – YouTube upload
+
+- **YouTube**: a finished studio video is uploaded to your channel from the video page (visibility, playlist or a
+  new playlist, title and description taken from the page) with a progress bar and the link when done; or
+  **automatically** for alert videos (Nastavení → Video studio → YouTube). Videos in the Videa list show a
+  ▶ YouTube badge with the link.
+- **Linking for humans**: a step-by-step guide inside Atmovio (Google Cloud project → enable YouTube Data API →
+  consent screen → "TVs and Limited Input devices" client), then *Propojit YouTube* shows a short code you type
+  at google.com/device – no redirect URLs, works from any browser, brand accounts supported. Playlists are
+  loaded automatically; "Propojit znovu / jiný kanál" switches channels. Full guide in `docs/youtube.md`.
+- Resumable upload in 8 MB chunks with retries; quota and token errors are explained in plain words
+  (about 6 uploads a day; publish the consent screen so the link does not expire after 7 days).
+
 ## 4.5.5 – 2026-09 – readable overlay text, Openverse check
 
 - Text in the picture sits on a translucent dark strip, so it is readable over a bright sky as well as over the
