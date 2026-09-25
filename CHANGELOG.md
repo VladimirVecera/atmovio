@@ -2,6 +2,12 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 4.6.6 – 2026-09 – delete everything about a video, any time
+
+- "Smazat z RPi" moved to the "Co dál" box and works whether or not the video went to YouTube: the studio
+  video (always), the source clip and the AI detection with its snapshot are each a switch – tick all three and
+  nothing about the video remains on the Pi. Blocked only while an upload is running.
+
 ## 4.6.5 – 2026-09 – the countdown is actually visible
 
 - The "vytváří se… / zbývá asi … · hotovo asi v …" text in the rendering box was dark-on-dark in the light theme.

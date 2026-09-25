@@ -56,7 +56,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "4.6.5"
+APP_VERSION = "4.6.6"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -3300,18 +3300,17 @@ TEMPLATES["studio_video.html"] = """{% extends "base.html" %}{% block actions %}
   <label>Popis</label><textarea name="description" rows="9">{{ v.description }}</textarea>
   <div class="row" style="margin-top:.6rem"><button class="btn small">Uložit</button></div></form>
  <div class="card"><h2>Co dál</h2>
-  <div class="acts studio-acts">{% if v.ready %}<a class="btn" href="/studio/v/{{ v.id }}/download">⬇ Stáhnout MP4</a>{% endif %}
-  <form method="post" action="/studio/v/{{ v.id }}/delete" onsubmit="return confirm('Smazat toto video ze studia? Původní vystřižené video zůstane.')"><button class="btn small sec">Smazat</button></form></div>
-  <p class="hint" style="margin:.6rem 0 0">Původní vystřižené video zůstává ve Videích; smazání tady se ho netýká.</p></div>
+  <div class="acts studio-acts">{% if v.ready %}<a class="btn" href="/studio/v/{{ v.id }}/download">⬇ Stáhnout MP4</a>{% endif %}</div>
+  <form method="post" action="/studio/v/{{ v.id }}/cleanup" class="cleanup" onsubmit="return confirm('Smazat z RPi vybrané položky? Nejde vrátit.{% if v.yt_url %} Video na YouTube zůstane.{% endif %}')">
+   <h3>🗑 Smazat z RPi</h3>
+   <label class="check"><input type="checkbox" checked disabled>Toto video ze studia{% if v.size_h %} ({{ v.size_h }}){% endif %}</label>
+   <label class="check"><input type="checkbox" name="source" value="1"{% if v.yt_status == 'done' %} checked{% endif %}>Vystřižený klip (zdroj, ve Videích)</label>
+   <label class="check"><input type="checkbox" name="detection" value="1">Detekci AI včetně snímku (z historie) – po videu nezůstane nic</label>
+   <div class="row" style="align-items:center"><button class="btn small sec">Smazat vybrané</button><span class="hint">{% if v.yt_url %}Video je bezpečně na YouTube – uvolní se místo na disku.{% else %}Nechceš ho na YouTube? Zaškrtni vše a je pryč.{% endif %}</span></div>
+  </form></div>
  <div class="card" id="youtube"><h2>▶ YouTube</h2>
  {% if v.yt_status == 'done' and v.yt_url %}<p><span class="badge ok">nahráno</span> <a href="{{ v.yt_url }}" target="_blank" rel="noopener"><b>{{ v.yt_url }}</b></a></p><p class="hint">Titulek, popis, viditelnost i playlist můžeš dál upravit přímo na YouTube (YouTube Studio).</p>
-  <form method="post" action="/studio/v/{{ v.id }}/cleanup" class="cleanup" onsubmit="return confirm('Smazat z RPi vybrané položky? Video na YouTube zůstane.')">
-   <h3>Uklidit z RPi</h3>
-   <label class="check"><input type="checkbox" checked disabled>Toto video ze studia ({{ v.size_h }})</label>
-   <label class="check"><input type="checkbox" name="source" value="1" checked>Vystřižený klip (zdroj, ve Videích)</label>
-   <label class="check"><input type="checkbox" name="detection" value="1">Detekci AI včetně snímku (z historie)</label>
-   <div class="row" style="align-items:center"><button class="btn small sec">🗑 Smazat z RPi</button><span class="hint">Video je bezpečně na YouTube – uvolní se místo na disku.</span></div>
-  </form>
+  <p class="hint">Uvolnit místo na RPi můžeš v rámečku „Co dál“ – video na YouTube zůstane.</p>
  {% elif v.yt_status in ('queued', 'uploading') %}<p><span class="spin" style="display:inline-block;vertical-align:middle;width:18px;height:18px;margin-right:.4rem"></span><b>{% if v.yt_status == 'queued' %}Čeká na nahrání…{% else %}Nahrávám… {{ v.yt_progress }} %{% endif %}</b></p><div class="pbar"><i style="width:{{ v.yt_progress }}%"></i></div>{% if v.yt_eta_s %}<p class="eta"><span x-data="countdown({{ v.yt_eta_s }})" x-text="txt"></span> · na YouTube asi v <b>{{ v.yt_eta_at }}</b></p>{% endif %}<form method="post" action="/studio/v/{{ v.id }}/youtube/reset" data-nobusy style="margin-top:.5rem"><button class="btn small sec">Zrušit</button></form>
  {% elif not yt_linked %}<p class="hint">YouTube ještě není propojený. Nastavíš to jednou v <a href="/studio/settings#youtube">Nastavení → Video studio → YouTube</a> (průvodce krok za krokem).</p>
  {% elif not v.ready %}<p class="hint">Až bude video hotové, půjde nahrát.</p>
@@ -6826,8 +6825,8 @@ def studio_cleanup(request: Request, sid: int, source: str = Form(""), detection
     if not rows:
         return RedirectResponse("/videos#studio", status_code=303)
     r = rows[0]
-    if r.get("yt_status") != "done":
-        flash(request, "Uklidit jde až po úspěšném nahrání na YouTube.", "err")
+    if r.get("yt_status") in ("queued", "uploading"):
+        flash(request, "Počkej, až doběhne nahrávání na YouTube (nebo ho zruš).", "err")
         return RedirectResponse(f"/studio/v/{sid}", status_code=303)
     done = ["video ze studia"]
     with db() as con:
@@ -6848,8 +6847,8 @@ def studio_cleanup(request: Request, sid: int, source: str = Form(""), detection
         n = _delete_evaluations(cfg, "id=?", (det_id,))
         if n:
             done.append("detekce AI se snímkem")
-    log(f"Studio: po nahrání na YouTube uklizeno – {', '.join(done)} ({r['yt_url']})")
-    flash(request, f"Uklizeno z RPi: {', '.join(done)}. Video zůstává na YouTube: {r['yt_url']}")
+    log(f"Studio: smazáno z RPi – {', '.join(done)}" + (f" (na YouTube zůstává {r['yt_url']})" if r.get("yt_url") else ""))
+    flash(request, f"Smazáno z RPi: {', '.join(done)}." + (f" Video zůstává na YouTube: {r['yt_url']}" if r.get("yt_url") else ""))
     return RedirectResponse("/videos#studio", status_code=303)
 
 
