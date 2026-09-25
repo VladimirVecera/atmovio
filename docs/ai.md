@@ -71,3 +71,15 @@ The clip is created once the "after" minutes have passed; you find it in **Videa
 - Missed sunsets? Lower the threshold to 6, make sure the window is *nautical* and the camera actually sees the horizon.
 - Camera goes to IR/black-and-white at dusk → the dark-frame filter handles it; lower the dark threshold (12–15) if it skips too early.
 - Add "extra instructions" to tell the model about permanent objects in the frame.
+
+## Filmstrip (since 4.7)
+
+By default the AI does not see a single snapshot but one composite picture: the current frame on top (labelled
+"teď") and a strip of older frames from the same camera below, each with its age ("−45 min"). The prompt asks the
+model to judge the current sky *in the light of how it developed* and to return, besides score and phenomena, a
+`trend` (nastupuje / vrcholí / odeznívá / beze změny) and a `timelapse` score 0–10 (how impressive a time-lapse of
+the last minutes would be). Both are stored and shown in Historie and on the detection page ("Co AI viděla").
+Alerts are still triggered by the score. Settings: Nastavení → AI → Kdy se dívat → Filmový pás (on/off, number of
+frames, minutes back). The strip is built from thumbnails Atmovio keeps in memory from every check, so it fills up
+during the first hour after a start.
+

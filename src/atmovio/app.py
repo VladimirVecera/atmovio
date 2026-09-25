@@ -40,7 +40,7 @@ from xml.sax.saxutils import escape
 from zoneinfo import ZoneInfo
 
 import requests
-from PIL import Image, ImageChops, ImageStat
+from PIL import Image, ImageChops, ImageDraw, ImageFont, ImageStat
 from fastapi import FastAPI, Form, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -56,7 +56,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "4.6.6"
+APP_VERSION = "4.7"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -150,6 +150,7 @@ DEFAULT_CONFIG = {
         "margin_min": 60,
         "twilight": "nautical",
         "dark_skip": True,
+        "strip": {"enabled": True, "frames": 6, "span_min": 60},   # filmový pás: AI vidí i vývoj oblohy dozadu
         "dark_level": 22,
         "threshold": 7,
         "cooldown_min": 15,
@@ -543,6 +544,10 @@ def db_init():
             con.execute("ALTER TABLE evaluations ADD COLUMN phenomena TEXT")
         if "note" not in cols:
             con.execute("ALTER TABLE evaluations ADD COLUMN note TEXT")
+        if "trend" not in cols:
+            con.execute("ALTER TABLE evaluations ADD COLUMN trend TEXT")
+        if "timelapse" not in cols:
+            con.execute("ALTER TABLE evaluations ADD COLUMN timelapse INTEGER")
         con.execute(
             """CREATE TABLE IF NOT EXISTS episodes (
                 camera TEXT NOT NULL,
@@ -966,9 +971,16 @@ def frigate_reset_admin_password(cfg) -> str:
 
 # --------------------------------------------------------------------------- AI providers
 
-def build_prompt(ai: dict) -> str:
+def build_prompt(ai: dict, strip: int = 0) -> str:
     selected = phenomena_catalog(ai)
-    lines = [DEFAULT_PROMPT, "", "Sledované jevy (id – popis):"]
+    lines = [DEFAULT_PROMPT]
+    if strip:
+        lines += ["",
+                  f"Obrázek má dvě části: NAHOŘE velký AKTUÁLNÍ snímek (označený „teď“), DOLE pás {strip} starších snímků ze stejné kamery "
+                  "s časovým odstupem (nejstarší vlevo, např. „−60 min“). Hodnoť aktuální snímek, ale využij pás k posouzení vývoje: "
+                  "zda jev teprve nastupuje, právě vrcholí, odeznívá, nebo se obloha nemění. Zajímavé pro časosběr je to, co se v čase výrazně mění "
+                  "(barvy, pohyb a tvary oblačnosti, přicházející bouřka), ne statická obloha."]
+    lines += ["", "Sledované jevy (id – popis):"]
     lines += [f"- {pid}: {label} – {desc}" for pid, label, desc in selected]
     lines += [
         "",
@@ -983,7 +995,9 @@ def build_prompt(ai: dict) -> str:
         "",
         "Odpověz POUZE platným JSON bez dalšího textu ve tvaru: "
         '{"score": <celé číslo 0-10>, "phenomena": ["id", ...], '
-        '"phenomenon": "<krátký název jevu česky nebo \\"nic zajímavého\\">", "description": "<1-2 věty česky, co je vidět>"}',
+        '"phenomenon": "<krátký název jevu česky nebo \\"nic zajímavého\\">", "description": "<1-2 věty česky, co je vidět>"'
+        + (', "trend": "<nastupuje|vrcholí|odeznívá|beze změny>", "timelapse": <celé číslo 0-10, jak působivý by byl časosběr posledních minut>' if strip else "")
+        + "}",
     ]
     return "\n".join(lines)
 
@@ -1059,14 +1073,14 @@ def gemini_resolve_model(ai: dict) -> str:
 AI_TRANSIENT_CODES = (500, 502, 503, 504, 529)
 
 
-def ai_evaluate(ai: dict, image_bytes: bytes) -> tuple[dict, str]:
+def ai_evaluate(ai: dict, image_bytes: bytes, strip: int = 0) -> tuple[dict, str]:
     """Vrátí (parsed, raw_text). Dočasné chyby poskytovatele (přetížení 503/529, timeout, výpadek spojení)
     zkusí ještě 2× s odstupem – zajímavá obloha nemá propadnout kvůli minutovému zaškobrtnutí Googlu."""
     delays = (5, 20)
     last: Exception | None = None
     for attempt in range(3):
         try:
-            return _ai_evaluate_once(ai, image_bytes)
+            return _ai_evaluate_once(ai, image_bytes, strip)
         except (requests.Timeout, requests.ConnectionError) as e:
             last = e
             why = "neodpověděl včas" if isinstance(e, requests.Timeout) else "spojení selhalo"
@@ -1082,10 +1096,10 @@ def ai_evaluate(ai: dict, image_bytes: bytes) -> tuple[dict, str]:
     raise last  # type: ignore[misc]
 
 
-def _ai_evaluate_once(ai: dict, image_bytes: bytes) -> tuple[dict, str]:
+def _ai_evaluate_once(ai: dict, image_bytes: bytes, strip: int = 0) -> tuple[dict, str]:
     b64 = base64.b64encode(image_bytes).decode()
     provider = ai["provider"]
-    prompt = build_prompt(ai)
+    prompt = build_prompt(ai, strip)
     model = ai["model"] or PROVIDER_MODELS.get(provider, "")
     key = ai["api_key"]
 
@@ -1170,11 +1184,20 @@ def _ai_evaluate_once(ai: dict, image_bytes: bytes) -> tuple[dict, str]:
     phenomena = [str(p).strip().lower() for p in phenomena]
     known = [p[0] for p in phenomena_catalog(ai)]
     phenomena = [p for p in phenomena if p in known]
+    trend = str(parsed.get("trend") or "").strip().lower()[:20]
+    trend = {"nastupuje": "nastupuje", "vrcholi": "vrcholí", "vrcholí": "vrcholí", "odeznívá": "odeznívá", "odezniva": "odeznívá",
+             "beze změny": "beze změny", "beze zmeny": "beze změny", "static": "beze změny", "rising": "nastupuje", "peak": "vrcholí", "fading": "odeznívá"}.get(trend, trend)
+    try:
+        tl = int(float(parsed.get("timelapse"))) if parsed.get("timelapse") is not None else None
+        tl = max(0, min(10, tl)) if tl is not None else None
+    except (TypeError, ValueError):
+        tl = None
     return {
         "score": int(score),
         "phenomena": phenomena,
         "phenomenon": str(parsed.get("phenomenon", ""))[:200],
         "description": str(parsed.get("description", ""))[:1000],
+        "trend": trend, "timelapse": tl,
     }, raw
 
 
@@ -1505,6 +1528,48 @@ def is_golden_hour(cfg, now: dt.datetime) -> bool:
     return (min(dawn, sr - g) <= now <= sr + g) or (ss - g <= now <= max(dusk, ss + g))
 
 
+def strip_thumb(img: bytes, width: int = 480) -> bytes:
+    """Malý náhled snímku do paměti filmového pásu (~25 kB)."""
+    im = Image.open(io.BytesIO(img)).convert("RGB")
+    im.thumbnail((width, width))
+    out = io.BytesIO()
+    im.save(out, "JPEG", quality=72)
+    return out.getvalue()
+
+
+def make_filmstrip(current: bytes, older: list, now_ts: float) -> bytes:
+    """Aktuální snímek (velký, „teď“) + pás starších snímků s odstupem v minutách – jeden obrázek pro AI."""
+    main = Image.open(io.BytesIO(current)).convert("RGB")
+    W = 1280
+    main = main.resize((W, max(1, int(main.height * W / main.width))))
+    n = len(older)
+    tw = W // n
+    th = int(tw * 9 / 16)
+    font_path = studio_font()
+    try:
+        big = ImageFont.truetype(font_path, 30) if font_path else ImageFont.load_default()
+        small = ImageFont.truetype(font_path, max(14, int(tw / 12))) if font_path else ImageFont.load_default()
+    except Exception:
+        big = small = ImageFont.load_default()
+    canvas = Image.new("RGB", (W, main.height + th + 6), (12, 12, 12))
+    canvas.paste(main, (0, 0))
+    d = ImageDraw.Draw(canvas)
+    d.rectangle((0, 0, 120, 44), fill=(0, 0, 0))
+    d.text((10, 6), "teď", fill=(255, 255, 255), font=big)
+    for i, (ts, thumb) in enumerate(older):
+        im = Image.open(io.BytesIO(thumb)).convert("RGB")
+        im = im.resize((tw, th))
+        x = i * tw
+        canvas.paste(im, (x, main.height + 6))
+        mins = max(1, int(round((now_ts - ts) / 60)))
+        label = f"−{mins} min"
+        d.rectangle((x, main.height + 6, x + 8 + int(len(label) * small.size * 0.62), main.height + 12 + small.size), fill=(0, 0, 0))
+        d.text((x + 4, main.height + 8), label, fill=(255, 255, 255), font=small)
+    out = io.BytesIO()
+    canvas.save(out, "JPEG", quality=84)
+    return out.getvalue()
+
+
 def image_brightness(img: bytes) -> float:
     """Průměrný jas snímku 0–255 (zmenšený, rychlé)."""
     im = Image.open(io.BytesIO(img)).convert("L").resize((64, 36))
@@ -1522,6 +1587,7 @@ class AtmovioWatcher(threading.Thread):
         self.last_notify: dict[str, float] = {}
         self.last_score: dict[str, int] = {}
         self.last_image: dict[str, Path] = {}
+        self.strip_frames: dict[str, list] = {}   # kamera → [(ts, malý JPEG)] posledních pár hodin pro filmový pás
         self.check_lock = threading.Lock()
         self.stop_event = threading.Event()
         self.running = True
@@ -1647,6 +1713,14 @@ class AtmovioWatcher(threading.Thread):
             ai_stat(day, cam, errors=1)
             self.record(result, error="Nepodařilo se získat snímek z kamery")
             return result
+        # paměť pro filmový pás: každý získaný snímek (i přeskočený) jako malý náhled, drží se ~3 h
+        try:
+            buf = self.strip_frames.setdefault(cam, [])
+            buf.append((now.timestamp(), strip_thumb(img)))
+            cutoff = now.timestamp() - 3 * 3600
+            self.strip_frames[cam] = [x for x in buf if x[0] >= cutoff][-60:]
+        except Exception as e:
+            log(f"Filmový pás: náhled se nepodařilo uložit ({e})")
 
         # tma (noc, kamera přepnutá do IR bez oblohy): AI se neptá, snímek se neukládá – jen se počítá
         if ai.get("dark_skip", True) and not force:
@@ -1677,8 +1751,27 @@ class AtmovioWatcher(threading.Thread):
         fpath.write_bytes(img)
         result["image"] = str(fpath.relative_to(cfg["snapshot_dir"]))
         ai_stat(day, cam, calls=1)
+        # filmový pás: k aktuálnímu snímku přidat N starších z posledních span_min minut (rovnoměrně), pokud jsou
+        strip_n = 0
+        to_ai = img
+        sc = ai.get("strip") or {}
+        if sc.get("enabled", True):
+            try:
+                span = int(sc.get("span_min", 60) or 60) * 60
+                want = max(2, min(12, int(sc.get("frames", 6) or 6)))
+                cand = [x for x in self.strip_frames.get(cam, []) if now.timestamp() - x[0] >= 60 and now.timestamp() - x[0] <= span + 120]
+                if len(cand) >= 2:
+                    if len(cand) > want:
+                        idx = [int(round(i * (len(cand) - 1) / (want - 1))) for i in range(want)]
+                        cand = [cand[i] for i in sorted(set(idx))]
+                    to_ai = make_filmstrip(img, cand, now.timestamp())
+                    strip_n = len(cand)
+                    (day_dir / (fpath.stem + "_strip.jpg")).write_bytes(to_ai)
+            except Exception as e:
+                log(f"[{cam}] Filmový pás se nepodařilo sestavit ({e}) – posílám jen aktuální snímek")
+                to_ai, strip_n = img, 0
         try:
-            parsed, raw = ai_evaluate(ai, img)
+            parsed, raw = ai_evaluate(ai, to_ai, strip_n)
         except Exception as e:
             ai_stat(day, cam, errors=1)
             self.ai_failed[cam] = self.ai_failed.get(cam, 0) + 1
@@ -1782,11 +1875,11 @@ class AtmovioWatcher(threading.Thread):
         r.update(extra)
         with db() as con:
             cur = con.execute(
-                "INSERT INTO evaluations (ts,camera,image,score,phenomenon,description,notified,skipped,error,raw,phenomena,note)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO evaluations (ts,camera,image,score,phenomenon,description,notified,skipped,error,raw,phenomena,note,trend,timelapse)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (r.get("ts"), r.get("camera"), r.get("image"), r.get("score"), r.get("phenomenon"),
                  r.get("description"), r.get("notified", 0), r.get("skipped", 0), r.get("error"), r.get("raw"),
-                 ",".join(r.get("phenomena") or []), r.get("note")),
+                 ",".join(r.get("phenomena") or []), r.get("note"), r.get("trend") or None, r.get("timelapse")),
             )
             r["id"] = cur.lastrowid
         if r.get("error"):
@@ -2776,6 +2869,14 @@ TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block head %}{% endblock %
 <label class="check"><input type="checkbox" name="prefilter" {% if ai.prefilter %}checked{% endif %}> Neptat se AI, když se obraz skoro nezměnil (šetří limit)</label>
 <div class="hint">Odhad: asi <b>{{ estimate }}</b> dotazů denně (méně, když se obraz nemění nebo je tma).</div>
 </div>
+<div class="card"><h2>Filmový pás – AI vidí i vývoj</h2>
+<label class="check"><input type="checkbox" name="strip_enabled" {% if ai.strip.enabled %}checked{% endif %}> K aktuálnímu snímku přidat pás starších snímků</label>
+<div class="row">
+<div><label>Kolik starších snímků</label><input type="number" name="strip_frames" min="2" max="12" value="{{ ai.strip.frames }}"></div>
+<div><label>Jak daleko dozadu (minut)</label><input type="number" name="strip_span_min" min="10" max="180" value="{{ ai.strip.span_min }}"></div>
+</div>
+<div class="hint">AI pak nehodnotí jen jeden okamžik, ale vidí, jak se obloha za poslední hodinu měnila – pozná, jestli jev nastupuje, vrcholí nebo odeznívá, a ohodnotí, jak působivý by byl časosběr. Pořád je to jeden dotaz na AI (jeden obrázek), limit se nemění. Snímky do pásu si Atmovio sbírá z každé kontroly, takže po startu chvíli trvá, než se pás naplní.</div>
+</div>
 <div class="card"><h2>Kdy je světlo</h2>
 <label class="check"><input type="checkbox" name="day_only" {% if ai.day_only %}checked{% endif %}> Dívat se jen od svítání do soumraku (v noci nemá smysl)</label>
 <div class="row">
@@ -3048,7 +3149,9 @@ TEMPLATES["detection.html"] = """{% extends "base.html" %}{% block actions %}<di
 <div style="display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap"><span class="big" style="font-size:2rem">{{ e.ts|cztime }}</span><span class="hint" style="font-size:1rem">{{ e.ts|czdate }}</span></div>
 <div class="hint" style="margin-bottom:.6rem">📷 <a href="/camera/{{ e.camera }}">{{ cam(e.camera) }}</a> · {{ info.ip or '' }} {{ info.via }}</div>
 <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.5rem"><span class="badge info" style="font-size:.95rem;padding:.2rem .7rem">{{ e.score }}/10</span>{% for l in phen %}<span class="badge warn">{{ l }}</span>{% endfor %}{% if e.notified %}<span class="badge ok">upozornění odesláno</span>{% endif %}{% if my_exports %}<a class="badge info" href="/videos#v{{ my_exports[0].id }}">🎬 video exportováno</a>{% endif %}</div>
+<div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.5rem">{% if e.trend %}<span class="badge {{ 'ok' if e.trend in ('nastupuje', 'vrcholí') else 'mut' }}" title="Vývoj podle filmového pásu">{{ {'nastupuje': '↗', 'vrcholí': '★', 'odeznívá': '↘', 'beze změny': '→'}.get(e.trend, '') }} {{ e.trend }}</span>{% endif %}{% if e.timelapse is not none %}<span class="badge info" title="Jak působivý by byl časosběr posledních minut (podle AI)">🎞 časosběr {{ e.timelapse }}/10</span>{% endif %}</div>
 <p style="font-size:1.02rem;line-height:1.55">{{ e.description }}</p>
+{% if strip %}<details><summary class="hint">Co AI viděla (aktuální snímek + filmový pás)</summary><a href="/snapshot/{{ strip }}" data-lightbox="strip"><img src="/snapshot/{{ strip }}" alt="" style="width:100%;border-radius:.5rem;margin-top:.4rem"></a></details>{% endif %}
 {% if e.note %}<div class="hint">{{ e.note }}</div>{% endif %}
 <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.6rem"><a class="btn small sec" href="{{ frigate_ui }}/review" target="_blank" rel="noopener">Frigate ↗</a>
 <form method="post" action="/detection/{{ e.id }}/delete" onsubmit="return confirm('Smazat tuto detekci i se snímkem?')"><button class="btn small danger">Smazat detekci</button></form></div>
@@ -3195,7 +3298,7 @@ TEMPLATES["history.html"] = """{% extends "base.html" %}{% block actions %}<div 
 <article class="hrow {{ 'err' if e.error else ('hit' if e.notified else '') }}">
  {% if e.image %}<a class="pic" href="{% if not e.error %}/detection/{{ e.id }}{% else %}/snapshot/{{ e.image }}{% endif %}" {% if e.error %}data-lightbox="history"{% endif %}><img src="/snapshot/{{ e.image }}" alt="" loading="lazy"></a>{% endif %}
  <div class="tx">
-  <div class="hd"><span class="score {{ 'err' if e.error else ('ok' if e.score >= rule(e.camera).threshold else ('mid' if e.score >= 5 else 'low')) }}">{% if e.error %}chyba{% else %}{{ e.score }}<small>/10</small>{% endif %}</span><span class="when">{{ e.ts|cztime }}</span><b>{{ cam(e.camera) }}</b>{% if e.phenomenon %}<span class="ph">{{ e.phenomenon }}</span>{% endif %}
+  <div class="hd"><span class="score {{ 'err' if e.error else ('ok' if e.score >= rule(e.camera).threshold else ('mid' if e.score >= 5 else 'low')) }}">{% if e.error %}chyba{% else %}{{ e.score }}<small>/10</small>{% endif %}</span><span class="when">{{ e.ts|cztime }}</span><b>{{ cam(e.camera) }}</b>{% if e.phenomenon %}<span class="ph">{{ e.phenomenon }}</span>{% endif %}{% if e.trend %}<span class="badge {{ 'ok' if e.trend in ('nastupuje', 'vrcholí') else 'mut' }}" title="Vývoj podle filmového pásu">{{ {'nastupuje': '↗', 'vrcholí': '★', 'odeznívá': '↘', 'beze změny': '→'}.get(e.trend, '') }} {{ e.trend }}</span>{% endif %}{% if e.timelapse is not none and e.timelapse >= 7 %}<span class="badge info" title="Působivé pro časosběr (AI {{ e.timelapse }}/10)">🎞 {{ e.timelapse }}/10</span>{% endif %}
    {% if e.notified %}<span class="badge ok">upozorněno</span>{% elif not e.error and e.score >= rule(e.camera).threshold %}<span class="badge info">v epizodě</span>{% endif %}{% if e.exported %}<a class="badge info" href="/videos" title="Z této detekce je vystřižené video">🎬 video</a>{% endif %}</div>
   <p class="desc">{{ e.description or e.error or '–' }}</p>
   {% if e.note %}<div class="hint">{{ e.note }}</div>{% endif %}
@@ -4868,6 +4971,15 @@ def apply_ai_form(form, cfg, cameras):
     old_provider = ai["provider"]
     for key in ("enabled", "day_only", "prefilter", "fast_mode", "dark_skip"):
         ai[key] = bool(form.get(key))
+    if "strip_frames" in form or "strip_enabled" in form or "strip_span_min" in form:
+        st = dict(ai.get("strip") or {})
+        st["enabled"] = bool(form.get("strip_enabled"))
+        try:
+            st["frames"] = max(2, min(12, int(form.get("strip_frames", st.get("frames", 6)))))
+            st["span_min"] = max(10, min(180, int(form.get("strip_span_min", st.get("span_min", 60)))))
+        except ValueError:
+            pass
+        ai["strip"] = st
     if form.get("twilight") in ("civil", "nautical", "astronomical", "minutes"):
         ai["twilight"] = form.get("twilight")
     for k, typ, lo, hi in (("interval_min", int, 1, 1440), ("fast_interval_min", int, 1, 60), ("golden_min", int, 0, 180),
@@ -5046,7 +5158,12 @@ def detection_page(request: Request, rid: int):
         ready = [v for v in list_videos(cfg) if v.get("detection_id") == rid and v.get("ready")]
         use_export = ready[0] if ready else None
     default_name = f"{cam_label(cfg, e['camera'])} {e['ts'][8:10]}.{e['ts'][5:7]}.{e['ts'][0:4]} {e['ts'][11:16]}" + (f" – {e['phenomenon']}" if e.get("phenomenon") else "")
-    return render(request, "detection.html", f"Detekce · {cam_label(cfg, e['camera'])}", e=e, phen=phen, info=camera_info(cfg, e["camera"]),
+    strip = ""
+    if e.get("image"):
+        sp = Path(e["image"]).with_name(Path(e["image"]).stem + "_strip.jpg")
+        if (Path(cfg["snapshot_dir"]) / sp).is_file():
+            strip = str(sp)
+    return render(request, "detection.html", f"Detekce · {cam_label(cfg, e['camera'])}", e=e, phen=phen, info=camera_info(cfg, e["camera"]), strip=strip,
                   before=before, after=after, clip_start=center - before * 60, clip_end=center + after * 60,
                   neighbours=neighbours, my_exports=my_exports, default_name=default_name, ready=storage_ready(), clip_state=clip_state, retain=retain_days(cfg),
                   pending_auto=pending_auto_exports(cfg, rid), e_center=center, use_export=use_export,
@@ -6871,6 +6988,7 @@ def _delete_evaluations(cfg, where: str, args: tuple) -> int:
                 f = (base / row["image"]).resolve()
                 if base in f.parents and f.is_file():
                     f.unlink()
+                f.with_name(f.stem + "_strip.jpg").unlink(missing_ok=True)
             except Exception:
                 pass
     return len(rows)

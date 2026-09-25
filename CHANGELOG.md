@@ -2,6 +2,17 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 4.7 – 2026-09 – the AI sees the film, not a photo
+
+- **Filmstrip evaluation**: instead of one snapshot the AI now gets one picture made of the current frame (large,
+  "teď") plus a strip of older frames from the same camera with time offsets (default 6 frames over the last
+  60 minutes, Nastavení → AI → Kdy se dívat → "Filmový pás"). It still is one API call per check, so the daily
+  limit is unchanged. Atmovio collects a small thumbnail from every check (also skipped ones) to build the strip;
+  after a restart the strip fills up within an hour.
+- The AI now also reports the **trend** (nastupuje ↗ / vrcholí ★ / odeznívá ↘ / beze změny →) and a **time-lapse
+  score 0–10** – shown in Historie, on the detection page and stored with every evaluation. Alerts and automatic
+  videos work exactly as before, based on the score; the detection page shows "Co AI viděla" with the strip.
+
 ## 4.6.6 – 2026-09 – delete everything about a video, any time
 
 - "Smazat z RPi" moved to the "Co dál" box and works whether or not the video went to YouTube: the studio
