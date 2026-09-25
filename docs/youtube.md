@@ -23,8 +23,11 @@ selected at the top) and click **Enable**.
 
 1. Open <https://console.cloud.google.com/auth/overview> → **Get started**.
 2. App name **Atmovio**, your e-mail as support e-mail, audience **External**, contact e-mail, agree → **Create**.
-3. In **Audience** click **Publish app** (confirm). Without this Google treats the app as "testing" and
-   expires the link after 7 days.
+3. Open **Branding** and fill in everything marked as required (app name, user support e-mail, developer
+   contact e-mail), then **Save**. The *Publish app* button stays greyed out until this is done.
+4. In **Audience** click **Publish app** (confirm). Without this Google treats the app as "testing" and
+   expires the link after 7 days. (Fallback: add your own e-mail under *Test users* – works, but the link must
+   be renewed every 7 days.)
    You will see an "unverified app" warning when linking – that is expected for a private app; verification is
    only needed for public apps.
 

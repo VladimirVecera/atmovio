@@ -3382,7 +3382,9 @@ TEMPLATES["studio_settings.html"] = """{% extends "base.html" %}{% block actions
   <ol class="steps">
    <li>Otevři <a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener">console.cloud.google.com/projectcreate</a>, projekt pojmenuj třeba <b>Atmovio</b> a vytvoř ho (přihlášený účtem, který má YouTube kanál).</li>
    <li>Zapni <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noopener">YouTube Data API v3</a> (tlačítko <b>Povolit / Enable</b>).</li>
-   <li>Obrazovka souhlasu: <a href="https://console.cloud.google.com/auth/overview" target="_blank" rel="noopener">Google Auth platform → Začínáme</a>: název aplikace <b>Atmovio</b>, tvůj e-mail, typ <b>Externí</b>, kontaktní e-mail, souhlas → Vytvořit. Potom v <b>Publikum (Audience)</b> klikni na <b>Publikovat aplikaci</b> – jinak by propojení platilo jen 7 dní.</li>
+   <li>Obrazovka souhlasu: <a href="https://console.cloud.google.com/auth/overview" target="_blank" rel="noopener">Google Auth platform → Začínáme</a>: název aplikace <b>Atmovio</b>, tvůj e-mail, typ <b>Externí</b>, kontaktní e-mail, souhlas → Vytvořit.
+    Potom otevři <a href="https://console.cloud.google.com/auth/branding" target="_blank" rel="noopener"><b>Branding</b></a>, doplň, co je označené jako povinné (název aplikace, e-mail podpory, kontaktní e-mail vývojáře) a ulož – teprve pak jde v <a href="https://console.cloud.google.com/auth/audience" target="_blank" rel="noopener"><b>Audience</b></a> kliknout na <b>Publish app</b> (potvrď). Bez publikování by propojení platilo jen 7 dní.
+    <span class="hint">Když Publish nejde, je to vždy kvůli nevyplněnému Brandingu. Nouzová cesta: v Audience → Test users přidej svůj e-mail – propojení pak funguje, ale po 7 dnech ho musíš obnovit.</span></li>
    <li><a href="https://console.cloud.google.com/auth/clients/create" target="_blank" rel="noopener">Vytvoř klienta</a>: typ <b>Televize a zařízení s omezeným vstupem</b>, název <b>Atmovio</b> → Vytvořit. Zobrazí se <b>Client ID</b> a <b>Client secret</b> – zkopíruj je sem:</li>
   </ol>
   <form method="post" action="/studio/youtube/client">
