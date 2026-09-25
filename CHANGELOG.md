@@ -2,6 +2,13 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 4.5.5 – 2026-09 – readable overlay text, Openverse check
+
+- Text in the picture sits on a translucent dark strip, so it is readable over a bright sky as well as over the
+  fade-out at the end.
+- Nastavení → Video studio: "Vyzkoušet hledání" button next to the Openverse registration shows whether the
+  music search works with the current registration.
+
 ## 4.5.4 – 2026-09 – fades and finer speed steps
 
 - **Fade from black / fade to black**: the sped-up recording now brightens from black at the start (1 s) and

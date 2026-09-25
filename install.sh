@@ -475,7 +475,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "4.5.4"
+APP_VERSION = "4.5.5"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -3704,7 +3704,7 @@ TEMPLATES["studio_settings.html"] = """{% extends "base.html" %}{% block actions
  <p class="hint" style="margin:.6rem 0 0">Vlastní hudbu nahrávej jen s právy k ní (YouTube cizí skladby ztlumí nebo zablokuje). Hudbu z Openverse hledáš přímo u každého videa v Studiu – je pod licencí CC0 / CC BY a autor se do popisu doplní sám.</p></div>
 
  <div class="card"><h2>Hledání hudby (Openverse)</h2>
- {% if ov.client_id %}<p>Atmovio je u Openverse zaregistrované (<b>{{ ov.email }}</b>, {{ ov.registered|czdt }}) – vysoký limit hledání. Pokud jsi ještě nepotvrdil odkaz z e-mailu, udělej to; do té doby platí malý anonymní limit.</p>
+ {% if ov.client_id %}<p>Atmovio je u Openverse zaregistrované (<b>{{ ov.email }}</b>, {{ ov.registered|czdt }}). Po kliknutí na potvrzovací odkaz z e-mailu není potřeba nic dalšího – hledání hudby u videí (Videa → ⏩ Studio → 4. Hudba) používá registraci automaticky. <span x-data="{r: ''}"><button type="button" class="btn small sec" @click="r = 'zkouším…'; fetch('/studio/music/search?q=piano').then(x => x.json()).then(d => r = d.error ? '✖ ' + d.error : '✓ hledání funguje (' + d.items.length + ' skladeb pro „piano“)').catch(() => r = '✖ nepodařilo se spojit')">Vyzkoušet hledání</button> <span class="hint" x-text="r"></span></span></p>
   <form method="post" action="/studio/openverse/forget" data-nobusy><button class="btn small sec">Zrušit registraci</button></form>
  {% else %}<p class="hint">Hledání funguje hned, ale anonymně jen pár dotazů za hodinu. Zadej e-mail, Atmovio se u Openverse samo zaregistruje (zdarma) a ty jen klikneš na potvrzovací odkaz v e-mailu.</p>
   <form method="post" action="/studio/openverse/register" class="row" style="align-items:end"><div><label>E-mail pro registraci</label><input type="email" name="email" required placeholder="tvuj@email.cz"></div><button class="btn small" data-busy="Registruji">Zaregistrovat</button></form>{% endif %}</div>
@@ -5983,8 +5983,8 @@ def _studio_worker():
 def _drawtext(font: str, textfile: Path, size: int, pos: str) -> str:
     x = {"bl": "24", "tl": "24", "br": "w-tw-24", "tr": "w-tw-24", "bc": "(w-tw)/2", "tc": "(w-tw)/2"}[pos]
     y = "24" if pos in ("tl", "tr", "tc") else "h-th-24"
-    return (f"drawtext=fontfile='{font}':textfile='{textfile}':fontsize={size}:fontcolor=white:borderw=3:bordercolor=black@0.6:"
-            f"x={x}:y={y}:line_spacing=6")
+    return (f"drawtext=fontfile='{font}':textfile='{textfile}':fontsize={size}:fontcolor=white:borderw=2:bordercolor=black@0.7:"
+            f"box=1:boxcolor=black@0.35:boxborderw=10:x={x}:y={y}:line_spacing=6")
 
 
 def studio_render(cfg, job: dict):
