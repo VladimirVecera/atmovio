@@ -2,6 +2,27 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 5.0 – 2026-09-25 – clearer administration and video metadata from AI filmstrips
+
+- Horizontal navigation: **Dashboard · Živý přenos · AI detekce · AI videa · YouTube videa · Nastavení**.
+  The dashboard summarizes cameras, recent evaluations, source clips, YouTube outputs, storage and system health.
+  Quieter light and dark themes, responsive layout, original Atmovio logo retained.
+- Separate source AI clips and processed YouTube videos, including processing/upload states and failed automatic exports.
+  Settings have a persistent submenu; YouTube settings are grouped into video defaults, intro/music and channel connection.
+  AI-video settings save independently of the detector configuration, camera selection and custom rules.
+- AI detections show all evaluations by default. Combine camera, phenomenon, score, date and alert/error filters.
+  Skipped dark/unchanged frames remain aggregate counters, not fictitious image history.
+- Filmstrip evaluations retain their time range and an observed evolution description. Both **title and description** can
+  be proposed from stored visual evidence and the clip interval. A preview requires explicit application before saving;
+  automatic studio videos use both generated fields, falling back to templates together if the AI request fails.
+  Evolution outside the exported clip is excluded from the metadata prompt. This is analysis of sampled frames, not the MP4.
+- Exported clips retain their AI evidence after the original detection is deleted. Existing 4.7 data is migrated additively.
+  Camera display-name edits preserve stable camera IDs and references. Deleting a detection removes its filmstrip too.
+  Retention skips videos being processed/uploaded; active source clips cannot be deleted underneath a worker.
+  Intentionally deleted automatic studio outputs are not silently recreated; explicit recreation remains available.
+- Offline regression checks cover settings isolation, authentication/CSRF, all page states, filmstrip evidence,
+  video metadata, retention, camera rename and migration. Generated install/update scripts and tag-based releases retained.
+
 ## 4.7 – 2026-09 – the AI sees the film, not a photo
 
 - **Filmstrip evaluation**: instead of one snapshot the AI now gets one picture made of the current frame (large,

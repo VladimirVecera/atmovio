@@ -34,6 +34,18 @@ blesky, mlha…
 Je stavěný pro lidi, kteří nejsou správci serverů. Všechno je na jedné webové stránce, česky, srozumitelně,
 a instalátor se ptá jen na to, co opravdu potřebuje.
 
+## Administrace od verze 5.0
+
+Vodorovné menu sleduje celý postup: **Dashboard → Živý přenos → AI detekce → AI videa → YouTube videa**.
+V **Nastavení** najdeš zvlášť kamery, AI detekci, ukládání AI videí, podobu YouTube videí a propojení kanálu,
+úložiště, upozornění, síť a systém. Původní logo i aktualizace přes GitHub zůstávají.
+
+AI detekce ukazují všechna vyhodnocení s filtry. Filmový pás doplňuje aktuální snímek o starší snímky,
+takže AI může popsat i vývoj. U videa tlačítko **Navrhnout nadpis i popis z AI filmu** nabídne oba texty
+ke kontrole; vložíš je přes **Použít návrh** a uložíš. Automatické studio umí připravit oba texty samo.
+Podkladem jsou uložená vyhodnocení, nikoli analýza celého MP4; vývoj mimo rozsah klipu se nepoužije.
+Podrobnosti k aktualizaci a ověření: [Vydání 5.0](docs/cs/verze-5.0.md).
+
 ## Co dostaneš
 
 | | |

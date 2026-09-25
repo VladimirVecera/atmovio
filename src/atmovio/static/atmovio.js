@@ -103,7 +103,29 @@
     // ---------- Návrh titulku přes AI (studio) ----------
     Alpine.data('titleIdeas', function (opts) {
       return {
-        titles: [], msg: '', busy: false,
+        titles: [], msg: '', busy: false, proposal: null, metaMsg: '',
+        askMetadata: function () {
+          var self = this, fd = new FormData(), form = this.$el.closest('form'), csrf = document.querySelector('input[name=csrf_token]');
+          var speed = form && form.querySelector('[name=speed]');
+          fd.append('csrf_token', csrf ? csrf.value : '');
+          fd.append('sid', opts.sid || 0); fd.append('vid', opts.vid || 0); fd.append('speed', speed ? speed.value : 20);
+          self.busy = true; self.metaMsg = ''; self.proposal = null;
+          fetch('/studio/metadata', {method: 'POST', body: fd, credentials: 'same-origin'})
+            .then(function (r) { return r.json(); }).then(function (d) {
+              if (!d.ok) { self.metaMsg = d.error || 'Návrh se nepodařil.'; return; }
+              self.proposal = {title: d.title, description: d.description};
+              self.metaMsg = 'Návrh je připravený. Použije se až po kliknutí na Použít návrh.';
+            }).catch(function () { self.metaMsg = 'Spojení selhalo. Původní text zůstal zachován.'; })
+            .finally(function () { self.busy = false; });
+        },
+        applyMetadata: function () {
+          if (!this.proposal) return;
+          this.$refs.title.value = this.proposal.title;
+          this.$refs.description.value = this.proposal.description;
+          this.$refs.title.dispatchEvent(new Event('input', {bubbles: true}));
+          this.$refs.description.dispatchEvent(new Event('input', {bubbles: true}));
+          this.proposal = null; this.metaMsg = 'Vloženo do formuláře. Změny ještě ulož.';
+        },
         ask: function (speed) {
           var self = this, fd = new FormData(), csrf = document.querySelector('input[name=csrf_token]');
           fd.append('csrf_token', csrf ? csrf.value : ''); fd.append('sid', opts.sid || 0); fd.append('vid', opts.vid || 0); fd.append('speed', speed || 20);

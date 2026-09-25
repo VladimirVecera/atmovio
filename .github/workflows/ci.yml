@@ -31,6 +31,10 @@ jobs:
           print("templates OK:", len(app.TEMPLATES))
           app.watcher.running = False; app.watcher.stop_event.set()
           PY
+      - name: Offline administration regression checks
+        run: |
+          python3 -m pip install -q httpx
+          python3 tests/regression.py
       - name: No personal data in sources
         run: |
           # heslo zapsané natvrdo (ne odkaz na proměnnou jako PASSWORD="$ADMIN_PW")
