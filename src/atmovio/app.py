@@ -56,7 +56,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "4.6.1"
+APP_VERSION = "4.6.2"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -168,7 +168,7 @@ DEFAULT_CONFIG = {
         "speed": 20, "intro": True, "intro_seconds": 4, "intro_title": True, "intro_text": "{kamera}\n{datum}",
         "text_enabled": True, "text": "{kamera} · {datum} · {rychlost}×", "text_pos": "bl", "text_size": 36,
         "music_default": "", "music_volume": 0.8, "fade_in": 2, "fade_out": 4, "video_fade_in": 1, "video_fade_out": 2,
-        "title": "{kamera} – {jev} · {datum}",
+        "title": "{jev} nad obcí {kamera} · časosběr {datum}", "ai_title": True,
         "description": "{popis}\n\n{kamera}, {datum} {cas}. Záznam {delka}, zrychleno {rychlost}×.\nVytvořeno v Atmovio – atmovio.com",
         "auto": False,
         "youtube": {"client_id": "", "client_secret": "", "privacy": "unlisted", "playlist_id": "", "tags": "Atmovio, obloha, timelapse, časosběr", "auto": False},
@@ -1176,6 +1176,37 @@ def _ai_evaluate_once(ai: dict, image_bytes: bytes) -> tuple[dict, str]:
         "phenomenon": str(parsed.get("phenomenon", ""))[:200],
         "description": str(parsed.get("description", ""))[:1000],
     }, raw
+
+
+def ai_text(ai: dict, prompt: str, max_tokens: int = 400) -> str:
+    """Jednoduchý textový dotaz na nastaveného poskytovatele AI (bez obrázku) – např. návrh titulku videa."""
+    provider = ai.get("provider") or "gemini"
+    model = ai.get("model") or PROVIDER_MODELS.get(provider, "")
+    key = ai.get("api_key") or ""
+    if provider != "ollama" and not key:
+        raise RuntimeError("AI nemá nastavený klíč (Nastavení → AI).")
+    if provider == "gemini":
+        model = gemini_resolve_model(ai)
+        r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent", headers={"x-goog-api-key": key},
+                          json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.9, "maxOutputTokens": max_tokens}}, timeout=45)
+        r.raise_for_status()
+        return r.json()["candidates"][0]["content"]["parts"][0]["text"]
+    if provider == "anthropic":
+        r = requests.post("https://api.anthropic.com/v1/messages", headers={"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
+                          json={"model": model, "max_tokens": max_tokens, "messages": [{"role": "user", "content": prompt}]}, timeout=45)
+        r.raise_for_status()
+        return "".join(p.get("text", "") for p in r.json()["content"])
+    if provider in ("openai", "openai_compat"):
+        base = "https://api.openai.com/v1" if provider == "openai" else (ai.get("base_url") or "https://api.groq.com/openai/v1").rstrip("/")
+        r = requests.post(base + "/chat/completions", headers={"Authorization": f"Bearer {key}", "HTTP-Referer": "https://atmovio.local", "X-Title": "Atmovio"},
+                          json={"model": model, "max_tokens": max_tokens, "temperature": 0.9, "messages": [{"role": "user", "content": prompt}]}, timeout=45)
+        r.raise_for_status()
+        return r.json()["choices"][0]["message"]["content"]
+    if provider == "ollama":
+        r = requests.post(ai["ollama_url"].rstrip("/") + "/api/generate", json={"model": model, "prompt": prompt, "stream": False}, timeout=300)
+        r.raise_for_status()
+        return r.json()["response"]
+    raise ValueError(f"Neznámý poskytovatel: {provider}")
 
 
 def ai_check(ai: dict) -> str:
@@ -3229,7 +3260,9 @@ TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<d
 </div>
 <div>
  <div class="card"><h2>Titulek a popis</h2>
-  <label>Titulek <span class="hint">(název souboru a později titulek na YouTube)</span></label><input type="text" name="title" value="{{ values.title }}" maxlength="100">
+  <div x-data="titleIdeas({vid: {{ export.id }}})"><label>Titulek <span class="hint">(název souboru a titulek na YouTube)</span></label><input type="text" name="title" value="{{ values.title }}" maxlength="100" x-ref="title">
+  <div class="ideas"><button type="button" class="btn small sec" @click="ask(document.querySelector('input[name=speed]') ? document.querySelector('input[name=speed]').value : 20)" :disabled="busy" x-text="busy ? 'AI přemýšlí…' : '✨ Navrhnout titulek (AI)'"></button><span class="hint" x-text="msg"></span>
+   <div class="chips" x-show="titles.length"><template x-for="t in titles" :key="t"><span class="chip" @click="$refs.title.value = t; msg = 'Vloženo.'" x-text="t"></span></template></div></div></div>
   <label>Popis</label><textarea name="description" rows="8">{{ values.description }}</textarea>
   <div class="hint">Předvyplněno z textu AI a šablon v nastavení – klidně přepiš. Upravit půjde i u hotového videa.</div></div>
  <div class="savebar"><button class="btn" data-busy="Zařazuji do fronty">🎬 Vytvořit video</button><span class="hint">Nikam se nic nenahrává – nejdřív uvidíš výsledek.</span></div>
@@ -3260,8 +3293,10 @@ TEMPLATES["studio_video.html"] = """{% extends "base.html" %}{% block actions %}
  </dl></div>
 </div>
 <div>
- <form method="post" action="/studio/v/{{ v.id }}/meta" class="card"><h2>Titulek a popis</h2>
-  <label>Titulek</label><input type="text" name="title" value="{{ v.title }}" maxlength="100">
+ <form method="post" action="/studio/v/{{ v.id }}/meta" class="card" x-data="titleIdeas({sid: {{ v.id }}})"><h2>Titulek a popis</h2>
+  <label>Titulek</label><input type="text" name="title" value="{{ v.title }}" maxlength="100" x-ref="title">
+  <div class="ideas"><button type="button" class="btn small sec" @click="ask()" :disabled="busy" x-text="busy ? 'AI přemýšlí…' : '✨ Navrhnout titulek (AI)'"></button><span class="hint" x-text="msg"></span>
+   <div class="chips" x-show="titles.length"><template x-for="t in titles" :key="t"><span class="chip" @click="$refs.title.value = t; msg = 'Vloženo – nezapomeň Uložit.'" x-text="t"></span></template></div></div>
   <label>Popis</label><textarea name="description" rows="9">{{ v.description }}</textarea>
   <div class="row" style="margin-top:.6rem"><button class="btn small">Uložit</button></div></form>
  <div class="card"><h2>Co dál</h2>
@@ -3379,7 +3414,8 @@ TEMPLATES["studio_settings.html"] = """{% extends "base.html" %}{% block actions
   <div class="hint">Týká se zrychleného záznamu (ne intra). Hudba ztichne nejpozději se ztmavením obrazu.</div>
  </div>
  <div class="card"><h2>Šablona titulku a popisu</h2>
-  <label>Titulek</label><input type="text" name="title" value="{{ sc.title }}" maxlength="120">
+  <label>Titulek (šablona)</label><input type="text" name="title" value="{{ sc.title }}" maxlength="120">
+  <label class="check"><input type="checkbox" name="ai_title" value="1"{% if sc.ai_title %} checked{% endif %}>U automatických videí nechat titulek navrhnout AI (poutavější než šablona; šablona je záloha)</label>
   <label>Popis</label><textarea name="description" rows="5">{{ sc.description }}</textarea>
   <div class="hint">Navíc <code>{popis}</code> = text, který k detekci napsala AI. U každého videa jde titulek i popis ručně upravit.</div>
  </div>
@@ -5849,10 +5885,68 @@ def studio_auto(cfg):
         if not (video and video.is_file() and not fr.get("in_progress")):
             continue
         v = studio_vars(cfg, ex, int(sc.get("speed", 20) or 20))
+        title = studio_fill(sc.get("title", ""), v)
+        if sc.get("ai_title", True) and cfg["ai"].get("enabled"):
+            try:
+                ideas = studio_title_ideas(cfg, v, 3)
+                if ideas:
+                    title = ideas[0]
+            except Exception as e:
+                log(f"Studio: návrh titulku přes AI selhal ({e}) – použita šablona")
         studio_enqueue(cfg, ex, int(sc.get("speed", 20) or 20), bool(sc.get("intro", True) and studio_intro()), sc.get("music_default", ""),
-                       sc.get("text", "") if sc.get("text_enabled", True) else "", studio_fill(sc.get("title", ""), v),
+                       sc.get("text", "") if sc.get("text_enabled", True) else "", title,
                        studio_fill(sc.get("description", ""), v), auto=1)
         log(f"[{ex['camera']}] Studio: automatické video „{ex['name']}“ zařazeno ke zrychlení")
+
+
+def studio_title_ideas(cfg, v: dict, n: int = 5) -> list:
+    """Návrhy titulků pro YouTube (česky, poutavé, do 70 znaků) z textu AI, kamery, jevu a data."""
+    prompt = (
+        "Jsi editor YouTube kanálu s časosběrnými videi oblohy z domácích kamer. Navrhni " + str(n) + " titulků videa v češtině, "
+        "které přilákají diváky: konkrétní, obrazné, bez clickbaitu a bez emoji, každý do 70 znaků, různé styly (popisný, emotivní, "
+        "s místem, s jevem). Nepoužívej uvozovky. Vrať jen JSON pole řetězců.\n\n"
+        f"Místo/kamera: {v.get('kamera', '')}\nDatum: {v.get('datum', '')} {v.get('cas', '')}\nJev: {v.get('jev', '') or 'zajímavá obloha'}\n"
+        f"Skóre AI: {v.get('skore', '') or '?'}/10\nPopis od AI: {v.get('popis', '') or '–'}\nDélka záznamu: {v.get('delka', '')}, zrychleno {v.get('rychlost', '')}×"
+    )
+    raw = ai_text(cfg["ai"], prompt, 500)
+    data = extract_json(raw)
+    out = []
+    if isinstance(data, list):
+        out = [str(x).strip().strip('"').strip("'") for x in data if str(x).strip()]
+    if not out:
+        out = [line.strip("-•* \"'0123456789.").strip() for line in raw.splitlines() if 8 < len(line.strip()) < 100]
+    return [t[:100] for t in out][:n]
+
+
+def _studio_vars_for_row(cfg, row: dict) -> dict:
+    with db() as con:
+        ex = con.execute("SELECT * FROM exports WHERE id=?", (row["export_id"],)).fetchone()
+    if not ex:
+        return {"kamera": cam_label(cfg, row["camera"]), "datum": "", "cas": "", "jev": "", "skore": "", "popis": row.get("description") or "",
+                "rychlost": str(row.get("speed") or ""), "delka": ""}
+    return studio_vars(cfg, dict(ex), int(row.get("speed") or 20))
+
+
+@app.post("/studio/titles")
+def studio_titles(request: Request, sid: int = Form(0), vid: int = Form(0), speed: int = Form(20)):
+    cfg = load_config()
+    try:
+        if sid:
+            rows = studio_rows(cfg, sid=sid)
+            if not rows:
+                raise RuntimeError("Video neexistuje.")
+            v = _studio_vars_for_row(cfg, rows[0])
+        else:
+            ex = _studio_export(cfg, vid)
+            if not ex:
+                raise RuntimeError("Zdrojové video neexistuje.")
+            v = studio_vars(cfg, ex, speed)
+        ideas = studio_title_ideas(cfg, v)
+        if not ideas:
+            raise RuntimeError("AI nevrátila žádný návrh – zkus to znovu.")
+        return JSONResponse({"ok": True, "titles": ideas})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": f"Návrh titulku selhal: {e}"[:300]}, status_code=400)
 
 
 def _studio_export(cfg, vid: int):
@@ -6038,7 +6132,7 @@ def studio_settings_post(request: Request, speed: int = Form(20), intro: str = F
                          intro_text: str = Form(""), text_enabled: str = Form(""), text: str = Form(""), text_pos: str = Form("bl"), text_size: int = Form(36),
                          music_default: str = Form(""), music_volume: float = Form(0.8), fade_in: float = Form(2), fade_out: float = Form(4),
                          video_fade_in: float = Form(1), video_fade_out: float = Form(2),
-                         title: str = Form(""), description: str = Form(""), auto: str = Form("")):
+                         title: str = Form(""), description: str = Form(""), auto: str = Form(""), ai_title: str = Form("")):
     with edit_config() as cfg:
         cfg["studio"] = deep_merge(studio_cfg(cfg), {
             "speed": int(round(speed / 10) * 10) if 10 <= speed <= 240 else 20, "intro": bool(intro), "intro_seconds": max(1.0, min(15.0, intro_seconds)),
@@ -6047,7 +6141,7 @@ def studio_settings_post(request: Request, speed: int = Form(20), intro: str = F
             "music_default": music_default if (studio_assets_dir() / "music" / Path(music_default).name).is_file() else "",
             "music_volume": max(0.05, min(2.0, music_volume)), "fade_in": max(0.0, min(15.0, fade_in)), "fade_out": max(0.0, min(15.0, fade_out)),
             "video_fade_in": max(0.0, min(10.0, video_fade_in)), "video_fade_out": max(0.0, min(10.0, video_fade_out)),
-            "title": title.strip()[:120], "description": description.strip()[:2000], "auto": bool(auto)})
+            "title": title.strip()[:120], "description": description.strip()[:2000], "auto": bool(auto), "ai_title": bool(ai_title)})
     flash(request, "Nastavení studia uloženo.")
     return RedirectResponse("/studio/settings", status_code=303)
 

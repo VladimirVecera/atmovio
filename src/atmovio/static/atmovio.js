@@ -100,6 +100,21 @@
       };
     });
 
+    // ---------- Návrh titulku přes AI (studio) ----------
+    Alpine.data('titleIdeas', function (opts) {
+      return {
+        titles: [], msg: '', busy: false,
+        ask: function (speed) {
+          var self = this, fd = new FormData(), csrf = document.querySelector('input[name=csrf_token]');
+          fd.append('csrf_token', csrf ? csrf.value : ''); fd.append('sid', opts.sid || 0); fd.append('vid', opts.vid || 0); fd.append('speed', speed || 20);
+          self.busy = true; self.msg = '';
+          fetch('/studio/titles', { method: 'POST', body: fd, credentials: 'same-origin' }).then(function (r) { return r.json(); })
+            .then(function (d) { if (!d.ok) { self.msg = d.error; return; } self.titles = d.titles; self.msg = 'Klikni na návrh, který se ti líbí:'; })
+            .catch(function () { self.msg = 'Návrh selhal.'; }).finally(function () { self.busy = false; });
+        }
+      };
+    });
+
     // ---------- Odpočet „zbývá asi …“ mezi obnoveními stránky ----------
     Alpine.data('countdown', function (seconds) {
       return {

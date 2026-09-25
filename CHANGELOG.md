@@ -2,6 +2,14 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 4.6.2 – 2026-09 – titles that attract viewers
+
+- **✨ Navrhnout titulek (AI)** next to the title field (new video and finished video): the configured AI
+  provider proposes five catchy Czech YouTube titles (≤ 70 characters, no clickbait) from the camera, date,
+  phenomenon and the AI description – click one to use it. Automatic videos get an AI title too (switch in
+  Nastavení → Video studio; the template stays as fallback). Default template changed to
+  `{jev} nad obcí {kamera} · časosběr {datum}`.
+
 ## 4.6.1 – 2026-09 – upload keeps title, time estimates, clean-up after upload
 
 - **Fix**: uploading to YouTube wiped the video's title and description (the upload form re-sent empty values).
