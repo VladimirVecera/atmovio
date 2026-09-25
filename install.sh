@@ -475,7 +475,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "4.6.3"
+APP_VERSION = "4.6.5"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -3696,7 +3696,7 @@ TEMPLATES["studio_video.html"] = """{% extends "base.html" %}{% block actions %}
  {% if v.ready %}<video controls preload="metadata" playsinline style="width:100%;display:block;background:#000;aspect-ratio:16/9" poster="{% if v.thumb %}/studio/v/{{ v.id }}/thumb.jpg{% endif %}" src="/studio/v/{{ v.id }}/play.mp4"></video>
  {% else %}<div class="studio-wait">
   {% if v.status == 'failed' %}<div class="badge err">nepodařilo se</div><p>{{ v.message or 'neznámá chyba' }}</p><a class="btn small" href="/studio/new/{{ v.export_id }}?again={{ v.id }}">Zkusit znovu</a>
-  {% elif v.status == 'rendering' %}<div class="spin"></div><p><b>Vytváří se…</b> {{ v.progress }} %</p><div class="pbar"><i style="width:{{ v.progress }}%"></i></div>{% if v.eta_s %}<p class="eta"><span x-data="countdown({{ v.eta_s }})" x-text="txt"></span> · hotovo asi v <b>{{ v.eta_at }}</b></p>{% endif %}<p class="hint">Zrychlení {{ v.speed }}× – odhad se zpřesňuje během práce. Stránka se sama obnovuje.</p>
+  {% elif v.status == 'rendering' %}<div class="spin"></div><p><b>Vytváří se…</b> {{ v.progress }} %</p><div class="pbar"><i style="width:{{ v.progress }}%"></i></div>{% if v.eta_s %}<p class="eta">{% if v.eta_s >= 180 %}☕ {% endif %}<span x-data="countdown({{ v.eta_s }})" x-text="txt"></span> · hotovo asi v <b>{{ v.eta_at }}</b></p>{% endif %}<p class="hint">Zrychlení {{ v.speed }}× – odhad se zpřesňuje během práce. Stránka se sama obnovuje.</p>
   {% else %}<div class="spin"></div><p><b>Čeká ve frontě</b>{% if queue_pos %} · před ním {{ queue_pos }}{% endif %}</p>{% if v.eta_s %}<p class="eta"><span x-data="countdown({{ v.eta_s }})" x-text="txt"></span> · hotovo asi v <b>{{ v.eta_at }}</b></p>{% endif %}<p class="hint">Videa se vyrábějí po jednom, aby RPi zvládalo nahrávat.</p>{% endif %}
  </div>{% endif %}</div>
  {% if v.message and v.status == 'ready' %}<div class="card warn"><b>Poznámka:</b> {{ v.message }}</div>{% endif %}
@@ -6001,7 +6001,8 @@ def studio_fill(tpl: str, v: dict) -> str:
         out = out.replace("{" + k + "}", str(val))
     # prázdná značka nesmí nechat dva oddělovače za sebou („Kamera –  · 12. 9.“ → „Kamera · 12. 9.“)
     out = re.sub(r"(\s+[–·|-]){2,}\s+", " · ", out)
-    out = "\n".join(line.strip(" –·|-") for line in out.split("\n"))
+    # jev od AI bývá malými písmeny („výrazné červánky“) – když stojí na začátku, začátek řádku se zvelkopísmení
+    out = "\n".join((line[:1].upper() + line[1:]) for line in (line.strip(" –·|-") for line in out.split("\n")))
     return re.sub(r"[ \t]+\n", "\n", out).strip()
 
 
@@ -9055,7 +9056,10 @@ h2.day { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; col
 .studio-src .thumb { position: relative; width: 180px; aspect-ratio: 16 / 9; flex: none; border-radius: .5rem; overflow: hidden; background: var(--sw-img-bg); display: block; }
 .studio-src .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .studio-src .thumb .play { position: absolute; inset: 0; margin: auto; width: 40px; height: 40px; border-radius: 50%; background: rgba(2, 6, 23, .6); color: #fff; display: flex; align-items: center; justify-content: center; padding-left: .2rem; }
-.studio-wait { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .6rem; min-height: 260px; padding: 1.5rem; text-align: center; background: var(--sw-img-bg); }
+.studio-wait { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .6rem; min-height: 260px; padding: 1.5rem; text-align: center; background: var(--sw-img-bg); color: #e2e8f0; }
+.studio-wait .hint { color: #94a3b8; }
+.studio-wait .eta { font-size: 1.6rem; font-weight: 800; color: #fff; margin: .2rem 0 0; }
+.studio-wait .eta b { color: #7dd3fc; }
 .studio-wait p { margin: 0; }
 .pbar { width: min(420px, 90%); height: 10px; border-radius: 999px; background: var(--pico-muted-border-color); overflow: hidden; }
 .pbar i { display: block; height: 100%; background: var(--pico-primary); transition: width .5s; }

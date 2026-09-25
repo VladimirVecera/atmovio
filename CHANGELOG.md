@@ -2,6 +2,16 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 4.6.5 – 2026-09 – the countdown is actually visible
+
+- The "vytváří se… / zbývá asi … · hotovo asi v …" text in the rendering box was dark-on-dark in the light theme.
+  It is now light, large and shows a ☕ when the wait is over three minutes.
+
+## 4.6.4 – 2026-09 – capital letter at the start of titles
+
+- Templates for title, description, intro and overlay text: the first letter of every line is capitalised, so
+  a template starting with `{jev}` ("výrazné červánky – Březolupy …") no longer starts lowercase.
+
 ## 4.6.3 – 2026-09 – description always reaches YouTube
 
 - If a video has an empty description at upload time (videos touched by the 4.6.0 bug), it is rebuilt from the

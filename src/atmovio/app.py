@@ -56,7 +56,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "4.6.3"
+APP_VERSION = "4.6.5"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -3277,7 +3277,7 @@ TEMPLATES["studio_video.html"] = """{% extends "base.html" %}{% block actions %}
  {% if v.ready %}<video controls preload="metadata" playsinline style="width:100%;display:block;background:#000;aspect-ratio:16/9" poster="{% if v.thumb %}/studio/v/{{ v.id }}/thumb.jpg{% endif %}" src="/studio/v/{{ v.id }}/play.mp4"></video>
  {% else %}<div class="studio-wait">
   {% if v.status == 'failed' %}<div class="badge err">nepodařilo se</div><p>{{ v.message or 'neznámá chyba' }}</p><a class="btn small" href="/studio/new/{{ v.export_id }}?again={{ v.id }}">Zkusit znovu</a>
-  {% elif v.status == 'rendering' %}<div class="spin"></div><p><b>Vytváří se…</b> {{ v.progress }} %</p><div class="pbar"><i style="width:{{ v.progress }}%"></i></div>{% if v.eta_s %}<p class="eta"><span x-data="countdown({{ v.eta_s }})" x-text="txt"></span> · hotovo asi v <b>{{ v.eta_at }}</b></p>{% endif %}<p class="hint">Zrychlení {{ v.speed }}× – odhad se zpřesňuje během práce. Stránka se sama obnovuje.</p>
+  {% elif v.status == 'rendering' %}<div class="spin"></div><p><b>Vytváří se…</b> {{ v.progress }} %</p><div class="pbar"><i style="width:{{ v.progress }}%"></i></div>{% if v.eta_s %}<p class="eta">{% if v.eta_s >= 180 %}☕ {% endif %}<span x-data="countdown({{ v.eta_s }})" x-text="txt"></span> · hotovo asi v <b>{{ v.eta_at }}</b></p>{% endif %}<p class="hint">Zrychlení {{ v.speed }}× – odhad se zpřesňuje během práce. Stránka se sama obnovuje.</p>
   {% else %}<div class="spin"></div><p><b>Čeká ve frontě</b>{% if queue_pos %} · před ním {{ queue_pos }}{% endif %}</p>{% if v.eta_s %}<p class="eta"><span x-data="countdown({{ v.eta_s }})" x-text="txt"></span> · hotovo asi v <b>{{ v.eta_at }}</b></p>{% endif %}<p class="hint">Videa se vyrábějí po jednom, aby RPi zvládalo nahrávat.</p>{% endif %}
  </div>{% endif %}</div>
  {% if v.message and v.status == 'ready' %}<div class="card warn"><b>Poznámka:</b> {{ v.message }}</div>{% endif %}
@@ -5582,7 +5582,8 @@ def studio_fill(tpl: str, v: dict) -> str:
         out = out.replace("{" + k + "}", str(val))
     # prázdná značka nesmí nechat dva oddělovače za sebou („Kamera –  · 12. 9.“ → „Kamera · 12. 9.“)
     out = re.sub(r"(\s+[–·|-]){2,}\s+", " · ", out)
-    out = "\n".join(line.strip(" –·|-") for line in out.split("\n"))
+    # jev od AI bývá malými písmeny („výrazné červánky“) – když stojí na začátku, začátek řádku se zvelkopísmení
+    out = "\n".join((line[:1].upper() + line[1:]) for line in (line.strip(" –·|-") for line in out.split("\n")))
     return re.sub(r"[ \t]+\n", "\n", out).strip()
 
 

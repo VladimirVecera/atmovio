@@ -597,7 +597,10 @@ h2.day { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; col
 .studio-src .thumb { position: relative; width: 180px; aspect-ratio: 16 / 9; flex: none; border-radius: .5rem; overflow: hidden; background: var(--sw-img-bg); display: block; }
 .studio-src .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .studio-src .thumb .play { position: absolute; inset: 0; margin: auto; width: 40px; height: 40px; border-radius: 50%; background: rgba(2, 6, 23, .6); color: #fff; display: flex; align-items: center; justify-content: center; padding-left: .2rem; }
-.studio-wait { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .6rem; min-height: 260px; padding: 1.5rem; text-align: center; background: var(--sw-img-bg); }
+.studio-wait { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .6rem; min-height: 260px; padding: 1.5rem; text-align: center; background: var(--sw-img-bg); color: #e2e8f0; }
+.studio-wait .hint { color: #94a3b8; }
+.studio-wait .eta { font-size: 1.6rem; font-weight: 800; color: #fff; margin: .2rem 0 0; }
+.studio-wait .eta b { color: #7dd3fc; }
 .studio-wait p { margin: 0; }
 .pbar { width: min(420px, 90%); height: 10px; border-radius: 999px; background: var(--pico-muted-border-color); overflow: hidden; }
 .pbar i { display: block; height: 100%; background: var(--pico-primary); transition: width .5s; }
