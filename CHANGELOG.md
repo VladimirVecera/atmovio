@@ -2,6 +2,12 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 4.6.3 – 2026-09 – description always reaches YouTube
+
+- If a video has an empty description at upload time (videos touched by the 4.6.0 bug), it is rebuilt from the
+  description template, the AI text and the music credit before uploading. Angle brackets, which YouTube rejects,
+  are replaced. The log now records the title and description length of every upload.
+
 ## 4.6.2 – 2026-09 – titles that attract viewers
 
 - **✨ Navrhnout titulek (AI)** next to the title field (new video and finished video): the configured AI

@@ -56,7 +56,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "4.6.2"
+APP_VERSION = "4.6.3"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -6631,7 +6631,23 @@ def yt_upload(cfg, job: dict) -> str:
         except Exception:
             pass
     tags = [t.strip() for t in str(y.get("tags") or "").split(",") if t.strip()][:30]
-    body = {"snippet": {"title": (job["title"] or job["name"])[:100], "description": (job["description"] or "")[:4900], "tags": tags,
+    title = (job["title"] or job["name"]).strip()[:100]
+    description = (job["description"] or "").strip()
+    if not description:
+        # prázdný popis (staré video z 4.6.0) – sestavit ze šablony, textu AI a autora hudby
+        try:
+            v = _studio_vars_for_row(cfg, job)
+            description = studio_fill(studio_cfg(cfg).get("description", ""), v)
+            credit = music_credit(job["music"]) if job.get("music") else ""
+            if credit:
+                description = (description + "\n\n" + credit).strip()
+            with db() as con:
+                con.execute("UPDATE studio_videos SET description=? WHERE id=?", (description[:5000], job["id"]))
+        except Exception as e:
+            log(f"YouTube: popis se nepodařilo doplnit ({e})")
+    description = description.replace("<", "‹").replace(">", "›")[:4900]   # YouTube nepovolí < > v popisu
+    log(f"YouTube: nahrávám „{title}“ – popis {len(description)} znaků, {YT_PRIVACY.get(privacy, privacy)}" + (f", playlist {playlist_id}" if playlist_id else ""))
+    body = {"snippet": {"title": title.replace("<", "‹").replace(">", "›"), "description": description, "tags": tags,
                         "categoryId": "22", "defaultLanguage": "cs"},
             "status": {"privacyStatus": privacy, "selfDeclaredMadeForKids": False}}
     size = f.stat().st_size
