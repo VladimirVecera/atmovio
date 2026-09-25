@@ -625,3 +625,7 @@ input[type="file"] { padding: .4rem 0; }
 .speed-val { font-size: 1.5rem; font-weight: 800; min-width: 4.2rem; text-align: right; }
 .yt-code { margin-top: .9rem; padding: .9rem 1rem; border-radius: .7rem; background: var(--pico-card-sectioning-background-color); border: 1px solid var(--pico-card-border-color); }
 .yt-code .code { font-size: 2.2rem; font-weight: 800; letter-spacing: .12em; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin: .3rem 0 .5rem; user-select: all; }
+.eta { margin: .3rem 0 0; font-weight: 600; }
+.cleanup { margin-top: .8rem; padding-top: .6rem; border-top: 1px solid var(--pico-card-border-color); }
+.cleanup h3 { font-size: 1rem; margin: 0 0 .2rem; }
+.cleanup .check { margin: .35rem 0; }

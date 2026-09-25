@@ -2,6 +2,16 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 4.6.1 – 2026-09 – upload keeps title, time estimates, clean-up after upload
+
+- **Fix**: uploading to YouTube wiped the video's title and description (the upload form re-sent empty values).
+  The upload now uses the saved title/description; an empty title falls back to the clip name.
+- **When will it be done**: rendering and uploading show a live countdown ("zbývá asi 2 min") and the clock time
+  ("hotovo asi v 17:05" / "na YouTube asi v 17:07") – also while a video waits in the queue (including videos
+  ahead of it) and in the Videa list.
+- **Clean up after upload**: once a video is on YouTube, the video page offers "Uklidit z RPi" – delete the
+  studio video, the source clip and optionally the AI detection with its snapshot, freeing disk space.
+
 ## 4.6 – 2026-09 – YouTube upload
 
 - **YouTube**: a finished studio video is uploaded to your channel from the video page (visibility, playlist or a

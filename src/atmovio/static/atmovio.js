@@ -100,6 +100,15 @@
       };
     });
 
+    // ---------- Odpočet „zbývá asi …“ mezi obnoveními stránky ----------
+    Alpine.data('countdown', function (seconds) {
+      return {
+        left: Math.max(0, seconds || 0), txt: '',
+        fmt: function () { var s = this.left; if (s <= 0) return 'už jen chvilku…'; return 'zbývá asi ' + (s >= 90 ? Math.round(s / 60) + ' min' : (s >= 10 ? Math.round(s / 5) * 5 : s) + ' s'); },
+        init: function () { var self = this; self.txt = self.fmt(); setInterval(function () { if (self.left > 0) self.left -= 1; self.txt = self.fmt(); }, 1000); }
+      };
+    });
+
     // ---------- Propojení YouTube: sleduje stav zadání kódu na google.com/device ----------
     Alpine.data('ytLink', function (active) {
       return {

@@ -131,6 +131,16 @@ camera:
 
 More on the web: [atmovio.com/api](https://www.atmovio.com/api/).
 
+## Video studio & YouTube
+
+A finished clip becomes a shareable time-lapse without leaving the browser:
+
+- **Speed 10–240×** in steps of ten, with a live preview of the source clip at the chosen speed before anything renders, plus an estimate of the result length and rendering time.
+- **Intro** (a short MP4 or just a logo image that gets the camera name and date), **text in the picture** from a template, fade from black and to black.
+- **Music per video**: search Openverse (Creative Commons, CC0 / CC BY only) by mood right next to the video, listen, click *Použít* – the credit line is added to the description automatically. Your own MP3s work too. Music fades in after the intro and fades out with the picture.
+- **Preview first**, edit title and description (pre-filled from the AI text), download the MP4.
+- **YouTube**: upload from the video page – visibility, existing or new playlist per video – or automatically for every alert video. One guided setup in Google Cloud (about ten minutes, once): [`docs/youtube.md`](docs/youtube.md). After upload, "Uklidit z RPi" frees the disk.
+
 ## How the AI part works
 
 1. From dawn to dusk (configurable: civil / nautical / astronomical twilight or fixed minutes) Atmovio grabs one full-resolution frame per camera every *N* minutes (faster around sunrise/sunset).

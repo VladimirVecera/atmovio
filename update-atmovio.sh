@@ -116,7 +116,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "4.6"
+APP_VERSION = "4.6.1"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -3182,7 +3182,7 @@ TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block actions %}<div c
 <div class="gallery videos">
 {% for s in studio %}<div class="shot video">
 {% if s.ready %}<a class="thumb" href="/studio/v/{{ s.id }}"><img src="{% if s.thumb %}/studio/v/{{ s.id }}/thumb.jpg{% endif %}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"><span class="play">▶</span><span class="dur">{{ s.duration_h }} · {{ s.speed }}×</span></a>
-{% else %}<a class="thumb wait" href="/studio/v/{{ s.id }}">{% if s.status == 'failed' %}<span>⚠️ nepodařilo se – {{ s.message }}</span>{% elif s.status == 'rendering' %}<span><span class="spin" style="display:inline-block;vertical-align:middle;width:18px;height:18px;margin-right:.4rem"></span>vytváří se… {{ s.progress }} %{% if s.eta_h %} · zbývá {{ s.eta_h }}{% endif %}</span>{% else %}<span>čeká ve frontě</span>{% endif %}</a>{% endif %}
+{% else %}<a class="thumb wait" href="/studio/v/{{ s.id }}">{% if s.status == 'failed' %}<span>⚠️ nepodařilo se – {{ s.message }}</span>{% elif s.status == 'rendering' %}<span><span class="spin" style="display:inline-block;vertical-align:middle;width:18px;height:18px;margin-right:.4rem"></span>vytváří se… {{ s.progress }} %{% if s.eta_at %} · hotovo ~{{ s.eta_at }}{% endif %}</span>{% else %}<span>čeká ve frontě{% if s.eta_at %} · hotovo ~{{ s.eta_at }}{% endif %}</span>{% endif %}</a>{% endif %}
 <div class="b"><div class="title">{{ s.title or s.name }}{% if s.auto %} <span class="badge ok">auto</span>{% endif %}{% if s.yt_status == 'done' %} <a class="badge info" href="{{ s.yt_url }}" target="_blank" rel="noopener">▶ YouTube</a>{% elif s.yt_status in ('queued', 'uploading') %} <span class="badge info">nahrává se na YouTube</span>{% elif s.yt_status == 'failed' %} <span class="badge err">YouTube selhalo</span>{% endif %}</div>
 <dl class="facts"><dt>Kamera</dt><dd>{{ s.camera_label }}</dd><dt>Úpravy</dt><dd>{{ s.speed }}×{% if s.intro %} · intro{% endif %}{% if s.music %} · hudba{% endif %}{% if s.text %} · text{% endif %}</dd><dt>Vytvořeno</dt><dd>{{ s.created|czdt }}</dd></dl>
 <div class="acts"><a class="btn small" href="/studio/v/{{ s.id }}">Otevřít</a>{% if s.ready %}<a class="btn small sec" href="/studio/v/{{ s.id }}/download">⬇ Stáhnout</a>{% endif %}
@@ -3304,8 +3304,8 @@ TEMPLATES["studio_video.html"] = """{% extends "base.html" %}{% block actions %}
  {% if v.ready %}<video controls preload="metadata" playsinline style="width:100%;display:block;background:#000;aspect-ratio:16/9" poster="{% if v.thumb %}/studio/v/{{ v.id }}/thumb.jpg{% endif %}" src="/studio/v/{{ v.id }}/play.mp4"></video>
  {% else %}<div class="studio-wait">
   {% if v.status == 'failed' %}<div class="badge err">nepodařilo se</div><p>{{ v.message or 'neznámá chyba' }}</p><a class="btn small" href="/studio/new/{{ v.export_id }}?again={{ v.id }}">Zkusit znovu</a>
-  {% elif v.status == 'rendering' %}<div class="spin"></div><p><b>Vytváří se…</b> {{ v.progress }} %{% if v.eta_h %} · zbývá {{ v.eta_h }}{% endif %}</p><div class="pbar"><i style="width:{{ v.progress }}%"></i></div><p class="hint">Zrychlení {{ v.speed }}× – podle délky záznamu pár sekund až minut. Stránka se sama obnovuje.</p>
-  {% else %}<div class="spin"></div><p><b>Čeká ve frontě</b>{% if queue_pos %} · před ním {{ queue_pos }}{% endif %}</p><p class="hint">Videa se vyrábějí po jednom, aby RPi zvládalo nahrávat.</p>{% endif %}
+  {% elif v.status == 'rendering' %}<div class="spin"></div><p><b>Vytváří se…</b> {{ v.progress }} %</p><div class="pbar"><i style="width:{{ v.progress }}%"></i></div>{% if v.eta_s %}<p class="eta"><span x-data="countdown({{ v.eta_s }})" x-text="txt"></span> · hotovo asi v <b>{{ v.eta_at }}</b></p>{% endif %}<p class="hint">Zrychlení {{ v.speed }}× – odhad se zpřesňuje během práce. Stránka se sama obnovuje.</p>
+  {% else %}<div class="spin"></div><p><b>Čeká ve frontě</b>{% if queue_pos %} · před ním {{ queue_pos }}{% endif %}</p>{% if v.eta_s %}<p class="eta"><span x-data="countdown({{ v.eta_s }})" x-text="txt"></span> · hotovo asi v <b>{{ v.eta_at }}</b></p>{% endif %}<p class="hint">Videa se vyrábějí po jednom, aby RPi zvládalo nahrávat.</p>{% endif %}
  </div>{% endif %}</div>
  {% if v.message and v.status == 'ready' %}<div class="card warn"><b>Poznámka:</b> {{ v.message }}</div>{% endif %}
  <div class="card"><dl class="facts">
@@ -3330,13 +3330,19 @@ TEMPLATES["studio_video.html"] = """{% extends "base.html" %}{% block actions %}
   <p class="hint" style="margin:.6rem 0 0">Původní vystřižené video zůstává ve Videích; smazání tady se ho netýká.</p></div>
  <div class="card" id="youtube"><h2>▶ YouTube</h2>
  {% if v.yt_status == 'done' and v.yt_url %}<p><span class="badge ok">nahráno</span> <a href="{{ v.yt_url }}" target="_blank" rel="noopener"><b>{{ v.yt_url }}</b></a></p><p class="hint">Titulek, popis, viditelnost i playlist můžeš dál upravit přímo na YouTube (YouTube Studio).</p>
- {% elif v.yt_status in ('queued', 'uploading') %}<p><span class="spin" style="display:inline-block;vertical-align:middle;width:18px;height:18px;margin-right:.4rem"></span><b>{% if v.yt_status == 'queued' %}Čeká na nahrání…{% else %}Nahrávám… {{ v.yt_progress }} %{% endif %}</b></p><div class="pbar"><i style="width:{{ v.yt_progress }}%"></i></div><form method="post" action="/studio/v/{{ v.id }}/youtube/reset" data-nobusy style="margin-top:.5rem"><button class="btn small sec">Zrušit</button></form>
+  <form method="post" action="/studio/v/{{ v.id }}/cleanup" class="cleanup" onsubmit="return confirm('Smazat z RPi vybrané položky? Video na YouTube zůstane.')">
+   <h3>Uklidit z RPi</h3>
+   <label class="check"><input type="checkbox" checked disabled>Toto video ze studia ({{ v.size_h }})</label>
+   <label class="check"><input type="checkbox" name="source" value="1" checked>Vystřižený klip (zdroj, ve Videích)</label>
+   <label class="check"><input type="checkbox" name="detection" value="1">Detekci AI včetně snímku (z historie)</label>
+   <div class="row" style="align-items:center"><button class="btn small sec">🗑 Smazat z RPi</button><span class="hint">Video je bezpečně na YouTube – uvolní se místo na disku.</span></div>
+  </form>
+ {% elif v.yt_status in ('queued', 'uploading') %}<p><span class="spin" style="display:inline-block;vertical-align:middle;width:18px;height:18px;margin-right:.4rem"></span><b>{% if v.yt_status == 'queued' %}Čeká na nahrání…{% else %}Nahrávám… {{ v.yt_progress }} %{% endif %}</b></p><div class="pbar"><i style="width:{{ v.yt_progress }}%"></i></div>{% if v.yt_eta_s %}<p class="eta"><span x-data="countdown({{ v.yt_eta_s }})" x-text="txt"></span> · na YouTube asi v <b>{{ v.yt_eta_at }}</b></p>{% endif %}<form method="post" action="/studio/v/{{ v.id }}/youtube/reset" data-nobusy style="margin-top:.5rem"><button class="btn small sec">Zrušit</button></form>
  {% elif not yt_linked %}<p class="hint">YouTube ještě není propojený. Nastavíš to jednou v <a href="/studio/settings#youtube">Nastavení → Video studio → YouTube</a> (průvodce krok za krokem).</p>
  {% elif not v.ready %}<p class="hint">Až bude video hotové, půjde nahrát.</p>
  {% else %}{% if v.yt_status == 'failed' %}<p><span class="badge err">nepodařilo se</span> {{ v.yt_error }}</p>{% endif %}
   <form method="post" action="/studio/v/{{ v.id }}/youtube" x-data="{pl: '{{ yt.playlist_id or '' }}'}">
-   <input type="hidden" name="title" :value="document.querySelector('form[action$=\'/meta\'] input[name=title]').value"><input type="hidden" name="description" :value="document.querySelector('form[action$=\'/meta\'] textarea[name=description]').value">
-   <div class="hint">Kanál <b>{{ yt.channel_title }}</b>. Použije se titulek a popis z rámečku nahoře (ulož je dřív, nebo je bere tak, jak jsou vyplněné).</div>
+   <div class="hint">Kanál <b>{{ yt.channel_title }}</b>. Na YouTube jde titulek a popis z rámečku nahoře – pokud jsi je změnil, nejdřív je <b>Ulož</b>.</div>
    <div class="row" style="margin-top:.5rem"><div><label>Viditelnost</label><select name="privacy">{% for k, l in yt_privacy.items() %}<option value="{{ k }}"{% if (yt.privacy or 'unlisted') == k %} selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
    <div><label>Playlist</label><select name="playlist_id" x-model="pl"><option value="">bez playlistu</option>{% for p in yt.playlists or [] %}<option value="{{ p.id }}">{{ p.title }}</option>{% endfor %}<option value="__new__">＋ nový playlist…</option></select></div></div>
    <div x-show="pl === '__new__'" x-cloak><label>Název nového playlistu</label><input type="text" name="playlist_new" placeholder="např. Západy slunce – Sehradice"></div>
@@ -5604,6 +5610,30 @@ def studio_fill(tpl: str, v: dict) -> str:
     return re.sub(r"[ \t]+\n", "\n", out).strip()
 
 
+def studio_estimate(cfg, row: dict) -> float:
+    """Odhad doby vytváření (s) ještě před startem – stejný vzorec jako na stránce nového videa."""
+    try:
+        with db() as con:
+            ex = con.execute("SELECT start_ts, end_ts FROM exports WHERE id=?", (row["export_id"],)).fetchone()
+        dur = float(ex["end_ts"] - ex["start_ts"]) if ex else 600.0
+    except Exception:
+        dur = 600.0
+    speed = max(10, int(row.get("speed") or 20))
+    decode = dur / 40 if speed >= 120 else dur * 25 / 260
+    encode = (dur / speed) * 30 / 35
+    return max(5.0, decode + encode + 3)
+
+
+def _eta_fields(seconds) -> dict:
+    """Text „asi 2 min“, sekundy pro odpočet a čas hodin, kdy to bude hotové."""
+    if not seconds:
+        return {"eta_h": "", "eta_s": 0, "eta_at": ""}
+    seconds = float(seconds)
+    at = dt.datetime.now() + dt.timedelta(seconds=seconds)
+    return {"eta_h": f"asi {int(round(seconds / 60))} min" if seconds >= 90 else f"asi {int(round(seconds / 10) * 10) or 10} s",
+            "eta_s": int(seconds), "eta_at": at.strftime("%H:%M") if seconds >= 60 else at.strftime("%H:%M:%S")}
+
+
 def studio_rows(cfg, export_id=None, sid=None) -> list:
     q, args = "SELECT * FROM studio_videos", ()
     if export_id:
@@ -5618,10 +5648,25 @@ def studio_rows(cfg, export_id=None, sid=None) -> list:
         r["size_h"] = human_size(f.stat().st_size) if r["ready"] else ""
         r["duration_h"] = f"{int(r['duration'] or 0) // 60}:{int(r['duration'] or 0) % 60:02d}" if r.get("duration") else ""
         r["progress"] = _studio_progress.get(r["id"], 0) if r["status"] == "rendering" else (100 if r["ready"] else 0)
-        eta = _studio_eta.get(r["id"]) if r["status"] == "rendering" else None
-        r["eta_h"] = (f"asi {int(eta // 60)} min" if eta >= 90 else f"asi {int(round(eta / 10) * 10) or 10} s") if eta else ""
+        eta = None
+        if r["status"] == "rendering":
+            eta = _studio_eta.get(r["id"]) or studio_estimate(cfg, r) * max(0.05, 1 - r["progress"] / 100)
+        elif r["status"] == "queued":
+            eta = studio_estimate(cfg, r)
+            with db() as con:   # + videa před ním ve frontě
+                ahead = [dict(x) for x in con.execute("SELECT * FROM studio_videos WHERE status IN ('queued','rendering') AND id<?", (r["id"],))]
+            for a in ahead:
+                eta += _studio_eta.get(a["id"]) or studio_estimate(cfg, a)
+        r.update(_eta_fields(eta))
         r["thumb"] = (studio_out_dir(cfg) / f"{r['id']}.jpg").is_file()
         r["yt_progress"] = _yt_progress.get(r["id"], 0)
+        yeta = None
+        if r["yt_status"] == "uploading":
+            yeta = _yt_eta.get(r["id"]) or (f.stat().st_size / (2 * 1024 * 1024) if r["ready"] else None)   # do 1. měření odhad ~2 MB/s
+        elif r["yt_status"] == "queued":
+            yeta = (f.stat().st_size / (2 * 1024 * 1024) + 5) if r["ready"] else None
+        yt = _eta_fields(yeta)
+        r.update(yt_eta_h=yt["eta_h"], yt_eta_s=yt["eta_s"], yt_eta_at=yt["eta_at"])
         r["camera_label"] = cam_label(cfg, r["camera"])
     return rows
 
@@ -6335,6 +6380,7 @@ YT_PRIVACY = {"unlisted": "Nezveřejněné (jen kdo má odkaz)", "public": "Veř
 _yt_link: dict = {}            # probíhající propojení: device_code, user_code, url, expires, interval, status, error
 _yt_token: dict = {"token": "", "until": 0.0}
 _yt_progress: dict = {}        # studio id → % nahrání
+_yt_eta: dict = {}             # studio id → odhad zbývajících sekund nahrávání
 _yt_thread: threading.Thread | None = None
 _yt_lock = threading.Lock()
 
@@ -6528,6 +6574,7 @@ def _yt_worker():
             add_event("warn", f"Nahrání na YouTube selhalo: {job['title'] or job['name']}", msg)
         finally:
             _yt_progress.pop(job["id"], None)
+            _yt_eta.pop(job["id"], None)
 
 
 def yt_upload(cfg, job: dict) -> str:
@@ -6574,6 +6621,7 @@ def yt_upload(cfg, job: dict) -> str:
     chunk = 8 * 1024 * 1024
     sent = 0
     video_id = ""
+    up_started = time.time()
     with f.open("rb") as fh:
         while sent < size:
             data = fh.read(chunk)
@@ -6601,6 +6649,9 @@ def yt_upload(cfg, job: dict) -> str:
                     continue
                 raise RuntimeError(f"YouTube nahrání selhalo (HTTP {pr.status_code}): {pr.text[:200]}")
             _yt_progress[job["id"]] = min(99, int(sent * 100 / size))
+            el = time.time() - up_started
+            if sent > 0 and el > 1:
+                _yt_eta[job["id"]] = max(1.0, (size - sent) * el / sent)
             if sent < size and sent != end + 1:
                 fh.seek(sent)
     if not video_id:
@@ -6700,20 +6751,55 @@ def studio_yt_defaults(request: Request, privacy: str = Form("unlisted"), playli
 
 
 @app.post("/studio/v/{sid}/youtube")
-def studio_yt_upload_post(request: Request, sid: int, privacy: str = Form("unlisted"), playlist_id: str = Form(""), playlist_new: str = Form(""),
-                          title: str = Form(""), description: str = Form("")):
+def studio_yt_upload_post(request: Request, sid: int, privacy: str = Form("unlisted"), playlist_id: str = Form(""), playlist_new: str = Form("")):
     cfg = load_config()
     if not yt_linked(cfg):
         flash(request, "YouTube není propojený – nastav ho v Nastavení → Video studio.", "err")
         return RedirectResponse(f"/studio/v/{sid}", status_code=303)
     with db() as con:
-        con.execute("UPDATE studio_videos SET title=?, description=? WHERE id=?", (title.strip()[:100], description.strip()[:5000], sid))
+        # prázdný titulek (např. po chybě 4.6.0) – doplnit z názvu zdroje, YouTube ho vyžaduje
+        con.execute("UPDATE studio_videos SET title=name WHERE id=? AND (title IS NULL OR title='')", (sid,))
     try:
         yt_enqueue(cfg, sid, privacy, playlist_id, playlist_new)
         flash(request, "Nahrávám na YouTube – podle velikosti videa to trvá od pár sekund do minut. Stránka se obnovuje sama.")
     except Exception as e:
         flash(request, str(e), "err")
     return RedirectResponse(f"/studio/v/{sid}", status_code=303)
+
+
+@app.post("/studio/v/{sid}/cleanup")
+def studio_cleanup(request: Request, sid: int, source: str = Form(""), detection: str = Form("")):
+    """Po nahrání na YouTube: uklidit z RPi – video ze studia, volitelně i zdrojový klip a detekci AI (snímek, historie)."""
+    cfg = load_config()
+    rows = studio_rows(cfg, sid=sid)
+    if not rows:
+        return RedirectResponse("/videos#studio", status_code=303)
+    r = rows[0]
+    if r.get("yt_status") != "done":
+        flash(request, "Uklidit jde až po úspěšném nahrání na YouTube.", "err")
+        return RedirectResponse(f"/studio/v/{sid}", status_code=303)
+    done = ["video ze studia"]
+    with db() as con:
+        ex = con.execute("SELECT * FROM exports WHERE id=?", (r["export_id"],)).fetchone()
+    det_id = ex["detection_id"] if ex else None
+    studio_delete(cfg, r)
+    if source and ex:
+        with db() as con:
+            others = con.execute("SELECT COUNT(*) FROM studio_videos WHERE export_id=?", (r["export_id"],)).fetchone()[0]
+        if others:
+            flash(request, "Zdrojový klip zůstal – používá ho ještě jiné video ze studia.", "err")
+        else:
+            delete_export(cfg, dict(ex))
+            done.append("vystřižený klip")
+    if detection and det_id:
+        with db() as con:
+            con.execute("DELETE FROM auto_exports WHERE detection_id=?", (det_id,))
+        n = _delete_evaluations(cfg, "id=?", (det_id,))
+        if n:
+            done.append("detekce AI se snímkem")
+    log(f"Studio: po nahrání na YouTube uklizeno – {', '.join(done)} ({r['yt_url']})")
+    flash(request, f"Uklizeno z RPi: {', '.join(done)}. Video zůstává na YouTube: {r['yt_url']}")
+    return RedirectResponse("/videos#studio", status_code=303)
 
 
 @app.post("/studio/v/{sid}/youtube/reset")
@@ -8527,6 +8613,10 @@ input[type="file"] { padding: .4rem 0; }
 .speed-val { font-size: 1.5rem; font-weight: 800; min-width: 4.2rem; text-align: right; }
 .yt-code { margin-top: .9rem; padding: .9rem 1rem; border-radius: .7rem; background: var(--pico-card-sectioning-background-color); border: 1px solid var(--pico-card-border-color); }
 .yt-code .code { font-size: 2.2rem; font-weight: 800; letter-spacing: .12em; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin: .3rem 0 .5rem; user-select: all; }
+.eta { margin: .3rem 0 0; font-weight: 600; }
+.cleanup { margin-top: .8rem; padding-top: .6rem; border-top: 1px solid var(--pico-card-border-color); }
+.cleanup h3 { font-size: 1rem; margin: 0 0 .2rem; }
+.cleanup .check { margin: .35rem 0; }
 ATMOVIO_CSS_EOF
   cat > "$1/atmovio.js" <<'ATMOVIO_JS_EOF'
 /* Atmovio – interakce (Alpine.js komponenty + pomocné funkce). */
@@ -8628,6 +8718,15 @@ ATMOVIO_CSS_EOF
             })
             .catch(function () { self.phase = 'restart'; self.later(); });
         }
+      };
+    });
+
+    // ---------- Odpočet „zbývá asi …“ mezi obnoveními stránky ----------
+    Alpine.data('countdown', function (seconds) {
+      return {
+        left: Math.max(0, seconds || 0), txt: '',
+        fmt: function () { var s = this.left; if (s <= 0) return 'už jen chvilku…'; return 'zbývá asi ' + (s >= 90 ? Math.round(s / 60) + ' min' : (s >= 10 ? Math.round(s / 5) * 5 : s) + ' s'); },
+        init: function () { var self = this; self.txt = self.fmt(); setInterval(function () { if (self.left > 0) self.left -= 1; self.txt = self.fmt(); }, 1000); }
       };
     });
 

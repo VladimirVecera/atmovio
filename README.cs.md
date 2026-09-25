@@ -128,6 +128,16 @@ camera:
 
 Více na webu: [atmovio.com/cs/api](https://www.atmovio.com/cs/api/).
 
+## Video studio a YouTube
+
+Z hotového klipu vznikne časosběr na sdílení, aniž bys opustil prohlížeč:
+
+- **Rychlost 10–240×** po desítkách, s náhledem zdrojového záznamu zvolenou rychlostí ještě před vytvořením, plus odhad délky výsledku a doby vytváření.
+- **Intro** (krátké MP4 nebo jen obrázek s logem, do kterého se doplní název kamery a datum), **text v obraze** ze šablony, rozjasnění ze tmy a ztmavení na konci.
+- **Hudba ke každému videu**: hledání v Openverse (Creative Commons, jen CC0 / CC BY) podle nálady přímo u videa, poslech, kliknutí *Použít* – autor se do popisu doplní sám. Fungují i vlastní MP3. Hudba nabíhá po intru a dozní se ztmavením obrazu.
+- **Nejdřív náhled**, úprava titulku a popisu (předvyplněné z textu AI), stažení MP4.
+- **YouTube**: nahrání ze stránky videa – viditelnost, existující nebo nový playlist u každého videa zvlášť – nebo automaticky pro každé video po upozornění. Jedno nastavení v Google Cloud s průvodcem (asi deset minut, jednou): [`docs/youtube.md`](docs/youtube.md). Po nahrání „Uklidit z RPi“ uvolní disk.
+
 ## Jak funguje AI část
 
 1. Od svítání do soumraku (nastavitelné: občanský / nautický / astronomický soumrak nebo pevné minuty) Atmovio vezme z každé kamery jeden snímek v plném rozlišení každých *N* minut (kolem východu a západu častěji).
