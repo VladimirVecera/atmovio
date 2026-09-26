@@ -2,6 +2,13 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 5.3.5 – 2026-09-26 – visible AI video progress
+
+- Show recording wait, export progress, saved files and failures directly above detection details and in detection history.
+- Highlight pending videos with dated deadlines; distinguish export scheduling from completion.
+- Preserve links from continuing AI detections to their shared video, including fixed-length clips.
+- Refresh detail status without reloading the page or resetting edited video ranges.
+
 ## 5.3.4 – 2026-09-26 – grouped sky and timelapse phenomena
 
 - Add 23 cloud, optical, night-sky and temporal categories in compact groups, including custom camera rules.

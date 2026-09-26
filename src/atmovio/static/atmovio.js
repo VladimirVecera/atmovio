@@ -15,6 +15,25 @@
 
   // ---------- Alpine komponenty ----------
   document.addEventListener('alpine:init', function () {
+    Alpine.data('videoStatus', function (id, initial) {
+      return {state:initial, offline:false, timer:null, stopped:false,
+        init: function () { this.timer=setTimeout(()=>this.check(),20000); },
+        destroy: function () { this.stopped=true; clearTimeout(this.timer); },
+        check: async function () {
+          if (this.stopped) return;
+          const controller=new AbortController(), timeout=setTimeout(()=>controller.abort(),10000);
+          try {
+            if (document.visibilityState!=='visible') return;
+            const response=await fetch('/detection/'+id+'/video-status', {cache:'no-store',signal:controller.signal});
+            if (!response.ok || response.redirected) throw new Error('Status unavailable');
+            const state=await response.json();
+            if (!state.title || !state.tone) throw new Error('Invalid status');
+            this.state=state; this.offline=false;
+          } catch (_) { this.offline=true; }
+          finally { clearTimeout(timeout); if (!this.stopped) this.timer=setTimeout(()=>this.check(),20000); }
+        }
+      };
+    });
     Alpine.data('serviceStatus', function () {
       return {message:'', recovered:false, waiting:false, timer:null, stopped:false, dirty:false,
         init: function () {

@@ -116,7 +116,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "5.3.4"
+APP_VERSION = "5.3.5"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -3584,7 +3584,11 @@ TEMPLATES["logs.html"] = """{% extends "base.html" %}{% block actions %}<div cla
 </div>
 {% endblock %}"""
 
+TEMPLATES["video_status.html"] = """<section class="video-status" aria-label="Stav AI videa" x-data='videoStatus({{ e.id }}, {{ video_status|tojson }})' :class="state.tone" role="status">
+<div class="video-status-icon" aria-hidden="true">▣</div><div><span class="eyebrow">AI video</span><strong x-text="state.title">{{ video_status.title }}</strong><p x-text="state.detail">{{ video_status.detail }}</p><small x-show="offline" x-cloak>Stav se nepodařilo obnovit. Zkouším spojení znovu.</small></div><a class="btn small sec" href="/videos">AI videa →</a></section>"""
+
 TEMPLATES["detection.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small sec" href="/history">← Historie</a></div>{% endblock %}{% block content %}
+{% include "video_status.html" %}
 <div class="grid-2" style="grid-template-columns:minmax(0,3fr) minmax(300px,2fr)">
 <div x-data="clipRange({{ from_time|tojson|forceescape }}, {{ to_time|tojson|forceescape }}, {{ clip_tz|tojson|forceescape }})">
 <div class="card" style="padding:0;overflow:hidden">
@@ -3618,7 +3622,7 @@ TEMPLATES["detection.html"] = """{% extends "base.html" %}{% block actions %}<di
 <button class="btn" data-busy="Zadávám vystřižení videa">{{ "Naplánovat video" if clip_state == "future" else "Vytvořit video z tohoto rozsahu" }}</button>
 <span class="hint">Vznikne nový klip; dříve uložené video se nepřepisuje. Video (MP4) se uloží na disk pro záznamy a objeví se ve <a href="/videos">Videa</a> s náhledem, přehrávačem a odkazem ke stažení. Normální video jde v přehrávači zrychlit až 120×; zrychlené 25× je malý soubor vhodný ke sdílení. Samo se smaže po nastavené době.</span></form>
 {% elif clip_state == 'none' %}<p class="hint">Pro tento čas není záznam, video nelze vystřihnout.</p>{% elif clip_state == 'offline' %}<p class="hint">Frigate právě neodpovídá – zkus to za minutu.</p>{% else %}<p class="hint">Bez připojeného disku pro záznamy nelze video vystřihnout.</p>{% endif %}
-{% for j in pending_auto %}<div class="flash" style="margin-top:.6rem"><div>{% if j.film_open %}Jev pokračuje. Klip čeká na další AI film, nejdéle do {{ j.due_h }}; potom uloží dostupný rozsah.{% else %}Video je naplánované k vytvoření v {{ j.due_h }}.{% endif %}</div></div>{% endfor %}
+
 {% if my_exports %}<div style="margin-top:.6rem;display:flex;gap:.4rem;flex-wrap:wrap;align-items:center"><span class="hint">Z této detekce už existuje:</span>{% for x in my_exports %}<a class="btn small sec" href="/videos/{{ x.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ x.name }}">▶ {{ x.name }}</a>{% endfor %}</div>{% endif %}
 </div>
 </div>
@@ -3749,10 +3753,10 @@ TEMPLATES["youtube.html"] = """{% extends "base.html" %}{% block actions %}<a cl
 
 TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block actions %}<a class="btn small sec" href="/videos/settings">Nastavení AI videí</a>{% endblock %}{% block content %}
 <div class="workflow"><a href="/history">1 · AI detekce</a><span>→</span><b>2 · AI videa</b><span>→</span><a href="/youtube">3 · YouTube videa</a></div>
-{% if pending_auto %}<div class="card"><h2>Čeká na dokončení záznamu</h2>{% for j in pending_auto %}<p>{{ j.name }} <span class="hint">· {% if j.film_open %}jev pokračuje · čeká na další AI film, nejdéle do {{ j.due_h }}{% else %}plánováno {{ j.due_h }}{% endif %}</span></p>{% endfor %}</div>{% endif %}
+{% if pending_auto %}<section class="card pending-videos"><div class="section-head"><h2>Rozpracovaná videa <span class="badge warn">{{ pending_auto|length }}</span></h2><span class="hint">Stav se obnovuje automaticky</span></div>{% for j in pending_auto %}<div class="video-status waiting"><div class="video-status-icon" aria-hidden="true">▣</div><div><strong>{{ j.video_status.title }}</strong><b class="video-status-name">{{ j.name }}</b><p>{{ j.video_status.detail }}</p></div><a class="btn small sec" href="/detection/{{ j.detection_id }}">Detekce →</a></div>{% endfor %}</section>{% endif %}
 {% if failed_auto %}<details class="card" open><summary>Automatická videa, která se nepodařilo vytvořit</summary>{% for j in failed_auto %}<p><a href="/detection/{{ j.detection_id }}">{{ j.name }}</a> · {{ j.message }}</p>{% endfor %}<p class="hint">V detailu detekce lze ověřit dostupnost záznamu a zadat nový klip.</p></details>{% endif %}
 <div class="section-head" style="margin-top:1.2rem"><h2>AI videa</h2><span class="hint">zdrojové klipy z detekcí a ručních exportů</span></div>
-{% if not videos %}<div class="card"><p>Zatím žádné video. Otevři detekci v <a href="/history">Historii</a> a klikni na <b>Vytvořit video</b> – vybereš, kolik minut před a po snímku se má vystřihnout.</p></div>{% endif %}
+{% if not videos and pending_auto %}<p class="hint">Hotová videa se zde objeví po dokončení exportu. Rozpracované záznamy vidíš výše.</p>{% elif not videos %}<div class="card"><p>Zatím žádné video. Otevři detekci v <a href="/history">Historii</a> a klikni na <b>Vytvořit video</b> – vybereš, kolik minut před a po snímku se má vystřihnout.</p></div>{% endif %}
 <div class="gallery videos">
 {% for v in videos %}<div class="shot video" id="v{{ v.id }}">
 {% if v.ready %}<a class="thumb" href="/videos/{{ v.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ v.name }}"><img src="{% if v.thumb %}/videos/{{ v.id }}/thumb.jpg{% endif %}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"><span class="play">▶</span><span class="dur">{{ v.duration_h }}</span></a>
@@ -3829,9 +3833,10 @@ TEMPLATES["history.html"] = """{% extends "base.html" %}{% block actions %}<div 
  {% if e.image %}<a class="pic" href="{% if not e.error %}/detection/{{ e.id }}{% else %}/snapshot/{{ e.image }}{% endif %}" {% if e.error %}data-lightbox="history"{% endif %}><img src="/snapshot/{{ e.image }}" alt="" loading="lazy"></a>{% endif %}
  <div class="tx">
   <div class="hd"><span class="score {{ 'err' if e.error else ('ok' if e.score >= rule(e.camera).threshold else ('mid' if e.score >= 5 else 'low')) }}">{% if e.error %}chyba{% else %}{{ e.score }}<small>/10</small>{% endif %}</span><span class="when">{{ e.ts|cztime }}</span><b>{{ cam(e.camera) }}</b>{% if e.phenomenon %}<span class="ph">{{ e.phenomenon }}</span>{% endif %}{% if e.trend %}<span class="badge {{ 'ok' if e.trend in ('nastupuje', 'vrcholí') else 'mut' }}" title="Vývoj podle filmového pásu">{{ {'nastupuje': '↗', 'vrcholí': '★', 'odeznívá': '↘', 'beze změny': '→'}.get(e.trend, '') }} {{ e.trend }}</span>{% endif %}{% if e.timelapse is not none and e.timelapse >= 7 %}<span class="badge info" title="Působivé pro časosběr (AI {{ e.timelapse }}/10)">🎞 {{ e.timelapse }}/10</span>{% endif %}
-   {% if e.notified %}<span class="badge ok">upozorněno</span>{% elif not e.error and e.score >= rule(e.camera).threshold %}<span class="badge info">{{ "zajímavý film" if e.film and e.film.mode == "batch" else "v epizodě" }}</span>{% endif %}{% if e.exported %}<a class="badge info" href="/videos" title="Z této detekce je vystřižené video">🎬 video</a>{% endif %}</div>
+   {% if e.notified %}<span class="badge ok">upozorněno</span>{% elif not e.error and e.score >= rule(e.camera).threshold %}<span class="badge info">{{ "zajímavý film" if e.film and e.film.mode == "batch" else "v epizodě" }}</span>{% endif %}</div>
   {% if e.film %}<div class="hint">{{ 'Dokončený AI film' if e.film.mode == 'batch' else 'Průběžný pohled' }} · {{ e.film.frames }} snímků · {{ e.film.range_h }}{% if e.film.film_id %} · <a href="/ai/films/{{ e.film.film_id }}">Přehrát podklady AI</a>{% endif %}</div>{% endif %}
   <p class="desc">{{ e.description or e.error or '–' }}</p>
+  {% if not e.error %}<a class="detection-video-state {{ e.video_status.tone }}" href="/detection/{{ e.id }}"><strong>{{ e.video_status.title }}</strong><span>{{ e.video_status.detail }}</span></a>{% endif %}
   {% if e.note %}<div class="hint">{{ e.note }}</div>{% endif %}
  </div>
  <div class="ac">{% if not e.error %}<a class="btn small sec" href="/detection/{{ e.id }}">AI film a video</a>{% else %}<a class="btn small sec" href="/detection/{{ e.id }}">Podklady a chyba</a><form method="post" action="/detection/{{ e.id }}/delete" data-nobusy><button class="btn small sec">Smazat</button></form>{% endif %}</div>
@@ -3843,6 +3848,7 @@ TEMPLATES["history.html"] = """{% extends "base.html" %}{% block actions %}<div 
  <span class="pages">{% for p in range(1, pages + 1) %}{% if p == 1 or p == pages or (p >= page - 2 and p <= page + 2) %}<a class="{{ 'on' if p == page }}" href="{{ link(f_cam, f_min, f_show, p) }}">{{ p }}</a>{% elif p == page - 3 or p == page + 3 %}<span>…</span>{% endif %}{% endfor %}</span>
  <a class="btn small sec {{ 'dis' if page >= pages }}" href="{{ link(f_cam, f_min, f_show, page + 1) }}">Starší ›</a>
 </nav>{% endif %}
+{% if video_waiting %}<div x-data="autorefresh(20)"></div>{% endif %}
 {% endblock %}"""
 
 TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small sec" href="/videos">← Videa</a><a class="btn small sec" href="/studio/settings">⚙ Nastavení studia</a></div>{% endblock %}{% block content %}
@@ -5795,8 +5801,11 @@ def history(request: Request, camera: str = "", min_score: int = 0, show: str = 
                 row["film"]["range_h"] = " – ".join(dt.datetime.fromtimestamp(float(row["film"][k]), ZoneInfo(cfg["tz"])).strftime("%H:%M") for k in ("start", "end"))
         except (ValueError, TypeError):
             row["film"] = {}
+    video_states = detection_video_statuses(cfg, rows)
+    for row in rows:
+        row["video_status"] = video_states[row["id"]]
     return render(request, "history.html", "AI detekce", cfg=cfg, films=films_overview(cfg), batch=batch_mode(cfg["ai"]), rows=rows, cameras=frigate_cameras(cfg),
-                  total=total, pages=pages, page=page, per_page=per_page,
+                  video_waiting=any(v["active"] for v in video_states.values()), total=total, pages=pages, page=page, per_page=per_page,
                   f_cam=camera, f_min=min_score, f_show=show, f_phen=phenomenon, f_since=since, f_until=until, phenomena=phenomena_catalog(cfg["ai"]), keep_days=cfg["ai"].get("keep_days", 14), threshold=int(cfg["ai"].get("threshold", 7)),
                   subtitle="Co AI na obloze viděla – s upozorněním, nebo úplně vše.")
 
@@ -5926,7 +5935,7 @@ def detection_page(request: Request, rid: int):
                   before=before, after=after, clip_start=clip_start, clip_end=clip_end,
                   from_time=clip_local(cfg, clip_start), to_time=clip_local(cfg, clip_end), clip_minutes=round((clip_end - clip_start) / 60, 2), clip_tz=cfg["tz"],
                   neighbours=neighbours, my_exports=my_exports, default_name=default_name, ready=storage_ready(), clip_state=clip_state, retain=retain_days(cfg),
-                  pending_auto=pending_auto_exports(cfg, rid), e_center=center, use_export=use_export,
+                  video_status=detection_video_statuses(cfg, [e])[rid], pending_auto=pending_auto_exports(cfg, rid), e_center=center, use_export=use_export,
                   subtitle="Podklady AI a záznam události. U dokončeného filmu se rezervy videa počítají od zachyceného začátku a konce jevu.")
 
 
@@ -6137,7 +6146,7 @@ def _schedule_film_export(cfg, result, hits):
     with db() as con:
         for handled in con.execute("SELECT detection_id,ai_context FROM auto_exports WHERE camera=? AND ai_context IS NOT NULL", (cam,)):
             try:
-                if handled["detection_id"] == result["id"] or json.loads(handled["ai_context"]).get("id") == result["id"]:
+                if result["id"] in export_detection_ids(dict(handled)):
                     return
             except (ValueError, TypeError):
                 pass
@@ -6146,6 +6155,9 @@ def _schedule_film_export(cfg, result, hits):
             for previous in con.execute("SELECT * FROM auto_exports WHERE camera=? AND status IN ('pending','done') AND start_ts<=? AND end_ts>=? ORDER BY end_ts DESC", (cam, film["event_start"], film["event_start"])):
                 if set(hits) & set((previous["film_hits"] or "").split(",")):
                     if previous["end_ts"] >= film["event_end"]:
+                        context = json.loads(previous["ai_context"] or "{}")
+                        context["detection_ids"] = sorted(export_detection_ids(dict(previous)) | {result["id"]})
+                        con.execute("UPDATE auto_exports SET ai_context=? WHERE id=?", (json.dumps(context, ensure_ascii=False), previous["id"]))
                         return
                     start = max(start, previous["end_ts"])
                     end = configured_clip_end(ax, start, end)
@@ -6164,6 +6176,7 @@ def _schedule_film_export(cfg, result, hits):
         if not hits:
             return
         evidence = dict(result)
+        evidence["detection_ids"] = sorted((export_detection_ids(matching) if matching else set()) | {result["id"]})
         ongoing = bool(film["ongoing"]) and not fixed
         if matching:
             start = min(start, matching["start_ts"])
@@ -6213,14 +6226,87 @@ def schedule_auto_export(cfg, rid: int, camera: str, now, labels: str):
     log(f"[{camera}] Automatické video „{name}“ naplánováno ({(end - start) / 60:g} min), vytvoří se v {dt.datetime.fromtimestamp(end + 45, ZoneInfo(cfg['tz'])).strftime('%H:%M')}")
 
 
+def export_detection_ids(record):
+    """Explicit episode membership; do not guess from overlapping recording times."""
+    ids = {record.get("detection_id")}
+    try:
+        context = json.loads(record.get("ai_context") or "{}")
+        ids.add(context.get("id"))
+        ids.update(context.get("detection_ids", []))
+    except (ValueError, TypeError, AttributeError):
+        pass
+    return {i for i in ids if isinstance(i, int)}
+
+
+def pending_video_status(cfg, job):
+    due = dt.datetime.fromtimestamp(job["due_ts"], ZoneInfo(cfg["tz"])).strftime("%d.%m. %H:%M")
+    if time.time() >= job["due_ts"]:
+        title = "Čeká na zahájení exportu"
+        detail = "Plánovaný čas uplynul. Čeká na zpracování nebo dostupnost Frigate; hotové video zatím není potvrzené."
+        if job.get("message") == "waiting_frigate":
+            detail = "Frigate neodpovídá. Automaticky zkouším export znovu, nejvýše 15 minut od plánovaného času."
+    elif job.get("film_open"):
+        title = "Jev pokračuje · video se ještě sbírá"
+        detail = f"Čeká na další AI film, nejdéle do {due}. Potom se zadá export dostupného rozsahu; zpracování ještě chvíli potrvá."
+    else:
+        title = "Čeká na dokončení záznamu"
+        detail = f"Export je naplánovaný na {due}, po doběhnutí záznamu a rezervy. Čas dokončení závisí na Frigate."
+    return dict(title=title, detail=detail, tone="waiting", active=True)
+
+
 def pending_auto_exports(cfg, detection_id=None) -> list:
-    tz = ZoneInfo(cfg["tz"])
-    q = "SELECT * FROM auto_exports WHERE status='pending'" + (" AND detection_id=?" if detection_id else "") + " ORDER BY due_ts"
     with db() as con:
-        rows = [dict(r) for r in con.execute(q, (detection_id,) if detection_id else ())]
+        rows = [dict(r) for r in con.execute("SELECT * FROM auto_exports WHERE status='pending' ORDER BY due_ts")]
+    if detection_id is not None:
+        rows = [r for r in rows if detection_id in export_detection_ids(r)]
     for r in rows:
-        r["due_h"] = dt.datetime.fromtimestamp(r["due_ts"], tz).strftime("%H:%M")
+        r["due_h"] = dt.datetime.fromtimestamp(r["due_ts"], ZoneInfo(cfg["tz"])).strftime("%d.%m. %H:%M")
+        r["video_status"] = pending_video_status(cfg, r)
     return rows
+
+
+def detection_video_statuses(cfg, evaluations):
+    with db() as con:
+        jobs = [dict(r) for r in con.execute("SELECT * FROM auto_exports ORDER BY id")]
+    videos = list_videos(cfg, thumbnails=False)
+    by_fid = {v["frigate_id"]: v for v in videos}
+    statuses = {}
+    def video_status(v):
+        if v["ready"]:
+            return dict(title="Video je uložené", detail="Připravené k přehrání a stažení v AI videích.", tone="ready", active=False)
+        if v["expired"] or v["stuck"]:
+            return dict(title="Video se nepodařilo dokončit", detail="Zdrojový záznam už není dostupný." if v["expired"] else "Export se přerušil nebo trvá neobvykle dlouho. Zkontroluj AI videa.", tone="failed", active=False)
+        return dict(title="Vytváří se video" if v["in_progress"] else "Čeká na potvrzení videa", detail="Frigate zpracovává export; přesný čas dokončení neznáme." if v["in_progress"] else "Soubor zatím není potvrzený jako dostupný. Zkontroluj stav v AI videích.", tone="waiting", active=True)
+    for job in jobs:
+        if job["status"] == "pending":
+            state = pending_video_status(cfg, job)
+        elif job["status"] == "failed":
+            state = dict(title="Video se nepodařilo vytvořit", detail=job.get("message") or "Otevři AI videa a zkontroluj chybu.", tone="failed", active=False)
+        elif job.get("message") in by_fid:
+            state = video_status(by_fid[job["message"]])
+        else:
+            state = dict(title="Video není dostupné", detail="Export byl zadán, ale uložený klip už není v přehledu videí.", tone="failed", active=False)
+        for rid in export_detection_ids(job):
+            statuses[rid] = state
+    for v in reversed(videos):
+        for rid in export_detection_ids(v):
+            if rid not in statuses:
+                statuses[rid] = video_status(v)
+    ax = cfg["ai"].get("auto_export") or {}
+    for e in evaluations:
+        if e["id"] not in statuses:
+            reason = "Automatické ukládání je nyní vypnuté." if not ax.get("enabled") else ("Kamera nyní není vybraná pro automatické ukládání." if e["camera"] not in ax.get("cameras", []) else "Pro tuto detekci není evidovaný plán videa. Upozornění samo nepotvrzuje uložení; rozsah můžeš vytvořit ručně.")
+            statuses[e["id"]] = dict(title="Video není naplánované", detail=reason, tone="neutral", active=False)
+    return statuses
+
+
+@app.get("/detection/{rid}/video-status")
+def detection_video_status(request: Request, rid: int):
+    with db() as con:
+        e = con.execute("SELECT * FROM evaluations WHERE id=?", (rid,)).fetchone()
+    if not e:
+        return JSONResponse({"error": "Detekce už neexistuje"}, status_code=404)
+    return JSONResponse(detection_video_statuses(load_config(), [dict(e)])[rid], headers={"Cache-Control": "no-store"})
 
 
 def failed_auto_exports() -> list:
@@ -6242,6 +6328,8 @@ def _process_auto_exports(cfg):
         state = recording_state(cfg, job["camera"], job["start_ts"], job["end_ts"])
         if state == "offline":
             if now - job["due_ts"] < 900:
+                with db() as con:
+                    con.execute("UPDATE auto_exports SET message='waiting_frigate' WHERE id=?", (job["id"],))
                 continue  # Frigate zrovna neběží – zkusit později (max 15 min)
             _auto_export_finish(job, "failed", "Frigate neodpovídal 15 minut po detekci")
             continue
@@ -10355,6 +10443,12 @@ header.top nav.menu > a.active, header.top nav.menu .dd > button.active { backgr
 .phenomenon-group > summary .hint { margin-left:auto; }
 .phenomenon-group .chips { padding:4px 0 14px; }
 .phenomenon-group .chip { white-space:normal; }
+
+/* Recording and export status: visible before the player, independent of notification delivery. */
+.video-status{display:flex;align-items:center;gap:1rem;padding:1.1rem 1.25rem;margin:0 0 1.1rem;border:1px solid var(--pico-muted-border-color);border-left:5px solid #d79417;border-radius:12px;background:var(--pico-card-background-color);min-width:0}
+.video-status>div:nth-child(2){flex:1;min-width:0}.video-status strong{display:block;font-size:1.08rem}.video-status p{margin:.35rem 0 0;line-height:1.5}.video-status .eyebrow{display:block;margin-bottom:.2rem}.video-status-icon{font-size:1.8rem;color:#b77b10}.video-status-name{display:block;font-size:.88rem;margin-top:.35rem;overflow-wrap:anywhere}.video-status.ready{border-left-color:#15985f}.video-status.failed{border-left-color:#dc4545}.video-status.neutral{border-left-color:#71829d}.video-status .btn{flex-shrink:0}.pending-videos .video-status:last-child{margin-bottom:0}
+.detection-video-state{display:block;border-left:3px solid #d79417;padding:.4rem .7rem;margin-top:.55rem;color:inherit!important;text-decoration:none!important}.detection-video-state strong{display:block;font-size:.87rem}.detection-video-state span{display:block;font-size:.78rem;line-height:1.45;margin-top:.15rem}.detection-video-state.ready{border-color:#15985f}.detection-video-state.failed{border-color:#dc4545}.detection-video-state.neutral{border-color:#71829d}
+@media(max-width:650px){.video-status{flex-wrap:wrap;gap:.7rem;padding:.9rem}.video-status>div:nth-child(2){flex-basis:75%}.video-status>.btn{margin-left:auto}}
 ATMOVIO_CSS_EOF
   cat > "$1/atmovio.js" <<'ATMOVIO_JS_EOF'
 /* Atmovio – interakce (Alpine.js komponenty + pomocné funkce). */
@@ -10374,6 +10468,25 @@ ATMOVIO_CSS_EOF
 
   // ---------- Alpine komponenty ----------
   document.addEventListener('alpine:init', function () {
+    Alpine.data('videoStatus', function (id, initial) {
+      return {state:initial, offline:false, timer:null, stopped:false,
+        init: function () { this.timer=setTimeout(()=>this.check(),20000); },
+        destroy: function () { this.stopped=true; clearTimeout(this.timer); },
+        check: async function () {
+          if (this.stopped) return;
+          const controller=new AbortController(), timeout=setTimeout(()=>controller.abort(),10000);
+          try {
+            if (document.visibilityState!=='visible') return;
+            const response=await fetch('/detection/'+id+'/video-status', {cache:'no-store',signal:controller.signal});
+            if (!response.ok || response.redirected) throw new Error('Status unavailable');
+            const state=await response.json();
+            if (!state.title || !state.tone) throw new Error('Invalid status');
+            this.state=state; this.offline=false;
+          } catch (_) { this.offline=true; }
+          finally { clearTimeout(timeout); if (!this.stopped) this.timer=setTimeout(()=>this.check(),20000); }
+        }
+      };
+    });
     Alpine.data('serviceStatus', function () {
       return {message:'', recovered:false, waiting:false, timer:null, stopped:false, dirty:false,
         init: function () {
