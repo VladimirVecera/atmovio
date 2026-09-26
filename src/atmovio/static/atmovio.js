@@ -15,6 +15,25 @@
 
   // ---------- Alpine komponenty ----------
   document.addEventListener('alpine:init', function () {
+    Alpine.data('youtubeUpload', function (id, initial) {
+      return {state:initial, offline:false, timer:null, stopped:false,
+        init: function () { this.check(); },
+        destroy: function () { this.stopped=true; clearTimeout(this.timer); },
+        check: async function () {
+          if (this.stopped) return;
+          const controller=new AbortController(), timeout=setTimeout(()=>controller.abort(),10000);
+          try {
+            if (document.visibilityState!=='visible') return;
+            const r=await fetch('/studio/v/'+id+'/youtube/progress', {cache:'no-store',signal:controller.signal});
+            if (!r.ok || r.redirected) throw new Error('Unavailable');
+            const state=await r.json();
+            if (!state.label || !state.status) throw new Error('Invalid status');
+            this.state=state; this.offline=false;
+          } catch (_) { this.offline=true; }
+          finally { clearTimeout(timeout); if (!this.stopped && ['queued','uploading'].includes(this.state.status)) this.timer=setTimeout(()=>this.check(),3000); }
+        }
+      };
+    });
     Alpine.data('videoStatus', function (id, initial) {
       return {state:initial, offline:false, timer:null, stopped:false,
         init: function () { this.timer=setTimeout(()=>this.check(),20000); },
@@ -600,3 +619,12 @@
   function boot() { installBusy(); installSnapshots(); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
+
+// Native preview speed; unsupported rates do not interrupt playback.
+window.swRecordingSpeed = function (button, rate) {
+  var video = document.getElementById('clip');
+  if (!video) return;
+  try { video.playbackRate = rate; if (rate > 1) video.muted = true; }
+  catch (_) { return; }
+  button.parentElement.querySelectorAll('button').forEach(function (b) { b.setAttribute('aria-pressed', b === button ? 'true' : 'false'); });
+};

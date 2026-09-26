@@ -2,10 +2,17 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
-## 5.3.6 – 2026-09-26 – wider dashboard cameras
+## 5.3.6 – 2026-09-26 – dashboard and recording workflow
+
+- AI videa rozlišují průběžné části, pevnou délku a souvislé video události; u typu je výrazně uvedena délka zdrojového záznamu.
 
 - Give camera previews the full dashboard width with two spacious 16:9 cards per row and up to four cameras.
 - Move recent AI detections below the cameras in a compact two-column overview; stack both sections on small screens.
+- Add camera OD–DO selection, full-file preparation, visible preview speed controls and a two-hour preview limit consistent with the form.
+- Optionally sample nine frames from the actual exported video in a background queue and save editable titles and descriptions with the AI video; Studio is a separate optional next step.
+- Refresh YouTube upload progress independently every three seconds, confirm smaller chunks, and remove unmeasured countdown estimates.
+- Save intermediate event parts without triggering automatic Studio/YouTube jobs; keep the full-event export and send detection notifications only after a playable part is confirmed.
+- Keep publication explicit; persist metadata failures/retries and do not overwrite existing Studio edits.
 
 ## 5.3.5 – 2026-09-26 – visible AI video progress
 
