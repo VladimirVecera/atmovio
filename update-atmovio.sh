@@ -116,7 +116,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "5.3.5"
+APP_VERSION = "5.3.6"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -2986,7 +2986,7 @@ TEMPLATES["dashboard.html"] = """{% extends "base.html" %}{% block head %}{% end
 <div class="section-head"><h2>Kamery <span class="count">({{ ns.online }} z {{ cameras|length }})</span>{% if cameras %}{% if down_count %}<span class="badge err">{{ down_count }} {{ 'výpadek' if down_count == 1 else 'výpadky' }}</span>{% elif ns.online == cameras|length %}<span class="badge ok">všechny kamery v pořádku</span>{% else %}<span class="badge warn">{{ cameras|length - ns.online }} bez obrazu</span>{% endif %}{% endif %}</h2>
  <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap"><a class="btn small sec" href="/live">{{ icons.play|safe }} Živý náhled</a><a class="btn small sec" href="/cameras">{{ icons.cog|safe }} Správa kamer</a></div></div>
 <div class="cams">
-{% for c in cameras[:3] %}{% set s = fs.cameras.get(c) %}{% set info = caminfo[c] %}{% set out = outages.get('cam:' ~ c) %}
+{% for c in cameras[:4] %}{% set s = fs.cameras.get(c) %}{% set info = caminfo[c] %}{% set out = outages.get('cam:' ~ c) %}
 <div class="cam"><a class="img" href="/camera/{{ c }}" title="Otevřít kameru"><img src="/live/{{ c }}.jpg?t={{ now_ts }}" alt="" loading="lazy" onerror="window.swImgFail?swImgFail(this):this.style.display='none'">
 {% if out %}<span class="live"><span class="dot err"></span>VÝPADEK</span>{% elif s and s.fps %}<span class="live"><span class="dot ok"></span>ŽIVĚ</span><span class="fps" title="snímků/s náhledového streamu pro AI a náhled; záznam se ukládá v plné kvalitě kamery">{{ '%.0f'|format(s.fps) }} fps</span>{% else %}<span class="live"><span class="dot warn"></span>BEZ SIGNÁLU</span>{% endif %}</a>
 <div class="body"><div class="name"><span>{{ cam(c) }}</span>{% if out %}<span class="badge err">{{ out }}</span>{% endif %}</div>
@@ -10002,8 +10002,8 @@ h2 { letter-spacing: -.015em; }
   .overview-row .badge { max-width: 100px; white-space: normal; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; } }
-.dashboard-main { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 18px; }
-.dashboard-main .cams { grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); }
+.dashboard-main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; }
+.dashboard-main .cams { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; }
 .dashboard-main .section-head .hint { display: none; }
 .recent-detections .overview-row img { width: 84px; height: 62px; object-fit: cover; border-radius: 8px; flex: none; }
 .recent-detections .overview-row:first-child { border-top: 0; }
@@ -10014,8 +10014,18 @@ header.top .right .btn.ghost { color: var(--at-text); border-color: var(--at-lin
 header.top .right .btn.ghost:hover { color: var(--pico-primary); background: var(--sw-info-bg); }
 header.top button.ico-btn:not(.block) { color: var(--at-text); }
 header.top button.ico-btn.user { color: var(--pico-primary-inverse); }
-@media (max-width: 1000px) { .dashboard-main { grid-template-columns: 1fr; gap: 0; } }
-.dashboard-main .cams { grid-template-columns: repeat(auto-fill,minmax(180px,1fr)); }
+/* Cameras own a full-width row; detections remain a compact overview below. */
+.dashboard-main .cam { min-width: 0; }
+.dashboard-main .cam .body { padding: 1rem; }
+.dashboard-main .cam .name { font-size: 1.08rem; }
+.dashboard-main .cam .meta { overflow-wrap: anywhere; }
+.dashboard-main .recent-detections { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); column-gap: 28px; }
+.dashboard-main .recent-detections .overview-row { min-width: 0; }
+.dashboard-main .recent-detections .overview-row:nth-child(2) { border-top: 0; }
+@media (max-width: 760px) {
+ .dashboard-main .cams, .dashboard-main .recent-detections { grid-template-columns: minmax(0,1fr); }
+ .dashboard-main .recent-detections .overview-row:nth-child(2) { border-top: 1px solid var(--pico-muted-border-color); }
+}
 .system-summary { margin: 0; font-size: .86rem; row-gap: 12px; }
 .system-summary dd { text-align: right; overflow-wrap: anywhere; }
 @media (max-width:480px) {

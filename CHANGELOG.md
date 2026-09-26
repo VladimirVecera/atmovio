@@ -2,6 +2,11 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 5.3.6 – 2026-09-26 – wider dashboard cameras
+
+- Give camera previews the full dashboard width with two spacious 16:9 cards per row and up to four cameras.
+- Move recent AI detections below the cameras in a compact two-column overview; stack both sections on small screens.
+
 ## 5.3.5 – 2026-09-26 – visible AI video progress
 
 - Show recording wait, export progress, saved files and failures directly above detection details and in detection history.
