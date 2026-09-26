@@ -181,6 +181,35 @@ try:
     for i in range(5,10):a.schedule_film_export(episode_cfg,event_result(i),['cervanky'])
     assert not rows('auto_exports')[-1]['film_open']
     ok('Missing continuation exports only known bounds; quiet film closes the clip; six-hour event parts are bounded')
+    # Motion alone can trigger a film clip only when explicitly enabled.
+    quiet=event_result(20, ongoing=False)
+    quiet.update(score=3, phenomena=[], phenomenon='Běžná obloha', timelapse=8)
+    count=len(rows('auto_exports'))
+    a.schedule_film_export(episode_cfg,quiet,[])
+    assert len(rows('auto_exports'))==count
+    episode_cfg['ai']['auto_export'].update(timelapse_enabled=True,timelapse_threshold=8)
+    a.schedule_film_export(episode_cfg,dict(quiet,timelapse=7),[])
+    a.schedule_film_export(episode_cfg,dict(quiet,timelapse=None),[])
+    assert len(rows('auto_exports'))==count
+    a.schedule_film_export(episode_cfg,quiet,[])
+    job=rows('auto_exports')[-1];context=json.loads(quiet['film_context'])
+    assert len(rows('auto_exports'))==count+1 and job['film_hits']=='timelapse'
+    assert job['start_ts']==context['start']-120 and job['end_ts']==context['end']+180
+    assert 'Zajímavý časosběr' in job['name']
+    a.schedule_film_export(episode_cfg,quiet,[])
+    assert len(rows('auto_exports'))==count+1
+    single=event_result(21);single.update(timelapse=9)
+    single['film_context']=json.dumps(dict(json.loads(single['film_context']),frames=1))
+    a.schedule_film_export(episode_cfg,single,[])
+    assert len(rows('auto_exports'))==count+1
+    form_cfg=copy.deepcopy(episode_cfg)
+    a.apply_export_form({'ax_enabled':'on','ax_timelapse_enabled':'on','ax_timelapse_threshold':'9','ax_cam_episode':'on'},form_cfg,['episode'])
+    assert form_cfg['ai']['auto_export']['timelapse_threshold']==9
+    try:
+        a.apply_export_form({'ax_timelapse_threshold':'11'},form_cfg,['episode'])
+        raise AssertionError('Invalid threshold accepted')
+    except ValueError: pass
+    ok('Opt-in timelapse triggers below visual threshold, respects threshold, film evidence, bounds and deduplication')
     # Keep export-count checks below scoped to the original two cameras.
     with a.db() as con:
         con.execute("DELETE FROM exports WHERE camera='episode'")

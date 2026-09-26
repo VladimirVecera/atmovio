@@ -475,7 +475,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "5.3.1"
+APP_VERSION = "5.3.2"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -582,7 +582,7 @@ DEFAULT_CONFIG = {
         "prompt_extra": "",
         "keep_days": 14,
         "export_keep_days": 30,
-        "auto_export": {"enabled": False, "length_mode": "event", "duration_min": 60, "before_min": 2, "after_min": 3, "playback": "realtime", "cameras": []},
+        "auto_export": {"enabled": False, "timelapse_enabled": False, "timelapse_threshold": 7, "length_mode": "event", "duration_min": 60, "before_min": 2, "after_min": 3, "playback": "realtime", "cameras": []},
     },
     "studio": {   # Video studio: zrychlení, intro, text v obraze, hudba, šablony titulku/popisu
         "speed": 20, "intro": True, "intro_seconds": 4, "intro_title": True, "intro_text": "{kamera}\n{datum}",
@@ -1430,6 +1430,12 @@ def build_prompt(ai: dict, strip: int = 0) -> str:
                   "event_start_frame a event_end_frame jsou čísla prvního a posledního snímku zajímavé události (od 1). "
                   "Bez události vrať null. ongoing=true pouze když tento jev na posledním snímku stále probíhá. "
                   "Neodhaduj přesné časy mezi snímky. Trend popisuje stav na konci filmu."]
+    if strip:
+        lines += ["Timelapse hodnoť nezávisle na score jednotlivého jevu: sleduj změny tvarů, vznik a zánik oblaků, "
+                  "pozorovatelný posun a rozdílné směry pohybu vrstev oblačnosti. Krásný vývoj může mít vysoké timelapse "
+                  "i bez výjimečného jevu. Statická hezká obloha sama nestačí. Neodvozuj směr větru ani rychlost "
+                  "z jediného snímku; při velkých rozestupech či nejasném pohybu přiznej nejistotu v evolution. "
+                  "Timelapse 0–3: bez doloženého vývoje, 4–6: běžná změna, 7–8: působivý vývoj, 9–10: výjimečný časosběr."]
     lines += ["", "Sledované jevy (id – popis):"]
     lines += [f"- {pid}: {label} – {desc}" for pid, label, desc in selected]
     lines += [
@@ -3504,11 +3510,11 @@ TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block head %}{% endblock %
 <div class="page-head"><div><h1>Nastavení AI detekce</h1><p class="sub">Kamery, jevy a časování.</p></div>
 <div class="actions"><a class="btn small sec" href="/ai/guide">Jak funguje AI film?</a>{% if ai.enabled and (ai.api_key or ai.provider == 'ollama') %}<span class="badge ok">zapnuto · {{ ai.cameras|length }} {{ 'kamera' if ai.cameras|length == 1 else ('kamery' if ai.cameras|length < 5 else 'kamer') }} · dnes {{ used_today }} dotazů</span>{% else %}<span class="badge warn">vypnuto</span>{% endif %}</div></div>
 
+{% include "ai_settings_nav.html" %}
 <div class="tabs big">
  <button type="button" :class="{on: tab==='kdo'}" @click="tab='kdo'">Poskytovatel a model</button>
  <button type="button" :class="{on: tab==='kamery'}" @click="tab='kamery'">Kamery a jevy</button>
  <button type="button" :class="{on: tab==='kdy'}" @click="tab='kdy'">Časování a AI film</button>
- <a href="/videos/settings">Nastavení AI videí →</a>
  <button type="button" :class="{on: tab==='test'}" @click="tab='test'">Test a statistika</button>
 </div>
 
@@ -4035,10 +4041,16 @@ TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block actions %}<a cla
 {% if pending_auto or videos|selectattr('in_progress')|list %}<div x-data="autorefresh(20)"></div>{% endif %}
 {% endblock %}"""
 
+TEMPLATES["ai_settings_nav.html"] = """<nav class="ai-settings-flow" aria-label="Nastavení AI a videí"><a href="/ai" {% if req_path == '/ai' %}aria-current="page"{% endif %}>AI detekce</a><span aria-hidden="true">→</span><a href="/videos/settings" {% if req_path == '/videos/settings' %}aria-current="page"{% endif %}>Ukládání AI videí</a></nav>"""
+
 TEMPLATES["export_settings.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn sec small" href="/ai/guide#hranice">Jak vzniká video z AI filmu?</a><a class="btn sec small" href="/videos">Otevřít AI videa {{ icons.ext|safe }}</a></div>{% endblock %}{% block content %}
+{% include "ai_settings_nav.html" %}
 <form method="post" action="/videos/settings" class="settings-form editor-form">
-<section class="form-section"><div class="section-copy"><span class="eyebrow">01 / Automatizace</span><h2>Ukládání po detekci</h2><p>Po zajímavém AI filmu se vytvoří klip z vybraných kamer, nezávisle na doručení upozornění. V původním průběžném režimu vzniká klip po odeslání upozornění. Jevy, skóre a odstupy upravíš v <a href="/ai#kamery">nastavení detekce</a>.</p></div>
+<section class="form-section"><div class="section-copy"><span class="eyebrow">01 / Automatizace</span><h2>Ukládání po detekci</h2><p>Klip vznikne při vybraném jevu nebo zajímavém časosběru. <a href="/ai#kamery">Nastavit jevy →</a></p></div>
 <div class="section-fields"><label class="check setting-switch"><input type="checkbox" name="ax_enabled" {% if ai.auto_export.enabled %}checked{% endif %}><span><strong>Automaticky ukládat videa</strong><small>Klip se uloží, jakmile je celý úsek zaznamenaný.</small></span></label>
+<div class="timelapse-rule" x-data="{enabled: {{ ai.auto_export.timelapse_enabled|default(false)|tojson }}}">
+<label class="check"><input type="checkbox" name="ax_timelapse_enabled" x-model="enabled"><span>Ukládat i zajímavý časosběr</span></label>
+<div x-show="enabled"><label for="tl-threshold">Skóre časosběru od</label><input class="short" id="tl-threshold" name="ax_timelapse_threshold" type="number" min="1" max="10" step="1" required value="{{ ai.auto_export.timelapse_threshold|default(7) }}"><p class="hint">Vývoj oblačnosti · nezávisle na skóre jevu · jen dokončené AI filmy.</p></div></div>
 <fieldset class="camera-selection"><legend>Zapojené kamery</legend>{% for c in cameras %}<label class="check camera-option"><input type="checkbox" name="ax_cam_{{ c }}" {% if c in ai.auto_export.cameras %}checked{% endif %}><span>{{ cam(c) }}{% if c not in ai.cameras %}<small class="status-warning">AI detekce není pro tuto kameru zapnutá.</small>{% endif %}</span></label>{% else %}<div class="empty-form">Nejdříve <a href="/cameras">přidej kameru</a>.</div>{% endfor %}</fieldset></div></section>
 <section class="form-section"><div class="section-copy"><span class="eyebrow">02 / Obsah klipu</span><h2>Rozsah a rychlost</h2><p>Zvol pevnou celkovou délku, nebo nech délku řídit podle průběhu události. Rozsah jednotlivého klipu můžeš upřesnit časem OD–DO na detailu detekce. Kamerový záznam musí zůstat dostupný na disku.</p></div>
 <div class="section-fields" x-data="{lengthMode:'{{ ai.auto_export.length_mode }}'}">
@@ -5832,6 +5844,13 @@ def apply_export_form(form, cfg, cameras):
     ai = cfg["ai"]
     ax = dict(ai.get("auto_export") or DEFAULT_CONFIG["ai"]["auto_export"])
     ax["enabled"] = bool(form.get("ax_enabled"))
+    ax["timelapse_enabled"] = bool(form.get("ax_timelapse_enabled"))
+    try:
+        ax["timelapse_threshold"] = int(form.get("ax_timelapse_threshold", ax.get("timelapse_threshold", 7)))
+    except (TypeError, ValueError):
+        raise ValueError("Skóre časosběru musí být celé číslo od 1 do 10.")
+    if not 1 <= ax["timelapse_threshold"] <= 10:
+        raise ValueError("Skóre časosběru musí být od 1 do 10.")
     if form.get("ax_length_mode") in ("event", "fixed"):
         ax["length_mode"] = form["ax_length_mode"]
     if "ax_duration" in form and ax.get("length_mode") == "fixed":
@@ -5858,7 +5877,7 @@ def apply_export_form(form, cfg, cameras):
 def export_settings(request: Request):
     cfg = load_config()
     return render(request, "export_settings.html", "Nastavení AI videí", ai=cfg["ai"], cameras=frigate_cameras(cfg),
-                  keep_days=int(cfg.get("export_keep_days", 30) or 30), subtitle="Co se uloží po upozornění AI a jak dlouho zůstane na disku.")
+                  keep_days=int(cfg.get("export_keep_days", 30) or 30), subtitle="Pravidla, délka a uchovávání klipů.")
 
 
 @app.post("/videos/settings")
@@ -6365,6 +6384,15 @@ def _schedule_film_export(cfg, result, hits):
     if not ax.get("enabled") or cam not in ax.get("cameras", []):
         return
     film = json.loads(result["film_context"])
+    # Additional opt-in trigger, independent of visual phenomenon thresholds and notifications.
+    if (ax.get("timelapse_enabled") and film.get("mode") == "batch" and film.get("frames", 0) >= 2
+            and result.get("timelapse") is not None
+            and result["timelapse"] >= int(ax.get("timelapse_threshold", 7))):
+        if not hits:
+            # Motion-only evidence covers the whole observed film, not an invented event timestamp.
+            film = dict(film, event_start=film["start"], event_end=film["end"])
+            result = dict(result, phenomenon="Zajímavý časosběr", film_context=json.dumps(film, ensure_ascii=False))
+        hits = list(hits) + ["timelapse"]
     before = max(0, min(60, int(ax.get("before_min", 2)))) * 60
     after = max(0, min(60, int(ax.get("after_min", 3)))) * 60
     start = film["event_start"] - configured_clip_before(ax, before)
@@ -6424,7 +6452,7 @@ def _schedule_film_export(cfg, result, hits):
             con.execute("UPDATE auto_exports SET start_ts=?,end_ts=?,due_ts=?,film_open=?,film_last=?,ai_context=?,message=? WHERE id=?",
                         (start, end, due, int(ongoing), film["end"], context, "Čekám na pokračování jevu v dalším AI filmu" if ongoing else "Jev dokončen", matching["id"]))
         else:
-            labels = ", ".join(phen_labels(cfg["ai"]).get(p, p) for p in hits)
+            labels = ", ".join("Zajímavý časosběr" if p == "timelapse" else phen_labels(cfg["ai"]).get(p, p) for p in hits)
             name = f"{cam_label(cfg, cam)} {dt.datetime.fromtimestamp(start, ZoneInfo(cfg['tz'])).strftime('%d.%m. %H:%M')} – {labels}"[:90]
             con.execute("INSERT INTO auto_exports(detection_id,camera,name,start_ts,end_ts,due_ts,playback,created,film_open,film_hits,film_last,ai_context,message) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (result["id"], cam, name, start, end, due, ax.get("playback", "realtime"), dt.datetime.now().isoformat(timespec="seconds"),
@@ -10569,6 +10597,23 @@ main.page.settings-page { max-width: 1264px; }
 .film-field { margin-bottom:16px; }
 .film-sheet-caption { margin:10px 0; }
 .film-save-note { margin:12px 0; }
+
+/* Clear hierarchy: primary navigation, settings sections, local tabs. */
+header.top { border-bottom:3px solid var(--pico-primary); box-shadow:0 4px 18px #0f172a0c; }
+header.top nav.menu > a, header.top nav.menu .dd > button { color:var(--at-text); font-weight:650; }
+header.top nav.menu > a.active, header.top nav.menu .dd > button.active { background:var(--pico-primary-background); color:var(--pico-primary-inverse); box-shadow:0 3px 8px #2563eb25; }
+.settings-nav { background:var(--pico-card-background-color); border:1px solid var(--at-line); border-radius:12px; padding:7px; gap:4px; margin-bottom:24px; }
+.settings-nav a { padding:10px 12px; border-radius:7px; }
+.settings-nav a.active { background:var(--sw-info-bg); box-shadow:none; color:var(--pico-primary); }
+.settings-nav a:hover { background:var(--at-surface-2); }
+.ai-settings-flow { display:flex; justify-content:flex-start; align-items:center; flex-wrap:wrap; gap:10px; margin:0 0 20px; font-size:13px; }
+.ai-settings-flow a { padding:9px 14px; border:1px solid var(--at-line); border-radius:8px; color:var(--at-muted); text-decoration:none; background:var(--pico-card-background-color); }
+.ai-settings-flow a[aria-current="page"] { color:var(--pico-primary); border-color:var(--pico-primary); font-weight:650; background:var(--sw-info-bg); }
+.ai-settings-flow > span { color:var(--at-muted); }
+.timelapse-rule { margin:20px 0; padding:16px; border:1px solid var(--at-line); border-radius:10px; }
+.timelapse-rule input[type="number"] { max-width:130px; }
+.flash a.btn:not(.sec) { color:var(--pico-primary-inverse); text-decoration:none; }
+@media (max-width:600px) { .ai-settings-flow { gap:6px; } .ai-settings-flow a { padding:8px 10px; } }
 ATMOVIO_CSS_EOF
   cat > "$1/atmovio.js" <<'ATMOVIO_JS_EOF'
 /* Atmovio – interakce (Alpine.js komponenty + pomocné funkce). */

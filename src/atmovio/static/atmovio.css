@@ -1124,3 +1124,20 @@ main.page.settings-page { max-width: 1264px; }
 .film-field { margin-bottom:16px; }
 .film-sheet-caption { margin:10px 0; }
 .film-save-note { margin:12px 0; }
+
+/* Clear hierarchy: primary navigation, settings sections, local tabs. */
+header.top { border-bottom:3px solid var(--pico-primary); box-shadow:0 4px 18px #0f172a0c; }
+header.top nav.menu > a, header.top nav.menu .dd > button { color:var(--at-text); font-weight:650; }
+header.top nav.menu > a.active, header.top nav.menu .dd > button.active { background:var(--pico-primary-background); color:var(--pico-primary-inverse); box-shadow:0 3px 8px #2563eb25; }
+.settings-nav { background:var(--pico-card-background-color); border:1px solid var(--at-line); border-radius:12px; padding:7px; gap:4px; margin-bottom:24px; }
+.settings-nav a { padding:10px 12px; border-radius:7px; }
+.settings-nav a.active { background:var(--sw-info-bg); box-shadow:none; color:var(--pico-primary); }
+.settings-nav a:hover { background:var(--at-surface-2); }
+.ai-settings-flow { display:flex; justify-content:flex-start; align-items:center; flex-wrap:wrap; gap:10px; margin:0 0 20px; font-size:13px; }
+.ai-settings-flow a { padding:9px 14px; border:1px solid var(--at-line); border-radius:8px; color:var(--at-muted); text-decoration:none; background:var(--pico-card-background-color); }
+.ai-settings-flow a[aria-current="page"] { color:var(--pico-primary); border-color:var(--pico-primary); font-weight:650; background:var(--sw-info-bg); }
+.ai-settings-flow > span { color:var(--at-muted); }
+.timelapse-rule { margin:20px 0; padding:16px; border:1px solid var(--at-line); border-radius:10px; }
+.timelapse-rule input[type="number"] { max-width:130px; }
+.flash a.btn:not(.sec) { color:var(--pico-primary-inverse); text-decoration:none; }
+@media (max-width:600px) { .ai-settings-flow { gap:6px; } .ai-settings-flow a { padding:8px 10px; } }

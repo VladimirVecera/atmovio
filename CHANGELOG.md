@@ -2,6 +2,13 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 5.3.2 – 2026-09-26 – consistent AI navigation and timelapse triggers
+
+- Keep AI detection and video settings connected with shared navigation; strengthen primary and settings menus.
+- Add an opt-in, independent timelapse score threshold for automatic clips from completed films.
+- Ask AI to assess observed cloud motion and development separately from single-scene interest.
+- Preserve selected cameras, clip duration, event continuity and notification rules; fix update-button contrast.
+
 ## 5.3.1 – 2026-09-26 – compact administration and redesigned system navigation
 
 - Shorten administration labels and page introductions; move optional explanations into accessible disclosures

@@ -151,7 +151,7 @@ with contextlib.ExitStack() as stack:
  assert r.status_code==303
  video_cfg=a.load_config(); expected=copy.deepcopy(ai_before); expected['auto_export']=video_cfg['ai']['auto_export']
  assert video_cfg['ai']==expected and video_cfg['export_keep_days']==45
- assert video_cfg['ai']['auto_export']=={'enabled':True,'cameras':['test_cam'],'before_min':5,'after_min':10,'playback':'timelapse_25x','length_mode':'event','duration_min':60}
+ assert video_cfg['ai']['auto_export']=={'enabled':True,'timelapse_enabled':False,'timelapse_threshold':7,'cameras':['test_cam'],'before_min':5,'after_min':10,'playback':'timelapse_25x','length_mode':'event','duration_min':60}
  form['scope']='ai';form['ax_enabled']='';form['ax_cam_test_cam']=''
  r=client.post('/ai',data=form,follow_redirects=False);assert r.status_code==303
  assert a.load_config()['ai']['auto_export']==video_cfg['ai']['auto_export']
