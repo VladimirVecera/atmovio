@@ -2,6 +2,17 @@
 (function () {
   'use strict';
 
+  // Legacy server-rendered forms: associate adjacent labels with their existing controls.
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.page label:not([for])').forEach(function (label, index) {
+      if (label.querySelector('input,select,textarea')) return;
+      var control = label.nextElementSibling;
+      if (!control || !control.matches('input:not([type=hidden]),select,textarea')) return;
+      if (!control.id) control.id = 'at-field-' + index;
+      label.htmlFor = control.id;
+    });
+  });
+
   // ---------- Alpine komponenty ----------
   document.addEventListener('alpine:init', function () {
     // Kostra stránky: mobilní menu, rozbalovací nabídky v hlavičce (dd), přepínač vzhledu, toasty, lightbox.

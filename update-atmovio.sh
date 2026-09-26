@@ -116,7 +116,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "5.0"
+APP_VERSION = "5.1"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -2529,11 +2529,11 @@ TEMPLATES["base.html"] = """<!doctype html>
 </head><body>
 <div class="app" x-data='shell({flashes: {{ flashes|tojson }}})' @keydown.escape.window="menu=false;dd=''">
 <header class="top"><div class="inner">
- <button type="button" class="ico-btn menu-btn" @click="menu=!menu" aria-label="Menu">""" + ICONS["menu"] + """</button>
- <a class="brand" href="/">""" + LOGO_SVG + """<span>Atmovio<small>NVR · kamery · AI</small></span></a>
- <nav class="menu" :class="{open: menu}">
-  {% for href,name,ic in nav_primary %}<a class="{% if active==href %}active{% endif %}" href="{{ href }}">{{ name }}</a>{% endfor %}
-  <div class="dd" :class="{open: dd==='set'}" @click.outside="if (dd==='set') dd=''"><button type="button" class="{% if settings_open %}active{% endif %}" @click="dd = dd==='set' ? '' : 'set'">Nastavení <span class="caret">▾</span></button>
+ <button type="button" class="ico-btn menu-btn" @click="menu=!menu" :aria-expanded="menu" aria-controls="main-navigation" aria-label="Menu">""" + ICONS["menu"] + """</button>
+ <a class="brand" href="/">""" + LOGO_SVG + """<span>Atmovio<small>Správa kamer a videí</small></span></a>
+ <nav id="main-navigation" class="menu" aria-label="Hlavní navigace" :class="{open: menu}">
+  {% for href,name,ic in nav_primary %}<a class="{% if active==href %}active{% endif %}" href="{{ href }}" {% if active==href %}aria-current="page"{% endif %}>{{ name }}</a>{% endfor %}
+  <div class="dd" :class="{open: dd==='set'}" @click.outside="if (dd==='set') dd=''"><button type="button" class="{% if settings_open %}active{% endif %}" @click="dd = dd==='set' ? '' : 'set'" :aria-expanded="dd==='set'">Nastavení <span class="caret">▾</span></button>
    <div class="dd-panel" x-show="dd==='set'" x-cloak>
    {% for href,name,ic in nav_settings %}<a class="{% if active==href %}active{% endif %}" href="{{ href }}"><span class="ic">{{ ic }}</span>{{ name }}</a>{% endfor %}
    </div></div>
@@ -2544,12 +2544,11 @@ TEMPLATES["base.html"] = """<!doctype html>
    <a href="/live" title="Kamery"><span class="dot {{ 'err' if side.down else ('ok' if storage.mode in ['recording','legacy'] else 'warn') }}"></span>{% if side.down %}{{ side.down }} výpadek{% else %}{{ 'nahrává' if storage.mode in ['recording','legacy'] else 'jen náhled' }}{% endif %}</a>
    {% if side.ai_on %}<a href="/ai" title="AI hlídání oblohy"><span class="dot ok"></span>AI {{ side.ai_used }}{% if side.ai_limit %}/{{ side.ai_limit }}{% endif %}</a>{% endif %}
   </div>
-  <a class="btn small ghost" href="/live/all" title="Živý náhled všech kamer">""" + ICONS["play"] + """<span>Živý náhled</span></a>
-  <a class="btn small" href="/discover">""" + ICONS["plus"] + """<span>Přidat kameru</span></a>
   <button type="button" class="ico-btn" @click="toggleTheme()" :title="theme==='dark' ? 'Světlý režim' : 'Tmavý režim'" aria-label="Přepnout vzhled"><span x-show="theme==='dark'">""" + ICONS["sun"] + """</span><span x-show="theme!=='dark'" x-cloak>""" + ICONS["moon"] + """</span></button>
-  <div class="dd" :class="{open: dd==='usr'}" @click.outside="if (dd==='usr') dd=''"><button type="button" class="ico-btn user" @click="dd = dd==='usr' ? '' : 'usr'" title="Účet">A{% if update_info and update_info.available %}<span class="n"></span>{% endif %}</button>
+  <div class="dd" :class="{open: dd==='usr'}" @click.outside="if (dd==='usr') dd=''"><button type="button" class="ico-btn user" @click="dd = dd==='usr' ? '' : 'usr'" title="Účet" aria-label="Účet a nástroje" :aria-expanded="dd==='usr'"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/></svg>{% if update_info and update_info.available %}<span class="n"></span>{% endif %}</button>
    <div class="dd-panel end" x-show="dd==='usr'" x-cloak>
-   <div class="label">Atmovio {{ version }}</div>
+   <div class="label">Atmovio {{ version }} · administrace</div>
+   <a href="/discover">{{ icons.plus|safe }} Přidat kameru</a>
    {% if update_info and update_info.available %}<a href="/system/update"><span class="ic">🆕</span>Aktualizace na {{ update_info.latest }}</a>{% endif %}
    <a href="/system"><span class="ic">⚙</span>Systém a disky</a>
    <a href="/logs"><span class="ic">📜</span>Logy</a>
@@ -2562,7 +2561,7 @@ TEMPLATES["base.html"] = """<!doctype html>
    </div></div>
  </div>
 </div></header>
-<main class="page">
+<main class="page {{ 'settings-page' if settings_open }}" data-page="{{ req_path }}">
 {% if settings_open %}<nav class="settings-nav" aria-label="Sekce nastavení">{% for href,name,ic in nav_settings %}<a href="{{ href }}" class="{{ 'active' if active==href }}" {% if active==href %}aria-current="page"{% endif %}>{{ name }}</a>{% endfor %}</nav>{% endif %}
 {% if storage.mode not in ['recording', 'legacy'] %}<div class="flash warn"><span>⚠️</span><div><b>Režim bez záznamu.</b> {{ storage.reason }} <a href="/storage">Nastavit disk pro záznamy</a> · <a href="{{ frigate_ui }}" target="_blank">Živý náhled kamer ↗</a></div></div>{% endif %}
 {% if disk_warning[1] %}<div class="flash {{ disk_warning[0] }}"><span>💽</span><div><b>{% if disk_warning[0] == 'err' %}Disk selhává.{% else %}Disk hlásí vadné sektory – sleduji.{% endif %}</b> {{ disk_warning[1] }}. {% if disk_warning[0] == 'err' %}Zálohuj a disk vyměň.{% else %}Když počet zůstane stejný, není třeba nic dělat; když poroste, upozorním červeně.{% endif %} <a href="/system">Stav disků</a></div></div>{% endif %}
@@ -2705,11 +2704,11 @@ TEMPLATES["dashboard.html"] = """{% extends "base.html" %}{% block head %}{% end
 </div></details>
 {% endblock %}"""
 
-TEMPLATES["cameras.html"] = """{% extends "base.html" %}{% block content %}
+TEMPLATES["cameras.html"] = """{% extends "base.html" %}{% block actions %}{% if pre.replace %}<a class="btn small sec" href="/cameras">Zpět na kamery</a>{% endif %}{% endblock %}{% block content %}
 {% if not cams and not pre.main %}<div class="card" style="border-color:var(--ac)"><h2>Krok 1 · Najdi kamery v síti</h2>
 <p>Nejjednodušší cesta: klikni na tlačítko, zadej <b>uživatele a heslo kamery</b> (stejné, jakým se přihlašuješ do kamery) a Atmovio kamery sám najde i s adresami videa. Pak jen potvrdíš název a klikneš <b>Přidat kameru</b>.</p>
 <a class="btn" href="/discover">🔍 Vyhledat kamery v síti</a></div>{% endif %}
-<div class="card"><div class="section-head"><h2 style="margin:0">Nastavené kamery</h2><a class="btn small" href="/discover">🔍 Vyhledat kamery v síti</a></div>
+{% if not pre.replace %}<div class="card"><div class="section-head"><h2 style="margin:0">Nastavené kamery</h2><a class="btn small" href="/discover">🔍 Vyhledat kamery v síti</a></div>
 <div class="tw"><table><tr><th>Název</th><th>IP · cesta</th><th>Hlavní stream (záznam)</th><th>Substream (náhled)</th><th></th></tr>
 {% for name,c in cams.items() %}<tr><td><a href="/camera/{{ name }}"><b>{{ cam(name) }}</b></a><div class="hint">ID ve Frigate: <code>{{ name }}</code></div></td><td class="hint">{{ c.ip or '?' }}<br>{{ c.via }}</td><td class="hint" style="word-break:break-all">{{ c.main }}</td><td class="hint" style="word-break:break-all">{{ c.sub or '–' }}</td>
 <td style="white-space:nowrap"><a class="btn small" href="/cameras/edit/{{ name }}">Upravit</a> <a class="btn small sec" href="/camera/{{ name }}">Detail</a>
@@ -2717,23 +2716,21 @@ TEMPLATES["cameras.html"] = """{% extends "base.html" %}{% block content %}
 {% if not cams %}<tr><td colspan="5" class="hint">Žádné kamery. Přidej první níže – nebo ji nech <a href="/discover">vyhledat v síti</a>.</td></tr>{% endif %}</table></div>
 <p class="hint">Video se ukládá tak, jak ho kamera kóduje (H.264/H.265, bez překódování – CPU se nezatěžuje). Substream v nízkém rozlišení slouží jen pro náhled ve Frigate. Po každé změně se Frigate restartuje (cca 20–40 s). Masky, zóny a detekci objektů nastavíš ve <a href="{{ frigate_ui }}" target="_blank">Frigate ↗</a>.</p></div>
 
-<details class="card" id="pridat" style="padding:0 18px" {% if pre.main %}open{% endif %}><summary>{% if pre.replace %}Upravit kameru „{{ pre.name }}“{% else %}Přidat kameru ručně (když ji hledání nenajde nebo znáš adresu videa){% endif %}</summary>
-{% if pre.replace %}<div class="flash">Uprav název nebo adresy a klikni na <b>Uložit změny</b>. Adresy se před uložením znovu ověří; nastavení ve Frigate (masky, zóny) zůstane.</div>
-{% elif pre.main %}<div class="flash">Formulář je předvyplněný z hledání – zkontroluj název a klikni na <b>Přidat kameru</b>.</div>{% endif %}
-<form method="post" action="/cameras/add" style="padding-bottom:14px"><input type="hidden" name="replace" value="{{ pre.replace }}">
-<div class="row"><div><label>Název kamery (libovolný, např. <code>Zahrada – západ</code>)</label><input type="text" name="name" required value="{{ pre.name }}"><div class="hint">Frigate potřebuje interní ID bez mezer a diakritiky – vytvoří se automaticky (např. <code>sehradice_zapad</code>), ty uvidíš všude svůj název.</div></div></div>
-<div class="row"><div><label>Uživatel kamery</label><input type="text" name="user" value="{{ pre.user }}" placeholder="admin" autocomplete="off"></div>
-<div><label>Heslo kamery</label><input type="password" name="password" value="{{ pre.password }}" autocomplete="off"></div></div>
-<div class="hint">Přihlášení se doplní do adres streamů automaticky. Když už adresa přihlášení obsahuje (rtsp://uzivatel:heslo@…), pole můžeš nechat prázdná.</div>
-<label>Adresa videa – hlavní stream (RTSP, plné rozlišení, tak se ukládá)</label>
-<input type="text" name="main" required placeholder="rtsp://192.168.1.50:554/stream1" value="{{ pre.main }}">
-<label>Adresa videa – vedlejší stream (nízké rozlišení pro náhled; doporučeno, ale není nutné)</label>
-<input type="text" name="sub" placeholder="rtsp://192.168.1.50:554/stream2" value="{{ pre.sub }}">
-<div class="hint">Adresy najdeš v návodu ke kameře nebo v jejím webovém rozhraní (hledej „RTSP“). Typické: Hikvision <code>/Streaming/Channels/101</code>, Dahua/Imou <code>/cam/realmonitor?channel=1&amp;subtype=0</code>, Reolink <code>/h264Preview_01_main</code>, Tapo <code>/stream1</code>.</div>
-<label class="check"><input type="checkbox" name="test" checked> Před uložením ověřit, že kamera odpovídá (cca 10 s)</label>
-{% if not pre.replace %}<label class="check"><input type="checkbox" name="atmovio" checked> Hlídat oblohu z této kamery pomocí AI</label>{% endif %}
-<button class="btn">{% if pre.replace %}Uložit změny{% else %}Přidat kameru{% endif %}</button>
-<p class="hint">Kamera za VPN: použij její adresu ve vzdálené síti (např. <code>rtsp://10.10.10.4:554/…</code>) a raději nižší bitrate. Dostupnost ověříš v <a href="/vpn">Síť a VPN</a>.</p></form></details>
+{% endif %}
+<details class="camera-editor" id="pridat" {% if pre.main %}open{% endif %}><summary>{% if pre.replace %}Upravit kameru · {{ pre.name }}{% else %}Přidat kameru pomocí adresy RTSP{% endif %}<span class="hint">Název, přihlášení a zdroje videa</span></summary>
+<form method="post" action="/cameras/add" class="editor-form"><input type="hidden" name="replace" value="{{ pre.replace }}">
+<section class="form-section"><div class="section-copy"><span class="eyebrow">Identifikace</span><h2>Název a přihlášení</h2><p>Použij přihlašovací údaje kamery. Název se zobrazí v administraci i u videí.</p></div><div class="section-fields">
+<label for="camera-name">Název kamery</label><input id="camera-name" type="text" name="name" required value="{{ pre.name }}" placeholder="Například zahrada – západ">
+<div class="field-grid"><div><label for="camera-user">Uživatel kamery</label><input id="camera-user" type="text" name="user" value="{{ pre.user }}" placeholder="admin" autocomplete="off"></div><div><label for="camera-password">Heslo kamery</label><input id="camera-password" type="password" name="password" value="{{ pre.password }}" autocomplete="off"></div></div>
+<p class="field-help">Pokud adresa RTSP už obsahuje uživatele a heslo, tato dvě pole mohou zůstat prázdná.</p></div></section>
+<section class="form-section"><div class="section-copy"><span class="eyebrow">Obraz</span><h2>Zdroje videa</h2><p>Hlavní stream slouží pro záznam. Vedlejší stream s nižším rozlišením šetří výkon při náhledu.</p></div><div class="section-fields">
+<label for="camera-main">Hlavní stream <span class="optional">· povinný</span></label><input id="camera-main" type="text" name="main" required placeholder="rtsp://192.0.2.10:554/stream1" value="{{ pre.main }}">
+<label for="camera-sub">Vedlejší stream <span class="optional">· volitelný</span></label><input id="camera-sub" type="text" name="sub" placeholder="rtsp://192.0.2.10:554/stream2" value="{{ pre.sub }}">
+<details class="field-guidance"><summary>Kde najdu adresu RTSP?</summary><p>V návodu nebo webovém rozhraní kamery. Typické cesty: Hikvision <code>/Streaming/Channels/101</code>, Dahua/Imou <code>/cam/realmonitor?channel=1&amp;subtype=0</code>, Reolink <code>/h264Preview_01_main</code>, Tapo <code>/stream1</code>.</p><p>U kamery za VPN použij její adresu ve vzdálené síti. Spojení ověříš v <a href="/vpn">nastavení sítě</a>.</p></details></div></section>
+<section class="form-section"><div class="section-copy"><span class="eyebrow">Ověření</span><h2>Kontrola připojení</h2><p>{% if pre.replace %}Nastavení masky a zón ve Frigate zůstane zachované.{% else %}Interní ID kamery se vytvoří automaticky z názvu.{% endif %} Po uložení se Frigate restartuje.</p></div><div class="section-fields">
+<label class="check"><input type="checkbox" name="test" checked><span><strong>Ověřit skutečný obraz před uložením</strong><small>Kontrola streamu trvá přibližně 10 sekund.</small></span></label>
+{% if not pre.replace %}<label class="check"><input type="checkbox" name="atmovio" checked><span><strong>Zapnout AI hlídání oblohy</strong><small>Pravidla později upravíš v nastavení AI detekce.</small></span></label>{% endif %}</div></section>
+<div class="savebar"><span class="save-context">{% if pre.main and not pre.replace %}Údaje jsou předvyplněné z vyhledávání.{% else %}Ověř adresy a přihlašovací údaje kamery.{% endif %}</span><button class="btn">{% if pre.replace %}Uložit změny{% else %}Přidat kameru{% endif %}</button></div></form></details>
 {% endblock %}"""
 
 TEMPLATES["discover.html"] = """{% extends "base.html" %}{% block content %}
@@ -2845,15 +2842,15 @@ TEMPLATES["storage.html"] = """{% extends "base.html" %}{% block content %}
 TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block head %}{% endblock %}{% block content %}
 {% set thr_opts = [(4, '4 – i docela obyčejná obloha (hodně upozornění)'), (5, '5 – hezká obloha'), (6, '6 – hezká, spíš výraznější'), (7, '7 – výrazný jev (doporučeno)'), (8, '8 – opravdu výrazný'), (9, '9 – jen výjimečná podívaná')] %}
 <div x-data="{tab: (['kdo','kamery','kdy','test'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'kdo')}" x-init="$watch('tab', t => history.replaceState(null, '', '#' + t))">
-<div class="page-head"><div><h1>AI hlídání oblohy</h1><p class="sub">Umělá inteligence se dívá do kamer a dá vědět, když je na obloze něco pěkného nebo nebezpečného.</p></div>
+<div class="page-head"><div><h1>Nastavení AI detekce</h1><p class="sub">Umělá inteligence se dívá do kamer a dá vědět, když je na obloze něco pěkného nebo nebezpečného.</p></div>
 <div class="actions">{% if ai.enabled and (ai.api_key or ai.provider == 'ollama') %}<span class="badge ok">zapnuto · {{ ai.cameras|length }} {{ 'kamera' if ai.cameras|length == 1 else ('kamery' if ai.cameras|length < 5 else 'kamer') }} · dnes {{ used_today }} dotazů</span>{% else %}<span class="badge warn">vypnuto</span>{% endif %}</div></div>
 
 <div class="tabs big">
- <button type="button" :class="{on: tab==='kdo'}" @click="tab='kdo'"><span class="n">1</span>Kdo hodnotí</button>
- <button type="button" :class="{on: tab==='kamery'}" @click="tab='kamery'"><span class="n">2</span>Kamery a jevy</button>
- <button type="button" :class="{on: tab==='kdy'}" @click="tab='kdy'"><span class="n">3</span>Kdy se dívat</button>
+ <button type="button" :class="{on: tab==='kdo'}" @click="tab='kdo'">Poskytovatel a model</button>
+ <button type="button" :class="{on: tab==='kamery'}" @click="tab='kamery'">Kamery a jevy</button>
+ <button type="button" :class="{on: tab==='kdy'}" @click="tab='kdy'">Časování a AI film</button>
  <a href="/videos/settings">Nastavení AI videí →</a>
- <button type="button" :class="{on: tab==='test'}" @click="tab='test'"><span class="n">5</span>Vyzkoušet a statistika</button>
+ <button type="button" :class="{on: tab==='test'}" @click="tab='test'">Test a statistika</button>
 </div>
 
 <form method="post" action="/ai" id="aiform"><input type="hidden" name="scope" value="ai"><input type="hidden" name="tab" :value="tab">
@@ -2865,16 +2862,16 @@ TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block head %}{% endblock %
 {% for pid, pi in provider_info.items() %}
 <label class="prov-card" :class="{on: p==='{{ pid }}'}"><input type="radio" name="provider" value="{{ pid }}" x-model="p">
 <div class="ph"><b>{{ pi.name }}</b><span class="badge {{ 'ok' if pi.kind == 'free' else ('info' if pi.kind == 'local' else 'warn') }}">{{ pi.tag }}</span></div>
-<div class="pr"><span>💰</span><span>{{ pi.price }}</span></div>
-<div class="pr"><span>📊</span><span>{{ pi.limits }}</span></div>
-<div class="pr"><span>🎯</span><span>{{ pi.quality }}</span></div>
+
 </label>
 {% endfor %}
 </div>
+<div class="ai-connection"><div class="section-copy"><span class="eyebrow">Připojení</span><h2>Model a přístup</h2><p>Zadej přístup k vybranému poskytovateli. Tlačítkem pod formulářem můžeš spojení ověřit.</p></div><div class="section-fields">
 {% for pid, pi in provider_info.items() %}
 <div x-show="p==='{{ pid }}'" {% if ai.provider != pid %}x-cloak{% endif %}>
+<details class="field-guidance provider-details"><summary>Podrobnosti o poskytovateli</summary><p>{{ pi.price }}</p><p>{{ pi.limits }}</p><p>{{ pi.quality }}</p></details>
 {% if pid != 'ollama' %}
-<ol class="steps" style="margin-top:.8rem"><li>Otevři <a href="{{ pi.key_url }}" target="_blank" rel="noopener">{{ pi.key_url|replace('https://','') }}</a>{% if pid == 'gemini' %} a přihlas se Google účtem{% endif %}.</li><li>Klikni na <b>{{ pi.key_label }}</b> a klíč zkopíruj{% if pi.kind == 'paid' %} (nejdřív dobij kredit, obvykle 5 USD){% endif %}.</li><li>Vlož ho níže a klikni na <b>Uložit a ověřit klíč</b>.{% if pi.usage_url %} Spotřebu vidíš na <a href="{{ pi.usage_url }}" target="_blank" rel="noopener">{{ pi.usage_url|replace('https://','') }}</a>.{% endif %}</li></ol>
+<details class="field-guidance"><summary>Jak získat a vložit API klíč</summary><ol class="steps" style="margin-top:.8rem"><li>Otevři <a href="{{ pi.key_url }}" target="_blank" rel="noopener">{{ pi.key_url|replace('https://','') }}</a>{% if pid == 'gemini' %} a přihlas se Google účtem{% endif %}.</li><li>Klikni na <b>{{ pi.key_label }}</b> a klíč zkopíruj{% if pi.kind == 'paid' %} (nejdřív dobij kredit, obvykle 5 USD){% endif %}.</li><li>Vlož ho níže a klikni na <b>Uložit a ověřit klíč</b>.{% if pi.usage_url %} Spotřebu vidíš na <a href="{{ pi.usage_url }}" target="_blank" rel="noopener">{{ pi.usage_url|replace('https://','') }}</a>.{% endif %}</li></ol></details>
 {% else %}
 <p class="hint" style="margin-top:.8rem">Ollama musí běžet na Pi (<a href="{{ pi.key_url }}" target="_blank" rel="noopener">ollama.com</a>) a model musí být stažený: <code>ollama pull {{ pi.models[0][0] }}</code>. Klíč není potřeba.</p>
 {% endif %}
@@ -2890,6 +2887,7 @@ TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block head %}{% endblock %
 <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-top:.6rem"><button class="btn sec" formaction="/ai/check" formnovalidate>Uložit a ověřit klíč</button><span class="hint">Pošle jeden testovací dotaz – u placených stojí zlomek haléře.</span></div>
 {% if check %}<pre style="margin-top:10px">{{ check }}</pre>{% endif %}
 <p class="hint" style="margin-top:.6rem">Snímky odcházejí jen k vybranému poskytovateli, záznamy z kamer nikdy.</p>
+</div></div>
 </div>
 </div>
 
@@ -2976,7 +2974,7 @@ TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block head %}{% endblock %
 </div>
 </div>
 
-<div class="savebar" x-show="tab!=='test'"><button class="btn">Uložit nastavení</button><span class="hint">Uloží poskytovatele, kamery, jevy a intervaly AI. Nastavení videí je samostatné.</span></div>
+<div class="savebar" x-show="tab!=='test'"><span class="save-context">Uloží nastavení všech záložek AI detekce.</span><button class="btn">Uložit nastavení AI</button></div>
 </form>
 
 <!-- vlastní jevy (mimo hlavní formulář) -->
@@ -3349,17 +3347,17 @@ TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block actions %}<a cla
 {% if pending_auto or videos|selectattr('in_progress')|list %}<div x-data="autorefresh(20)"></div>{% endif %}
 {% endblock %}"""
 
-TEMPLATES["export_settings.html"] = """{% extends "base.html" %}{% block content %}
-<form method="post" action="/videos/settings" class="settings-form">
-<div class="card"><h2>1. Kdy vytvořit klip</h2><p class="hint">Klip vzniká po upozornění AI. Platí vybrané jevy, práh skóre i odstup upozornění z <a href="/ai#kamery">nastavení AI detekce</a>. Záznam musí být dostupný na disku.</p>
-<label class="check"><input type="checkbox" name="ax_enabled" {% if ai.auto_export.enabled %}checked{% endif %}>Automaticky ukládat AI videa</label>
-<h3>Z kterých kamer</h3>{% for c in cameras %}<label class="check"><input type="checkbox" name="ax_cam_{{ c }}" {% if c in ai.auto_export.cameras %}checked{% endif %}>{{ cam(c) }}{% if c not in ai.cameras %} <span class="badge warn">AI pro tuto kameru není vybraná</span>{% endif %}</label>{% else %}<p>Nejdříve <a href="/cameras">přidej kameru</a>.</p>{% endfor %}</div>
-<div class="card"><h2>2. Jaký úsek uložit</h2><div class="row">
-<div><label>Minuty před detekcí</label><input type="number" name="ax_before" min="0" max="60" value="{{ ai.auto_export.before_min }}"></div>
-<div><label>Minuty po detekci</label><input type="number" name="ax_after" min="0" max="60" value="{{ ai.auto_export.after_min }}"></div></div>
-<label>Rychlost zdrojového klipu</label><select name="ax_playback"><option value="realtime" {% if ai.auto_export.playback != 'timelapse_25x' %}selected{% endif %}>Původní rychlost (doporučeno pro další zpracování)</option><option value="timelapse_25x" {% if ai.auto_export.playback == 'timelapse_25x' %}selected{% endif %}>Časosběr 25×</option></select><p class="hint">Po detekci se počká na dokončení zvoleného úseku. YouTube studio pak může klip dále zrychlit.</p></div>
-<div class="card"><h2>3. Uchovávání na disku</h2><label>Automaticky mazat po (dní)</label><input type="number" name="days" min="1" max="365" value="{{ keep_days }}"><p class="hint">Společná doba pro zdrojová AI videa i výstupy YouTube studia. Publikovaná videa na YouTube ani stažené kopie se nemažou. Snímky AI a průběžné záznamy mají vlastní dobu uchovávání.</p></div>
-<div class="savebar"><button class="btn">Uložit nastavení AI videí</button><a href="/videos">Zpět na videa</a></div></form>{% endblock %}"""
+TEMPLATES["export_settings.html"] = """{% extends "base.html" %}{% block actions %}<a class="btn sec small" href="/videos">Otevřít AI videa {{ icons.ext|safe }}</a>{% endblock %}{% block content %}
+<form method="post" action="/videos/settings" class="settings-form editor-form">
+<section class="form-section"><div class="section-copy"><span class="eyebrow">01 / Automatizace</span><h2>Ukládání po detekci</h2><p>Po upozornění AI se vytvoří klip z vybraných kamer. Jevy, skóre a odstupy upravíš v <a href="/ai#kamery">nastavení detekce</a>.</p></div>
+<div class="section-fields"><label class="check setting-switch"><input type="checkbox" name="ax_enabled" {% if ai.auto_export.enabled %}checked{% endif %}><span><strong>Automaticky ukládat videa</strong><small>Klip se uloží, jakmile je celý úsek zaznamenaný.</small></span></label>
+<fieldset class="camera-selection"><legend>Zapojené kamery</legend>{% for c in cameras %}<label class="check camera-option"><input type="checkbox" name="ax_cam_{{ c }}" {% if c in ai.auto_export.cameras %}checked{% endif %}><span>{{ cam(c) }}{% if c not in ai.cameras %}<small class="status-warning">AI detekce není pro tuto kameru zapnutá.</small>{% endif %}</span></label>{% else %}<div class="empty-form">Nejdříve <a href="/cameras">přidej kameru</a>.</div>{% endfor %}</fieldset></div></section>
+<section class="form-section"><div class="section-copy"><span class="eyebrow">02 / Obsah klipu</span><h2>Rozsah a rychlost</h2><p>Ulož i dění před detekcí a po ní. Průběžný záznam musí být dostupný na disku.</p></div>
+<div class="section-fields"><div class="field-grid"><div><label for="clip-before">Před detekcí</label><div class="input-unit"><input id="clip-before" type="number" name="ax_before" min="0" max="60" value="{{ ai.auto_export.before_min }}"><span>minut</span></div></div><div><label for="clip-after">Po detekci</label><div class="input-unit"><input id="clip-after" type="number" name="ax_after" min="0" max="60" value="{{ ai.auto_export.after_min }}"><span>minut</span></div></div></div>
+<label for="clip-playback">Rychlost zdrojového klipu</label><select id="clip-playback" name="ax_playback"><option value="realtime" {% if ai.auto_export.playback != 'timelapse_25x' %}selected{% endif %}>Původní rychlost · doporučeno</option><option value="timelapse_25x" {% if ai.auto_export.playback == 'timelapse_25x' %}selected{% endif %}>Časosběr 25×</option></select><p class="field-help">Pro další úpravy ve studiu ponech původní rychlost. Studio může video zrychlit později.</p></div></section>
+<section class="form-section"><div class="section-copy"><span class="eyebrow">03 / Úložiště</span><h2>Doba uchovávání</h2><p>Společná pro zdrojové klipy i zpracovaná YouTube videa na tomto zařízení.</p></div>
+<div class="section-fields"><label for="clip-days">Automaticky odstranit po</label><div class="input-unit short"><input id="clip-days" type="number" name="days" min="1" max="365" value="{{ keep_days }}"><span>dnech</span></div><div class="field-note">Videa publikovaná na YouTube a stažené kopie zůstávají. Snímky AI a průběžný záznam mají vlastní nastavení.</div></div></section>
+<div class="savebar"><span class="save-context">Změny se projeví po uložení.</span><button class="btn">Uložit nastavení AI videí</button></div></form>{% endblock %}"""
 
 TEMPLATES["history.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small" href="/ai#kamery">⚙ Nastavení AI</a><form method="post" action="/history/delete" data-nobusy style="display:flex;gap:.4rem"><input type="hidden" name="camera" value="{{ f_cam }}"><button class="btn small sec" name="what" value="errors">Smazat chybná</button><button class="btn small danger" name="what" value="all" onclick="return confirm('Smazat celou historii{% if f_cam %} kamery {{ cam(f_cam) }}{% endif %} včetně snímků?')">Smazat vše{% if f_cam %} ({{ cam(f_cam) }}){% endif %}</button></form></div>{% endblock %}{% block content %}
 {% macro link(cam_, min_, show_, page_=1) %}/history?camera={{ cam_|urlencode }}&min_score={{ min_ }}&show={{ show_ }}&phenomenon={{ f_phen|urlencode }}&since={{ f_since|urlencode }}&until={{ f_until|urlencode }}{% if page_ > 1 %}&page={{ page_ }}{% endif %}{% endmacro %}
@@ -3511,43 +3509,43 @@ TEMPLATES["studio_video.html"] = """{% extends "base.html" %}{% block actions %}
 TEMPLATES["studio_settings.html"] = """{% extends "base.html" %}{% block actions %}<a class="btn small sec" href="/youtube">YouTube videa</a>{% endblock %}{% block content %}
 <div class="settings-form" x-data="{tab: ['library','youtube'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'video'}" @hashchange.window="tab = ['library','youtube'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'video'">
 <nav class="tabs big" aria-label="Nastavení YouTube videí"><a href="#video" :class="{on:tab==='video'}" @click="tab='video'">Podoba videa a automatika</a><a href="#library" :class="{on:tab==='library'}" @click="tab='library'">Intro a hudba</a><a href="#youtube" :class="{on:tab==='youtube'}" @click="tab='youtube'">Propojení YouTube</a></nav>
-<section x-show="tab==='video'"><form method="post" action="/studio/settings">
- <div class="card"><h2>Výchozí nastavení videa</h2>
+<section x-show="tab==='video'"><form method="post" action="/studio/settings" class="editor-form">
+<section class="form-section"><div class="section-copy"><span class="eyebrow">Zpracování</span><h2>Rychlost a úvod</h2><p>Výchozí podoba nového videa. U jednotlivých videí můžeš nastavení změnit.</p></div><div class="section-fields">
   <label>Výchozí rychlost (po 10×)</label><div class="speed-pick" x-data="{s: {{ sc.speed }}}"><button type="button" class="btn small sec" @click="s = Math.max(10, s - 10)">−10</button><input type="range" name="speed" min="10" max="240" step="10" x-model.number="s"><button type="button" class="btn small sec" @click="s = Math.min(240, s + 10)">+10</button><b class="speed-val" x-text="s + '×'"></b></div>
   <label class="check" style="margin-top:.8rem"><input type="checkbox" name="intro" value="1"{% if sc.intro %} checked{% endif %}>Intro přidávat automaticky (když je nahrané)</label>
   <div class="row"><div><label>Intro z obrázku: délka (s)</label><input type="number" name="intro_seconds" min="1" max="15" step="0.5" value="{{ sc.intro_seconds }}"></div>
   <div><label>Text na intru z obrázku <span class="hint">(řádky = řádky ve videu)</span></label><textarea name="intro_text" rows="2" maxlength="200" style="min-height:0">{{ sc.intro_text }}</textarea></div></div>
   <label class="check"><input type="checkbox" name="intro_title" value="1"{% if sc.intro_title %} checked{% endif %}>Na intro z obrázku vypsat tento text (např. název kamery a datum)</label>
- </div>
- <div class="card"><h2>Text v obraze</h2>
+ </div></section>
+<section class="form-section"><div class="section-copy"><span class="eyebrow">Titulek v obraze</span><h2>Textový překryv</h2><p>Doplň do záběru název kamery, datum nebo vlastní text.</p></div><div class="section-fields">
   <label class="check"><input type="checkbox" name="text_enabled" value="1"{% if sc.text_enabled %} checked{% endif %}>Vypisovat text do videa</label>
   <input type="text" name="text" value="{{ sc.text }}" maxlength="200">
   <div class="row"><div><label>Umístění</label><select name="text_pos">{% for k, l in positions.items() %}<option value="{{ k }}"{% if sc.text_pos == k %} selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
   <div><label>Velikost písma</label><input type="number" name="text_size" min="16" max="96" value="{{ sc.text_size }}"></div></div>
   <div class="hint">Značky: <code>{kamera}</code> <code>{datum}</code> <code>{cas}</code> <code>{jev}</code> <code>{skore}</code> <code>{rychlost}</code> <code>{delka}</code>.{% if not font %} <b>Na RPi chybí font pro text – nainstaluj balíček fonts-dejavu-core</b> (aktualizace Atmovio ho doinstaluje).{% endif %}</div>
- </div>
- <div class="card"><h2>Hudba – hlasitost a prolínání</h2>
+ </div></section>
+<section class="form-section"><div class="section-copy"><span class="eyebrow">Zvuk</span><h2>Hudební doprovod</h2><p>Zvol skladbu a plynulý náběh i doznění hudby.</p></div><div class="section-fields">
   <label>Výchozí skladba</label><select name="music_default"><option value="">bez hudby</option>{% for m in music %}<option value="{{ m.name }}"{% if sc.music_default == m.name %} selected{% endif %}>{{ m.name }}</option>{% endfor %}</select>
   <div class="row"><div><label>Hlasitost (0,1–2)</label><input type="number" name="music_volume" min="0.05" max="2" step="0.05" value="{{ sc.music_volume }}"></div>
   <div><label>Zesílení na začátku (s)</label><input type="number" name="fade_in" min="0" max="15" step="0.5" value="{{ sc.fade_in }}"></div>
   <div><label>Ztišení na konci (s)</label><input type="number" name="fade_out" min="0" max="15" step="0.5" value="{{ sc.fade_out }}"></div></div>
- </div>
- <div class="card"><h2>Obraz – rozjasnění a ztmavení</h2>
+ </div></section>
+<section class="form-section"><div class="section-copy"><span class="eyebrow">Přechody</span><h2>Začátek a konec</h2><p>Jemný přechod z černé a zpět pro samotný záznam.</p></div><div class="section-fields">
   <div class="row"><div><label>Rozjasnění ze tmy na začátku (s)</label><input type="number" name="video_fade_in" min="0" max="10" step="0.5" value="{{ sc.video_fade_in }}"></div>
   <div><label>Ztmavení na konci (s)</label><input type="number" name="video_fade_out" min="0" max="10" step="0.5" value="{{ sc.video_fade_out }}"></div></div>
   <div class="hint">Týká se zrychleného záznamu (ne intra). Hudba ztichne nejpozději se ztmavením obrazu.</div>
- </div>
- <div class="card"><h2>Šablona titulku a popisu</h2>
+ </div></section>
+<section class="form-section"><div class="section-copy"><span class="eyebrow">Metadata</span><h2>Nadpis a popis</h2><p>Texty pro publikování na YouTube. AI může připravit návrh z vyhodnocení snímků.</p></div><div class="section-fields">
   <label>Titulek (šablona)</label><input type="text" name="title" value="{{ sc.title }}" maxlength="120">
   <label class="check"><input type="checkbox" name="ai_title" value="1"{% if sc.ai_title %} checked{% endif %}>U automatických videí nechat AI navrhnout nadpis i popis z vyhodnocení snímků (při chybě se použijí šablony)</label>
   <label>Popis</label><textarea name="description" rows="5">{{ sc.description }}</textarea>
   <div class="hint">Navíc <code>{popis}</code> = text, který k detekci napsala AI. U každého videa jde titulek i popis ručně upravit.</div>
- </div>
- <div class="card"><h2>Automatika</h2>
+ </div></section>
+<section class="form-section"><div class="section-copy"><span class="eyebrow">Automatizace</span><h2>Automatická tvorba</h2><p>Propoj uložené AI klipy s tvorbou hotového videa.</p></div><div class="section-fields">
   <label class="check"><input type="checkbox" name="auto" value="1"{% if sc.auto %} checked{% endif %}>Automatická videa po upozornění rovnou zrychlit podle tohoto nastavení</label>
   <div class="hint">{% if auto_export_on %}Automatická videa jsou zapnutá v <a href="/videos/settings">Nastavení → AI videa</a>. Hotové zrychlené video najdeš v YouTube videích{% else %}Aby to mělo co zpracovávat, zapni nejdřív automatické video po upozornění v <a href="/videos/settings">Nastavení → AI videa</a>{% endif %}. Automatické publikování nastavíš v záložce Propojení YouTube.</div>
- </div>
- <div class="savebar"><button class="btn" data-busy="Ukládám">Uložit nastavení</button></div>
+ </div></section>
+ <div class="savebar"><span class="save-context">Výchozí nastavení pro nová videa.</span><button class="btn" data-busy="Ukládám">Uložit nastavení</button></div>
 </form></section>
 <section x-show="tab==='library'" x-cloak> <div class="card"><h2>Intro (úvodní znělka)</h2>
  {% if intro %}<div class="studio-intro">{% if intro_is_image %}<img src="/studio/asset/intro" alt="">{% else %}<video src="/studio/asset/intro" controls muted playsinline preload="metadata"></video>{% endif %}
@@ -9104,11 +9102,254 @@ header.top button.ico-btn.user { color: var(--pico-primary-inverse); }
 }
 header.top button.ico-btn.user { background: var(--pico-primary-background); border-color: var(--pico-primary-background); }
 .dashboard-main .cam .acts { grid-template-columns: repeat(auto-fit,minmax(105px,1fr)); }
+
+/* 5.1 / Administration design system */
+:root {
+  --at-w: 1440px;
+  --at-radius: 12px;
+  --pico-font-size: 93.75%;
+  --pico-font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --pico-line-height: 1.55;
+  --pico-border-radius: 8px;
+  --pico-form-element-spacing-vertical: .7rem;
+  --pico-form-element-spacing-horizontal: .85rem;
+  --at-focus: 0 0 0 3px var(--pico-primary-focus);
+}
+:root[data-theme="light"] {
+  --pico-background-color: #f7f8fa;
+  --pico-color: #202939;
+  --pico-muted-color: #667085;
+  --pico-card-border-color: #e4e7ec;
+  --pico-form-element-background-color: #fff;
+  --pico-form-element-border-color: #d0d5dd;
+  --pico-form-element-color: #202939;
+  --pico-form-element-placeholder-color: #8a94a6;
+  --pico-primary: #245cce;
+  --pico-primary-background: #2864db;
+  --pico-primary-hover-background: #1f52ba;
+  --pico-primary-focus: #2864db22;
+  --at-text: #202939;
+  --at-muted: #667085;
+  --at-line: #e4e7ec;
+  --at-surface-2: #f8fafc;
+  --sw-text: #344054;
+  --sw-info-bg: #edf3ff;
+  --sw-shadow: 0 1px 3px #10182808;
+}
+html { scroll-padding-top: 100px; }
+body { -webkit-font-smoothing: antialiased; }
+header.top { background: var(--pico-card-background-color); box-shadow: none; border-bottom: 1px solid var(--at-line); }
+header.top .inner { gap: 28px; }
+header.top .brand { gap: 10px; font-size: 20px; letter-spacing: -.7px; margin: 0; }
+header.top .brand .logo { width: 36px; height: 36px; }
+header.top .brand small { font-size: 10px; text-transform: none; letter-spacing: .1px; font-weight: 500; margin-top: 3px; }
+header.top .right { gap: 8px; }
+header.top .head-status { margin: 0 12px 0 0; }
+header.top .head-status a { font-size: 11px; font-weight: 500; border: none; background: none; padding: 3px; }
+header.top .head-status a + a { display: none; }
+header.top .dot { width: 6px; height: 6px; box-shadow: none; }
+header.top button.ico-btn:not(.block) { width: 36px; height: 36px; border-radius: 8px; border-color: var(--at-line); background: transparent; color: var(--at-muted); }
+header.top button.ico-btn:hover { color: var(--at-text); background: var(--at-surface-2); }
+header.top button.ico-btn.user { border-radius: 50%; background: var(--at-surface-2); color: var(--at-text); }
+header.top nav.menu { gap: 4px; }
+nav.menu > a, nav.menu .dd > button { padding: 11px 12px; font-size: 13px; font-weight: 600; border-radius: 7px; color: var(--at-muted); }
+nav.menu > a.active, nav.menu .dd > button.active { color: var(--pico-primary); background: var(--sw-info-bg); }
+nav.menu > a.active::after, nav.menu .dd > button.active::after { display: none; }
+.dd-panel { padding: 6px; border-radius: 10px; box-shadow: 0 12px 32px #10182818,0 2px 6px #10182808; }
+.dd-panel a, .dd-panel button.item { font-size: 13px; font-weight: 500; padding: 10px; }
+.dd-panel .ic { color: var(--at-muted); font-size: 14px; }
+.dd-panel .label { letter-spacing: .07em; padding: 10px; }
+@media (min-width:1081px) {
+ header.top .inner { height: 80px; min-height: 80px; padding: 0 32px; flex-wrap: nowrap; }
+ header.top nav.menu { order: 0; flex: 1 1 auto; justify-content: center; padding: 0; }
+ header.top .right { order: 0; }
+ header.top .brand { margin-right: 0; }
+}
+@media (min-width:1081px) and (max-width:1250px) {
+ header.top .inner { gap: 16px; padding: 0 24px; }
+ header.top .head-status { display: none; }
+ nav.menu > a, nav.menu .dd > button { padding: 10px; font-size: 12px; }
+}
+main.page { padding: 32px 32px 48px; }
+h1, .hero h1 { font-size: 28px; font-weight: 650; line-height: 1.3; letter-spacing: -.8px; }
+h2 { font-size: 16px; font-weight: 650; line-height: 1.4; letter-spacing: -.25px; }
+h3 { font-size: 14px; font-weight: 600; }
+.page-head { align-items: center; margin: 2px 0 28px; }
+.page-head .sub, .hero .sub { font-size: 13px; margin-top: 7px; max-width: 720px; line-height: 1.65; }
+.card { padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 3px #10182804; border-radius: 12px; }
+.section-head { margin-bottom: 18px; }
+.section-head h2 { margin: 0; }
+.hint, .field-help { font-size: 12px; line-height: 1.65; }
+.btn, a.btn { min-height: 40px; padding: 9px 16px; border-radius: 7px; font-size: 13px; font-weight: 600; line-height: 1.4; box-shadow: 0 1px 2px #10182808; }
+.btn.small, a.btn.small { min-height: 34px; padding: 7px 12px; font-size: 12px; }
+.btn.sec { background: var(--pico-card-background-color); border-color: var(--pico-form-element-border-color); color: var(--sw-text); }
+.btn.sec:hover { background: var(--at-surface-2); border-color: var(--pico-form-element-border-color); color: var(--at-text); }
+.btn.danger { box-shadow: none; }
+.page label { color: var(--at-text); font-size: 13px; font-weight: 550; margin: 18px 0 7px; line-height: 1.45; }
+.page :is(input:not([type="hidden"]):not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="color"]), select, textarea) {
+ font-family: inherit; font-size: 14px; border: 1px solid var(--pico-form-element-border-color); border-radius: 7px;
+ background-color: var(--pico-form-element-background-color); color: var(--pico-form-element-color);
+ padding: 10px 12px; min-height: 44px; box-shadow: 0 1px 2px #10182804; line-height: 1.5;
+}
+.page select { padding-right: 36px; }
+.page textarea { resize: vertical; min-height: 110px; line-height: 1.65; }
+.page textarea[name="intro_text"] { min-height: 84px; }
+.page :is(input,select,textarea):focus { border-color: var(--pico-primary); box-shadow: var(--at-focus); outline: none; }
+.page input[type="file"] { padding: 12px; border: 1px dashed var(--pico-form-element-border-color); border-radius: 8px; background: var(--at-surface-2); font-size: 13px; }
+.page input[type="file"]::file-selector-button { padding: 7px 12px; border-radius: 6px; font-weight: 500; }
+.page :is(input,select,textarea):disabled { opacity: .6; cursor: not-allowed; }
+.page .check { display: flex; gap: 12px; font-size: 13px; font-weight: 400; line-height: 1.6; margin: 16px 0; align-items: flex-start; }
+.page .check input[type="checkbox"] { width: 36px; height: 20px; min-width: 36px; margin-top: 1px; background: var(--pico-muted-border-color); }
+.page .check input[type="checkbox"]::after { width: 16px; height: 16px; top: 2px; left: 2px; }
+.page .check input[type="checkbox"]:checked { background: var(--pico-primary-background); }
+.page .check input[type="checkbox"]:checked::after { left: 18px; }
+.page .check input:focus-visible { outline: 2px solid var(--pico-primary); outline-offset: 3px; }
+.page .check strong { display: block; font-size: 14px; font-weight: 600; }
+.page .check small { display: block; color: var(--at-muted); font-size: 12px; margin-top: 3px; }
+.page .chip { margin: 0; font-weight: 450; font-size: 12px; padding: 8px 12px; border-radius: 7px; }
+.page .chip:has(input:checked) { border-color: var(--pico-primary); color: var(--pico-primary); }
+.page .row { gap: 20px; }
+.page .row > div { min-width: min(180px,100%); }
+.settings-page { max-width: 1264px; }
+.settings-page .page-head, .settings-page > [x-data] > .page-head { margin-top: 28px; }
+.settings-nav { background: transparent; border: 0; border-bottom: 1px solid var(--at-line); border-radius: 0; padding: 0; gap: 22px; margin: -8px 0 30px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+.settings-nav a { position: relative; padding: 12px 0 15px; border-radius: 0; font-size: 12px; font-weight: 500; white-space: nowrap; }
+.settings-nav a.active, .settings-nav a:hover { background: transparent; color: var(--pico-primary); }
+.settings-nav a.active { box-shadow: inset 0 -2px var(--pico-primary); font-weight: 600; }
+.settings-form { max-width: none; margin: 0; }
+.editor-form { border: 1px solid var(--at-line); border-radius: 12px; background: var(--pico-card-background-color); }
+.form-section { display: grid; grid-template-columns: minmax(200px, 0.85fr) minmax(0,1.65fr); gap: 52px; padding: 32px; margin: 0; border-bottom: 1px solid var(--at-line); }
+.section-copy .eyebrow { display: block; color: var(--at-muted); font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; margin-bottom: 12px; }
+.section-copy h2 { font-size: 16px; margin-bottom: 9px; }
+.section-copy p { font-size: 13px; line-height: 1.7; color: var(--at-muted); margin: 0; max-width: 285px; }
+.section-copy a { text-decoration: none; }
+.section-copy a:hover { text-decoration: underline; }
+.section-fields { min-width: 0; }
+.section-fields > label:first-child, .section-fields > .row:first-child label, .field-grid label { margin-top: 0; }
+.section-fields .hint { margin-top: 10px; }
+.field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.input-unit { position: relative; }
+.input-unit input { padding-right: 70px !important; }
+.input-unit > span { position: absolute; right: 14px; top: 12px; color: var(--at-muted); font-size: 13px; pointer-events: none; }
+.input-unit.short { max-width: 200px; }
+.field-help { color: var(--at-muted); margin: 8px 0 0; }
+.field-note { background: var(--at-surface-2); border: 1px solid var(--at-line); border-radius: 8px; padding: 14px 16px; font-size: 12px; line-height: 1.7; color: var(--at-muted); margin-top: 20px; }
+.page .setting-switch { margin: 0 0 24px; padding-bottom: 22px; border-bottom: 1px solid var(--at-line); }
+.camera-selection { padding: 0; margin: 0; border: 0; }
+.camera-selection legend { font-size: 12px; font-weight: 600; color: var(--at-muted); margin-bottom: 12px; }
+.page .camera-option { padding: 14px 16px; margin: 0 0 8px; border: 1px solid var(--at-line); border-radius: 8px; align-items: center; }
+.page .camera-option:has(input:checked) { background: var(--sw-info-bg); border-color: var(--pico-primary-focus); }
+.empty-form { padding: 20px; border: 1px dashed var(--at-line); border-radius: 8px; font-size: 13px; }
+.status-warning { color: var(--sw-warn) !important; }
+.tabs.big, .settings-form nav.tabs { display: flex; justify-content: flex-start; gap: 4px; padding: 4px; background: var(--pico-muted-border-color); border-radius: 9px; width: fit-content; max-width: 100%; margin-bottom: 24px; border: 0; }
+.tabs.big button, .tabs.big > a, .settings-form nav.tabs > a { min-height: 38px; display: inline-flex; align-items: center; margin: 0; padding: 9px 16px; font-size: 12px; line-height: 1.4; font-weight: 550; border: 0; border-radius: 6px; box-shadow: none; background: transparent; color: var(--at-muted); }
+.tabs.big button.on, .tabs.big > a.on, .settings-form nav.tabs > a.on { background: var(--pico-card-background-color); color: var(--at-text); box-shadow: 0 1px 3px #10182818; }
+.tabs.big button:hover, .tabs.big > a:hover { color: var(--at-text); }
+.savebar { bottom: 16px; gap: 20px; padding: 16px 24px; margin: 20px 0 0; border-radius: 10px; box-shadow: 0 4px 16px #1018280c; border: 1px solid var(--at-line); flex-wrap: wrap; }
+.editor-form > .savebar { margin: 0; bottom: 0; border: 0; border-radius: 0 0 12px 12px; box-shadow: 0 -2px 8px #10182804; }
+.save-context { color: var(--at-muted); font-size: 12px; margin-right: auto; }
+.savebar > .btn { margin-left: auto; }
+.prov { grid-template-columns: repeat(auto-fit,minmax(190px,1fr)); gap: 12px; margin: 20px 0; }
+.page .prov-card { padding: 16px; font-size: 12px; font-weight: 400; border-width: 1px; border-radius: 9px; background: var(--pico-card-background-color); margin: 0; }
+.prov-card.on { background: var(--sw-info-bg); border-color: var(--pico-primary); }
+.prov-card .ph b { font-size: 14px; }
+.prov-card:focus-within { outline: 2px solid var(--pico-primary); outline-offset: 2px; }
+.speed-pick { background: var(--at-surface-2); border: 1px solid var(--at-line); border-radius: 8px; padding: 12px; }
+.speed-val { font-size: 21px; font-weight: 650; }
+.hero { margin-bottom: 24px; min-height: 74px; }
+.hero .pill { border-radius: 8px; padding: 10px 14px; }
+.tiles { gap: 16px; margin-bottom: 24px; }
+.tile { padding: 20px; border-radius: 10px; }
+.tile .ico { width: 34px; height: 34px; background: var(--at-surface-2); color: var(--at-muted); border-radius: 8px; }
+.tile .k { font-size: 11px; font-weight: 500; }
+.tile .v { font-size: 25px; font-weight: 650; letter-spacing: -.7px; }
+.tile .d { font-size: 11px; }
+.tile:hover { transform: none; }
+.badge { font-size: 10px; font-weight: 550; padding: 4px 7px; border-radius: 5px; }
+.overview-row b { font-weight: 550; font-size: 13px; }
+.overview-row small { font-size: 11px; }
+.overview-icon { background: var(--at-surface-2); color: var(--at-muted); }
+.overview-row { padding: 18px 0; }
+.workflow { padding: 12px 16px; font-size: 12px; border-radius: 8px; background: transparent; margin-bottom: 24px; }
+.guide { padding: 16px; border-radius: 8px; font-size: 13px; line-height: 1.7; }
+.setup-guide { border-color: var(--at-line) !important; }
+.setup-guide summary { font-size: 12px; font-weight: 500; }
+.flash { border-radius: 8px; font-size: 13px; }
+.footer { font-size: 11px; }
+@media (max-width:1080px) {
+ header.top .inner { height: 64px; padding: 0 20px; gap: 14px; }
+ header.top nav.menu { top: 64px; padding: 20px; gap: 4px; }
+ header.top .head-status { display: none; }
+ header.top .brand small { display: block; }
+ nav.menu > a, nav.menu .dd > button { padding: 14px; font-size: 14px; }
+ header.top .right .dd-panel { position: absolute; top: calc(100% + 12px); padding: 8px; min-width: 270px; max-height: calc(100dvh - 90px); overflow: auto; border: 1px solid var(--at-line); box-shadow: 0 12px 32px #10182820; }
+ main.page { padding: 24px 20px 36px; }
+ .form-section { padding: 26px; gap: 28px; grid-template-columns: minmax(170px,.8fr) minmax(0,1.4fr); }
+ .settings-nav { gap: 22px; }
+}
+@media (max-width:700px) {
+ h1, .hero h1 { font-size: 24px; }
+ .page-head { gap: 14px; }
+ .form-section { display: block; padding: 22px 18px; }
+ .section-copy { margin-bottom: 24px; }
+ .section-copy p { max-width: none; }
+ .section-copy .eyebrow { font-size: 9px; margin-bottom: 8px; }
+ .field-grid { gap: 12px; }
+ .card { padding: 20px 18px; }
+ .savebar { padding: 16px; bottom: 8px; gap: 12px; }
+ .save-context { flex-basis: 100%; font-size: 11px; }
+ .savebar .btn { flex: 1; }
+ .tabs.big { width: 100%; }
+ .tabs.big button, .tabs.big > a, .settings-form nav.tabs > a { flex: 1 1 auto; justify-content: center; font-size: 11px; padding: 10px; }
+ .page .row { gap: 14px; }
+ .page .row > div { flex-basis: 100%; }
+ .tile { padding: 14px; }
+ .tile .v { font-size: 22px; }
+ .tile .ico { display: none; }
+ header.top .inner { padding: 0 16px; gap: 10px; }
+ header.top .brand .logo { width: 32px; height: 32px; }
+ header.top .brand { font-size: 18px; }
+ header.top .brand small { font-size: 9px; }
+ header.top .right { gap: 6px; }
+ header.top button.ico-btn:not(.block) { width: 32px; height: 32px; }
+}
+main.page.settings-page { max-width: 1264px; }
+.page .setting-switch, .page .camera-option { width: 100%; }
+.camera-editor { margin: 24px 0; }
+.camera-editor > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--at-line); border-radius: 10px; background: var(--pico-card-background-color); padding: 20px 24px; font-size: 14px; font-weight: 600; }
+.camera-editor[open] > summary { margin-bottom: 16px; }
+.camera-editor > summary .hint { font-weight: 400; margin-right: 24px; }
+.field-guidance { margin: 16px 0 0; padding: 12px 14px; background: var(--at-surface-2); border: 1px solid var(--at-line); border-radius: 7px; }
+.field-guidance summary { font-size: 12px; font-weight: 500; margin: 0; }
+.field-guidance p { font-size: 12px; color: var(--at-muted); margin: 12px 0 0; line-height: 1.7; }
+.field-guidance code { overflow-wrap: anywhere; }
+.optional { color: var(--at-muted); font-size: 11px; font-weight: 400; }
+@media (max-width:700px) { .camera-editor > summary { align-items: flex-start; flex-direction: column; padding: 18px; } }
+.camera-editor { padding: 0; border: 0; background: none; }
+.section-fields > input + .field-grid { margin-top: 20px; }
+.savebar > .btn { order: 2; }
+.savebar > .hint { order: 1; margin-right: auto; }
+.ai-connection { display: grid; grid-template-columns: minmax(200px,.85fr) minmax(0,1.65fr); gap: 52px; border-top: 1px solid var(--at-line); padding-top: 28px; margin-top: 28px; }
+.ai-connection .provider-details { margin-top: 0; }
+.page .prov-card { min-height: 86px; display: flex; align-items: center; }
+.prov-card .ph { margin-bottom: 0; width: 100%; }
+@media(max-width:700px) { .ai-connection { display: block; padding-top: 24px; margin-top: 24px; } .page .prov-card { min-height: 64px; } }
 ATMOVIO_CSS_EOF
   cat > "$1/atmovio.js" <<'ATMOVIO_JS_EOF'
 /* Atmovio – interakce (Alpine.js komponenty + pomocné funkce). */
 (function () {
   'use strict';
+
+  // Legacy server-rendered forms: associate adjacent labels with their existing controls.
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.page label:not([for])').forEach(function (label, index) {
+      if (label.querySelector('input,select,textarea')) return;
+      var control = label.nextElementSibling;
+      if (!control || !control.matches('input:not([type=hidden]),select,textarea')) return;
+      if (!control.id) control.id = 'at-field-' + index;
+      label.htmlFor = control.id;
+    });
+  });
 
   // ---------- Alpine komponenty ----------
   document.addEventListener('alpine:init', function () {

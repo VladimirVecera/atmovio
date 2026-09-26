@@ -2,6 +2,15 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 5.1 – 2026-09-25 – polished administration and forms
+
+- Compact desktop header with a single horizontal navigation row, quieter service status and a separate account/tools menu.
+  Original logo retained; mobile navigation and account dropdown work independently.
+- Consistent form controls, labels, spacing, focus states, tabs and save bars across the administration.
+  Camera, AI-provider, AI-video and YouTube-default forms now use explanatory sections with related fields aligned together.
+- Accessible label associations for existing forms, labelled navigation controls, light/dark themes and responsive layouts.
+  Field names, save actions and recording/AI/video processing behavior remain unchanged.
+
 ## 5.0 – 2026-09-25 – clearer administration and video metadata from AI filmstrips
 
 - Horizontal navigation: **Dashboard · Živý přenos · AI detekce · AI videa · YouTube videa · Nastavení**.
