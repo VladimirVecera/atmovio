@@ -56,7 +56,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "5.2"
+APP_VERSION = "5.2.1"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -3337,14 +3337,21 @@ Heslo:    {{ frigate_pw }}</pre>{% endif %}</div>
 {% endblock %}"""
 
 TEMPLATES["update.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small sec" href="/system">← Systém</a></div>{% endblock %}{% block content %}
-<div x-data="updater({{ 'true' if running else 'false' }}, {{ version|tojson }}, {{ log_text|tojson }})">
+<div x-data="updater({{ 'true' if running else 'false' }}, {{ version|tojson|forceescape }}, {{ log_text|tojson|forceescape }})">
 <div class="grid">
 <div class="card"><h2>Verze</h2>
-<div class="tw"><table class="kv"><tr><td>Nainstalováno</td><td>verze {{ version }}</td></tr><tr><td>Nejnovější vydání</td><td>{% if st.latest %}verze {{ st.latest }}{% if st.published %} <span class="hint">· vydáno {{ st.published }}</span>{% endif %}{% elif st.checked %}zatím žádné vydání{% else %}ještě nezjištěno{% endif %}</td></tr><tr><td>Naposledy zjištěno</td><td>{% if st.checked %}{{ st.checked|czdt }}{% else %}–{% endif %}</td></tr></table></div>
+<div class="tw"><table class="kv"><tr><td>Nainstalováno</td><td>verze <span x-text="newVersion || version">{{ version }}</span></td></tr><tr><td>Nejnovější vydání</td><td>{% if st.latest %}verze {{ st.latest }}{% if st.published %} <span class="hint">· vydáno {{ st.published }}</span>{% endif %}{% elif st.checked %}zatím žádné vydání{% else %}ještě nezjištěno{% endif %}</td></tr><tr><td>Naposledy zjištěno</td><td>{% if st.checked %}{{ st.checked|czdt }}{% else %}–{% endif %}</td></tr></table></div>
 {% if st.error %}<div class="flash warn"><span>⚠️</span><div>Kontrola se nepovedla: {{ st.error }}<br><span class="hint">RPi potřebuje přístup na api.github.com a github.com.</span></div></div>{% endif %}
-{% if running %}<div class="flash"><span>⏳</span><div><b>Aktualizace probíhá…</b> Web se na chvíli odmlčí, až se Atmovio restartuje. Nech stránku otevřenou, sama ukáže výsledek.</div></div>
+<div aria-live="polite">
+<div class="flash" x-show="phase==='done'" x-cloak><span>✅</span><div><b>Aktualizace dokončena. Atmovio běží.</b> Verze <span x-text="newVersion"></span>. <a class="btn small" href="/">Otevřít dashboard</a></div></div>
+<div class="flash err" x-show="phase==='failed'" x-cloak><span>⛔</span><div><b>Aktualizace se nepodařila.</b> Web nyní odpovídá ve verzi <span x-text="newVersion || version"></span>. Podrobnosti jsou v záznamu níže.</div></div>
+<div class="flash warn" x-show="phase==='unknown'" x-cloak><span>⚠</span><div>Aktualizátor už neběží, ale úspěšné dokončení se nepodařilo potvrdit. Web odpovídá ve verzi <span x-text="newVersion || version"></span>. Zkontroluj záznam níže.</div></div>
+<div class="flash warn" x-show="phase==='restart' || phase==='offline'" x-cloak><span>⏳</span><div x-text="phase==='offline' ? 'Web zatím neodpovídá. Dále automaticky zkouším spojení; aktualizaci znovu nespouštěj.' : 'Spojení s webem se přerušilo, například kvůli restartu. Čekám na jeho návrat…'"></div></div>
+<div class="flash warn" x-show="phase==='auth'" x-cloak><span>⚠</span><div>Pro ověření výsledku se znovu přihlas. <a href="/system/update">Přihlásit se a ověřit výsledek</a></div></div>
+</div>
+{% if running %}<div class="flash" x-show="phase==='run'"><span>⏳</span><div><b>Aktualizace probíhá…</b> Web se na chvíli odmlčí, až se Atmovio restartuje. Nech stránku otevřenou, sama ukáže výsledek.</div></div>
 {% elif st.available %}<div class="flash"><span>🆕</span><div><b>K dispozici je verze {{ st.latest }}.</b> Trvá to zhruba 2–4 minuty; nahrávání kamer běží dál, jen web Atmovio je chvíli nedostupný. Původní verze se zálohuje a při chybě se sama vrátí.</div></div>
-<form method="post" action="/system/update/start" data-nobusy><button class="btn" :disabled="running" onclick="return confirm('Nainstalovat Atmovio {{ st.latest }}? Web bude asi minutu nedostupný.')">Nainstalovat verzi {{ st.latest }}</button></form>
+<form method="post" action="/system/update/start" data-nobusy x-show="!running && phase!=='auth'"><button class="btn" :disabled="running" onclick="return confirm('Nainstalovat Atmovio {{ st.latest }}? Web bude asi minutu nedostupný.')">Nainstalovat verzi {{ st.latest }}</button></form>
 {% elif st.checked %}<p class="hint">Máš nejnovější verzi.</p>{% else %}<p class="hint">Klikni na Zkontrolovat teď.</p>{% endif %}
 <form method="post" action="/system/update/check" style="margin-top:.6rem"><button class="btn small sec" :disabled="running" data-busy="Ptám se GitHubu">Zkontrolovat teď</button></form>
 <form method="post" action="/system/update/auto" data-nobusy style="margin-top:.8rem"><label><input type="checkbox" name="auto_check" value="1" {% if auto_check %}checked{% endif %} onchange="this.form.submit()"> Kontrolovat nové verze automaticky (1× denně jen dotaz na GitHub; nic se neinstaluje samo)</label></form>
@@ -3353,12 +3360,8 @@ TEMPLATES["update.html"] = """{% extends "base.html" %}{% block actions %}<div c
 {% if st.notes %}<pre style="white-space:pre-wrap;max-height:22rem;overflow:auto">{{ st.notes }}</pre>{% else %}<p class="hint">Popis vydání se zobrazí po kontrole.</p>{% endif %}
 {% if st.url %}<a href="{{ st.url }}" target="_blank" rel="noopener">Vydání na GitHubu ↗</a>{% endif %}</div>
 </div>
-<div class="card" x-show="running || log" x-cloak>
+<div class="card" x-show="running || log || phase" x-cloak>
  <h2>Průběh aktualizace</h2>
- <div class="flash" x-show="phase=='run'"><span>⏳</span><div>Připravuji novou verzi (stažení knihoven, kontrola)…</div></div>
- <div class="flash" x-show="phase=='restart'"><span>⏳</span><div>Atmovio se restartuje, čekám na odpověď…</div></div>
- <div class="flash" x-show="phase=='done'"><span>✅</span><div><b>Hotovo.</b> Běží verze <span x-text="newVersion"></span>. <a href="/system/update">Obnovit stránku</a></div></div>
- <div class="flash err" x-show="phase=='failed'"><span>⛔</span><div><b>Aktualizace selhala</b>, původní verze byla obnovena. Podrobnosti v záznamu níže.</div></div>
  <pre style="max-height:24rem;overflow:auto;font-size:.8rem;white-space:pre-wrap" x-text="log"></pre>
 </div>
 </div>
@@ -8456,7 +8459,13 @@ def update_page(request: Request):
 
 @app.get("/system/update/status")
 def update_status():
-    return {"running": update_running(), "version": APP_VERSION, "log": update_log_tail(), "state": update_state()}
+    running, log_text = update_running(), update_log_tail()
+    # The installer writes its success marker only after the local HTTP health check.
+    outcome = "running" if running else (
+        "failed" if "Aktualizace selhala, obnovuji" in log_text else
+        "done" if "✔ Atmovio aktualizován:" in log_text else "unknown")
+    return JSONResponse({"running": running, "version": APP_VERSION, "log": log_text,
+                         "outcome": outcome, "state": update_state()}, headers={"Cache-Control": "no-store"})
 
 
 @app.post("/system/update/check")

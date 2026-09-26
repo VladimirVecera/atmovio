@@ -2,6 +2,14 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 5.2.1 – 2026-09-26 – reliable update progress
+
+- Escape version and log JSON in the updater's HTML attribute so progress tracking initializes correctly.
+- Show completion and the running version at the top without a manual refresh. Confirm success only after
+  the installer exits with its HTTP health-check success marker; expose failure and unconfirmed outcomes honestly.
+- Recover polling across restarts with request timeouts, a prolonged-outage message and an explicit login link
+  when the session expires. Recover the last result after reopening the page.
+
 ## 5.2 – 2026-09-26 – completed AI films and continuous event clips
 
 - Separate snapshot collection from AI evaluation: completed-film mode is the new default for enabled filmstrips.

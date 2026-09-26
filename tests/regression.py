@@ -63,6 +63,24 @@ with contextlib.ExitStack() as stack:
  assert client.post('/login',data={'password':os.environ['ATMOVIO_ADMIN_PASSWORD']}).status_code==403;ok('POST without CSRF rejected')
  assert client.post('/login',data={'password':os.environ['ATMOVIO_ADMIN_PASSWORD'],'csrf_token':token},follow_redirects=False).status_code==303
  ok('Session login with CSRF')
+ # Updater expressions must survive HTML attribute parsing, including quoted/multiline logs.
+ class UpdaterAttrs(HTMLParser):
+  expression = None
+  def handle_starttag(self, tag, attrs):
+   value = dict(attrs).get('x-data', '')
+   if value.startswith('updater('): self.expression = value
+ tricky_log = 'Instaluji "novou" verzi\n<script> & další řádek'
+ with patch.object(a,'update_running',return_value=True), patch.object(a,'update_log_tail',return_value=tricky_log):
+  parsed = UpdaterAttrs(); parsed.feed(client.get('/system/update').text)
+  args = json.loads('[' + parsed.expression[len('updater('):-1] + ']')
+  assert args == [True, a.APP_VERSION, tricky_log], args
+ for running, log_text, outcome in [(True,'✔ Atmovio aktualizován:', 'running'), (False,'✔ Atmovio aktualizován:', 'done'), (False,'Aktualizace selhala, obnovuji původní aplikaci', 'failed'), (False,'nedokončený log', 'unknown')]:
+  with patch.object(a,'update_running',return_value=running), patch.object(a,'update_log_tail',return_value=log_text):
+   result=client.get('/system/update/status')
+   assert result.json()['outcome']==outcome
+   assert result.headers['cache-control']=='no-store'
+ ok('Updater HTML quoting, running health-check, completion, failure and unconfirmed outcomes')
+
  token=re.search(r'name="csrf_token" value="([^"]+)"',client.get('/ai').text)[1]
  pages=['/ai/guide','/youtube','/videos/settings','/','/live','/live/all','/live/test_cam','/camera/test_cam','/cameras','/cameras/edit/test_cam','/discover','/storage','/ai','/history','/history?show=all','/detection/1','/videos','/studio/new/1','/studio/v/1','/studio/settings','/email','/vpn','/logs','/system','/system/update']
  failed=[];form_count=0

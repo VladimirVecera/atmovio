@@ -152,26 +152,39 @@
       };
     });
 
-    // Průběh aktualizace Atmovio (/system/update): každé 3 s se ptá /system/update/status.
-    // Během restartu služby dotaz selže – to je normální fáze "restart"; hotovo = odpověď s jinou verzí.
+    // Keep observing through restarts; success requires the installer's health-check marker.
     Alpine.data('updater', function (running, version, log) {
       return {
-        running: !!running, version: version, log: log || '', phase: running ? 'run' : '', newVersion: '', idle: 0,
-        init: function () { if (this.running) this.poll(); },
-        later: function () { var self = this; setTimeout(function () { self.poll(); }, 3000); },
-        poll: function () {
-          var self = this;
-          fetch('/system/update/status', { credentials: 'same-origin', cache: 'no-store' })
-            .then(function (r) { if (!r.ok || r.redirected) throw new Error('nedostupné'); return r.json(); })
-            .then(function (s) {
-              if (s.log) self.log = s.log;
-              if (s.version && s.version !== self.version) { self.phase = 'done'; self.newVersion = s.version; self.running = false; return; }
-              if (s.running) { self.phase = 'run'; self.idle = 0; self.later(); return; }
-              // Jednotka skončila a verze je stejná: buď rollback (poznáme z logu), nebo se ještě nerozběhla.
-              if (/selhala|obnovuji|rollback/i.test(self.log) || ++self.idle > 10) { self.phase = 'failed'; self.running = false; return; }
-              self.phase = 'run'; self.later();
-            })
-            .catch(function () { self.phase = 'restart'; self.later(); });
+        running: !!running, version: version, log: log || '', phase: running ? 'run' : '',
+        newVersion: '', idle: 0, disconnectedAt: 0, timer: null, controller: null, disposed: false,
+        init: function () { if (this.running || this.log) this.poll(); },
+        destroy: function () { this.disposed = true; clearTimeout(this.timer); if (this.controller) this.controller.abort(); },
+        later: function () { var self = this; if (!self.disposed) self.timer = setTimeout(function () { self.poll(); }, 3000); },
+        poll: async function () {
+          if (this.disposed) return;
+          this.controller = new AbortController();
+          var controller = this.controller, timeout = setTimeout(function () { controller.abort(); }, 12000);
+          try {
+            var r = await fetch('/system/update/status', { credentials: 'same-origin', cache: 'no-store', signal: controller.signal });
+            if (r.redirected || r.status === 401 || r.status === 403) { this.phase = 'auth'; return; }
+            if (!r.ok) throw new Error('nedostupné');
+            var s = await r.json();
+            if (typeof s.running !== 'boolean' || !s.version) throw new Error('neplatná odpověď');
+            this.disconnectedAt = 0;
+            if (typeof s.log === 'string') this.log = s.log;
+            this.newVersion = s.version;
+            if (s.running) { this.running = true; this.phase = 'run'; this.idle = 0; this.later(); return; }
+            // Log fallback supports a rollback to an older server without an outcome field.
+            var outcome = s.outcome || (/Aktualizace selhala, obnovuji/.test(this.log) ? 'failed' :
+              /✔ Atmovio aktualizován:/.test(this.log) ? 'done' : 'unknown');
+            if (outcome === 'done' || outcome === 'failed') { this.phase = outcome; this.running = false; return; }
+            if (++this.idle > 10) { this.phase = 'unknown'; this.running = false; return; }
+            this.phase = 'run'; this.later();
+          } catch (e) {
+            if (!this.disconnectedAt) this.disconnectedAt = Date.now();
+            this.phase = Date.now() - this.disconnectedAt >= 120000 ? 'offline' : 'restart';
+            this.later();
+          } finally { clearTimeout(timeout); }
         }
       };
     });
