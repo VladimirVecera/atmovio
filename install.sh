@@ -475,7 +475,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "5.3.8"
+APP_VERSION = "5.3.9"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -4301,18 +4301,24 @@ TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<d
   <div x-show="textOn"><input type="text" name="text" value="{{ values.text }}" maxlength="200" placeholder="{kamera} · {datum} · {rychlost}×">
   <div class="hint">Zástupné značky: <code>{kamera}</code> <code>{datum}</code> <code>{cas}</code> <code>{jev}</code> <code>{skore}</code> <code>{rychlost}</code>. Umístění a velikost písma nastavíš v Nastavení studia.{% if not font %} <b>Na RPi chybí font – text se nepřidá</b> (nainstaluj balíček fonts-dejavu-core).{% endif %}</div></div></div>
 
- <div class="card" x-data="musicFinder({{ values.music|tojson|forceescape }})"><h2>4. Hudba</h2>
+ <div class="card" x-data="musicFinder({{ values.music|tojson|forceescape }})"><h2>4. Hudba</h2><label>Uložené skladby</label>
   <select name="music" x-model="music" x-ref="sel"><option value="">bez hudby</option>{% for m in music %}<option value="{{ m.name }}">{{ m.name }}{% if m.duration %} ({{ (m.duration // 60)|int }}:{{ '%02d'|format(m.duration % 60) }}){% endif %}</option>{% endfor %}</select>
+  <template x-if="music"><div><audio controls preload="none" style="width:100%;margin-top:.5rem" :src="'/studio/asset/music/' + encodeURIComponent(music)" @play="solo($event.target)" @error="previewError = 'Skladbu nelze přehrát. Zkontroluj soubor v knihovně hudby.'"></audio><p class="hint" role="status" x-show="previewError" x-text="previewError"></p></div></template>
   <p class="hint">Hudba začne po intru. Autor se doplní do popisu.</p><details class="inline-help"><summary>Průběh hudby</summary><p class="hint" style="margin:.4rem 0 .6rem">Hudba začne až po intru, plynule zesílí a na konci ztichne ({{ sc.fade_in }} s / {{ sc.fade_out }} s); kratší skladba se opakuje. Do popisu videa se automaticky přidá autor skladby.</p></details>
   <details class="finder" :open="open" @toggle="open = $el.open"><summary>🔎 Najít hudbu k tomuto videu (Openverse – volně použitelná, CC0 / CC BY)</summary>
    <div class="row" style="margin-top:.5rem;align-items:end"><div><input type="text" x-model="q" @keydown.enter.prevent="search()" placeholder="např. calm piano, sunset, ambient…"></div>
     <div style="flex:0 0 auto;min-width:0"><select x-model="len" style="width:auto"><option value="">libovolná délka</option><option value="short">do 2 min</option><option value="medium">2–10 min</option><option value="long">nad 10 min</option></select></div>
     <button type="button" class="btn small" style="flex:0 0 auto" @click="search()" :disabled="busy">Hledat</button></div>
+   <details class="inline-help"><summary>Další filtry</summary><div class="row" style="margin-top:.5rem">
+    <div><label>Licence</label><select x-model="license"><option value="">CC0 a CC BY</option><option value="cc0">CC0</option><option value="by">CC BY</option></select></div>
+    <div><label>Autor</label><input type="text" x-model="creator" placeholder="Jméno autora" @keydown.enter.prevent="search()"></div>
+    <div><label>Formát</label><select x-model="extension"><option value="">Všechny</option><option value="mp3">MP3</option><option value="ogg">OGG</option><option value="wav">WAV</option><option value="flac">FLAC</option></select></div>
+   </div></details>
    <div class="chips">{% for lbl, qq in quick %}<span class="chip" @click="q = '{{ qq }}'; search()">{{ lbl }}</span>{% endfor %}</div>
    <p class="hint" x-show="msg" x-text="msg"></p>
    <div class="tracks" x-show="items.length">
     <template x-for="t in items" :key="t.id"><div class="track">
-     <audio controls preload="none" :src="t.url"></audio>
+     <audio controls preload="none" :src="t.url" @play="solo($event.target)"></audio>
      <div class="tx"><b x-text="t.title"></b> <span class="hint" x-text="(t.creator ? t.creator + ' · ' : '') + (t.duration_h ? t.duration_h + ' · ' : '') + t.license + (t.genres ? ' · ' + t.genres : '')"></span></div>
      <button type="button" class="btn small" @click="use(t)" :disabled="busy" x-text="t.name ? '✓ Vybráno' : 'Použít'"></button>
     </div></template>
@@ -8222,11 +8228,17 @@ def openverse_headers(cfg) -> dict:
     return h
 
 
-def music_search(cfg, q: str, length: str = "") -> dict:
-    """Vrátí {'items': [...], 'error': ''}; jen hudba pod CC0 / CC BY (bez rizika na YouTube)."""
+def music_search(cfg, q: str, length: str = "", license: str = "", creator: str = "", extension: str = "") -> dict:
+    """Vrátí {'items': [...], 'error': ''}; jen hudba pod CC0 / CC BY."""
     params = {"q": q[:100], "license": "cc0,by", "category": "music", "page_size": 20, "mature": "false"}
     if length in ("short", "medium", "long"):
         params["length"] = length
+    if license in ("cc0", "by"):
+        params["license"] = license
+    if creator.strip():
+        params["creator"] = creator.strip()[:100]
+    if extension in ("mp3", "ogg", "wav", "flac"):
+        params["extension"] = extension
     try:
         r = requests.get(f"{OPENVERSE_API}/audio/", params=params, headers=openverse_headers(cfg), timeout=20)
     except Exception as e:
@@ -8307,11 +8319,11 @@ def music_download(cfg, item: dict) -> str:
 
 
 @app.get("/studio/music/search")
-def studio_music_search(request: Request, q: str = "", length: str = ""):
+def studio_music_search(request: Request, q: str = "", length: str = "", license: str = "", creator: str = "", extension: str = ""):
     q = q.strip()
     if len(q) < 2:
         return JSONResponse({"items": [], "error": "Zadej aspoň dvě písmena."})
-    return JSONResponse(music_search(load_config(), q, length))
+    return JSONResponse(music_search(load_config(), q, length, license, creator, extension))
 
 
 @app.post("/studio/music/fetch")
@@ -11649,12 +11661,14 @@ ATMOVIO_CSS_EOF
     // ---------- Hledání hudby (Openverse) přímo u videa ----------
     Alpine.data('musicFinder', function (initial) {
       return {
-        q: '', len: '', items: [], msg: '', busy: false, open: false, music: initial || '',
+        q: '', len: '', license: '', creator: '', extension: '', previewError: '', items: [], msg: '', busy: false, open: false, music: initial || '',
+        init: function () { this.$watch('music', () => { this.previewError = ''; }); },
+        solo: function (current) { this.$root.querySelectorAll('audio').forEach(a => { if (a !== current) a.pause(); }); },
         search: function () {
           var self = this;
           if (self.q.trim().length < 2) { self.msg = 'Zadej aspoň dvě písmena.'; return; }
           self.busy = true; self.msg = 'Hledám…'; self.items = [];
-          fetch('/studio/music/search?q=' + encodeURIComponent(self.q.trim()) + '&length=' + encodeURIComponent(self.len), { credentials: 'same-origin' })
+          fetch('/studio/music/search?q=' + encodeURIComponent(self.q.trim()) + '&length=' + encodeURIComponent(self.len) + '&license=' + encodeURIComponent(self.license) + '&creator=' + encodeURIComponent(self.creator) + '&extension=' + encodeURIComponent(self.extension), { credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (d) { self.items = d.items || []; self.msg = d.error || (self.items.length + ' skladeb – přehraj si je a klikni Použít'); })
             .catch(function () { self.msg = 'Hledání selhalo – RPi nejspíš nemá přístup na internet.'; })

@@ -2,6 +2,10 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 5.3.9 – 2026-09-26 – music preview and Openverse filters
+
+- Preview selected library music directly in the video form; pause other music previews and add Openverse license, creator and file format filters.
+
 ## 5.3.8 – 2026-09-26 – storage stability, export recovery and log copying
 
 - Preserve managed recording mode during upgrades so restarting the guard does not unnecessarily recreate Frigate. Allow up to 30 seconds for a bounded write probe, while still reacting to explicit write failures and mount loss.

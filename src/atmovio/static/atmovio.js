@@ -339,12 +339,14 @@
     // ---------- Hledání hudby (Openverse) přímo u videa ----------
     Alpine.data('musicFinder', function (initial) {
       return {
-        q: '', len: '', items: [], msg: '', busy: false, open: false, music: initial || '',
+        q: '', len: '', license: '', creator: '', extension: '', previewError: '', items: [], msg: '', busy: false, open: false, music: initial || '',
+        init: function () { this.$watch('music', () => { this.previewError = ''; }); },
+        solo: function (current) { this.$root.querySelectorAll('audio').forEach(a => { if (a !== current) a.pause(); }); },
         search: function () {
           var self = this;
           if (self.q.trim().length < 2) { self.msg = 'Zadej aspoň dvě písmena.'; return; }
           self.busy = true; self.msg = 'Hledám…'; self.items = [];
-          fetch('/studio/music/search?q=' + encodeURIComponent(self.q.trim()) + '&length=' + encodeURIComponent(self.len), { credentials: 'same-origin' })
+          fetch('/studio/music/search?q=' + encodeURIComponent(self.q.trim()) + '&length=' + encodeURIComponent(self.len) + '&license=' + encodeURIComponent(self.license) + '&creator=' + encodeURIComponent(self.creator) + '&extension=' + encodeURIComponent(self.extension), { credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (d) { self.items = d.items || []; self.msg = d.error || (self.items.length + ' skladeb – přehraj si je a klikni Použít'); })
             .catch(function () { self.msg = 'Hledání selhalo – RPi nejspíš nemá přístup na internet.'; })

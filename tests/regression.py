@@ -84,6 +84,15 @@ with contextlib.ExitStack() as stack:
  assert client.post('/login',data={'password':os.environ['ATMOVIO_ADMIN_PASSWORD']}).status_code==403;ok('POST without CSRF rejected')
  assert client.post('/login',data={'password':os.environ['ATMOVIO_ADMIN_PASSWORD'],'csrf_token':token},follow_redirects=False).status_code==303
  ok('Session login with CSRF')
+ with patch.object(a,'openverse_headers',return_value={}), patch.object(a.requests,'get') as search:
+  search.return_value.status_code=200;search.return_value.ok=True;search.return_value.json.return_value={'results':[]}
+  a.music_search(cfg,'piano','medium','cc0','A & B','mp3')
+  params=search.call_args.kwargs['params']
+  assert params['length']=='medium' and params['license']=='cc0' and params['creator']=='A & B' and params['extension']=='mp3'
+  a.music_search(cfg,'piano',license='by-nc',extension='exe')
+  assert search.call_args.kwargs['params']['license']=='cc0,by' and 'extension' not in search.call_args.kwargs['params']
+ ok('Openverse filters preserve license restrictions and forward supported length, creator and format values')
+
  for camera_count in (1, 2, 3, 4, 5, 8):
   names=[f'layout_cam_{i}' for i in range(camera_count)]
   with patch.object(a,'frigate_cameras',return_value=names), patch.object(a,'camera_info',return_value={'ip':'192.0.2.1','via':'LAN'}):
