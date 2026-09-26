@@ -15,11 +15,43 @@
 
   // ---------- Alpine komponenty ----------
   document.addEventListener('alpine:init', function () {
-    Alpine.data('filmTiming', function (mode, active, sample, span) {
+    Alpine.data('serviceStatus', function () {
+      return {message:'', recovered:false, waiting:false, timer:null, stopped:false, dirty:false,
+        init: function () {
+          this.onEdit = () => { this.dirty = true; };
+          document.addEventListener('input', this.onEdit); document.addEventListener('change', this.onEdit);
+          this.check();
+        },
+        destroy: function () { this.stopped=true; clearTimeout(this.timer); document.removeEventListener('input',this.onEdit); document.removeEventListener('change',this.onEdit); },
+        check: async function () {
+          if (this.stopped) return;
+          const controller=new AbortController(), timeout=setTimeout(()=>controller.abort(),12000);
+          try {
+            if (document.visibilityState!=='visible') return;
+            const r=await fetch('/system/runtime-status',{credentials:'same-origin',cache:'no-store',signal:controller.signal});
+            if (!r.ok || r.redirected) return;
+            const state=await r.json();
+            if (!state.ready) {
+              this.waiting=true; this.recovered=false;
+              this.message=state.storage.mode==='error' ? 'Nahrávání se nepodařilo obnovit: '+state.storage.reason : state.waiting ? 'Frigate se restartuje. Obraz a stav se po návratu obnoví automaticky.' :
+                (!state.online ? 'Frigate nyní neodpovídá. Čekám na obnovení spojení.' : state.storage.reason);
+            } else if (this.waiting) {
+              this.message=state.storage.mode==='recording' ? 'Frigate opět odpovídá a disk je připravený pro nahrávání.' : 'Frigate opět odpovídá. '+state.storage.reason;
+              this.recovered=true; this.waiting=false;
+              if (!this.dirty && ['/system/maintenance','/storage','/videos','/live','/live/all','/'].includes(location.pathname)
+                  && !Array.from(document.querySelectorAll('video')).some(v=>!v.paused) && !document.body.classList.contains('lb-open')) location.reload();
+            } else if (state.storage.mode==='live') { this.message=state.storage.reason; }
+          } catch(e) { this.waiting=true; this.message='Spojení s Atmovio je přerušené. Zkouším ho automaticky obnovit.'; }
+          finally { clearTimeout(timeout); if (!this.stopped) this.timer=setTimeout(()=>this.check(),10000); }
+        }
+      };
+    });
+    Alpine.data('filmTiming', function (mode, active, sample, span, limit) {
       return {
-        mode: mode, active: active, sample: sample, span: span,
-        get filmLength() { return Math.max(10, Math.min(180, Math.floor(Number(this.span) || 60))); },
-        get interval() { return Math.min(this.filmLength, Math.max(1, Math.floor(Number(this.sample) || 5))); },
+        mode: mode, active: active, sample: sample, span: span, limit: limit || 36,
+        get requestedLength() { return Math.max(10, Math.min(180, Math.floor(Number(this.span) || 60))); },
+        get interval() { return Math.min(this.requestedLength, Math.max(1, Math.floor(Number(this.sample) || 5))); },
+        get filmLength() { return Math.min(this.requestedLength, (Math.max(3,Math.min(36,Number(this.limit)||36))-1)*this.interval); },
         get count() { return Math.ceil(this.filmLength / this.interval) + 1; },
         get summary() { return `Za ${this.filmLength} minut přibližně ${this.count} fotografií → jeden závěr AI.`; },
         get frequency() { return `Při nepřetržitém 24hodinovém sběru přibližně ${Math.round(1440 / this.filmLength)} vyhodnocení za den na jednu kameru, bez výpadků, opakovaných pokusů a limitů. V denním režimu méně.`; },
@@ -403,8 +435,26 @@
   // ---------- Náhledy kamer: když obrázek nejde, ukázat text místo prázdna ----------
   window.swImgFail = function (img, text) {
     img.style.display = 'none';
-    var s = document.createElement('span'); s.textContent = text || 'bez obrazu';
-    img.parentNode.appendChild(s);
+    let state=img.parentNode.querySelector('.camera-unavailable');
+    if (!state) {
+      state=document.createElement('span'); state.className='camera-unavailable'; state.setAttribute('role','status');
+      const icon=document.createElement('span');icon.className='media-state-icon';icon.textContent='◉';icon.setAttribute('aria-hidden','true');
+      const title=document.createElement('strong');title.textContent='Obraz není dostupný';
+      const detail=document.createElement('span');detail.textContent=(text || 'Kamera nebo Frigate neodpovídá.')+' Spojení se automaticky obnovuje.';
+      state.append(icon,title,detail);img.parentNode.appendChild(state);
+      if (!img._recoveryInstalled) { img._recoveryInstalled=true; img.addEventListener('load',function(){clearTimeout(img._retry);img._retry=null;img.style.display='';img.parentNode.querySelector('.camera-unavailable')?.remove();}); }
+    }
+    if (!img._retry) img._retry=setTimeout(function(){img._retry=null;if(img.isConnected && document.visibilityState==='visible') { const url=new URL(img.src,location.href);url.searchParams.set('t',Date.now());img.src=url.href; } else if(img.isConnected) swImgFail(img,text);},10000);
+  };
+
+  window.swReviewStudio = function(form) {
+    const data=new FormData(form), missing=[];
+    if (!String(data.get('music') || '').trim()) missing.push('hudbu');
+    if (!data.get('intro')) missing.push('intro');
+    if (!String(data.get('title') || '').trim()) missing.push('nadpis');
+    if (!String(data.get('description') || '').trim()) missing.push('popis');
+    if (data.get('text_on') && !String(data.get('text') || '').trim()) missing.push('zapnutý text v obraze je prázdný');
+    return !missing.length || confirm('Před vytvořením videa zkontroluj: '+missing.join(', ')+'.\n\nTyto prvky jsou volitelné. Opravdu pokračovat bez nich?');
   };
 
   // ---------- Kamery: snímky se samy obnovují, živý přenos jen na kliknutí ----------

@@ -108,3 +108,13 @@ Detection details provide device-local OD–DO datetimes and a duration control 
 corrected clip while retaining the original. Future endpoints queue creation until recordings finish. Manual
 ranges over 120 minutes, reversed/invalid dates and nonexistent/ambiguous daylight-saving times are rejected.
 The duration describes source time: 120 minutes at normal speed remains 120 minutes, while 25× timelapse is 4:48.
+
+
+### Frame limits for completed AI films (5.3)
+
+Timing settings include a maximum frame count. A film ends at the earlier of its requested
+duration or frame limit. The 5-minute / 40-minute / 9-frame preset includes both endpoints;
+the boundary snapshot starts the next film. Existing in-progress films retain their schedule.
+Sheets with up to 9 frames use photo areas up to 720×405 pixels; larger sheets use 480×270.
+The provider may process images further, and subtle events can still be missed. The compatibility
+default is 36 frames; very dense long films now end sooner to respect that limit.

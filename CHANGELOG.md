@@ -2,6 +2,21 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 5.3 – 2026-09-26 – clearer administration and bounded AI evidence
+
+- Separate system overview, passwords, API integration and maintenance into dedicated pages; preserve existing actions.
+- Correct mounted-disk messaging during recorder transitions. Never offer formatting merely because usage statistics
+  are unavailable for a mounted recording disk. Log storage transitions and expose actual probe failures and timeouts.
+- Poll recorder readiness and restart acknowledgement; refresh recovered status pages without discarding edited forms.
+  Failed camera images recover automatically and show a single illustrated placeholder. Failed video cards explain causes.
+- Show diagnostic entries newest first while preserving multiline details. Improve file inputs and laptop action layouts.
+- Review missing optional music, intro, title, description and enabled-but-empty overlay text before studio creation.
+- Configurable maximum frames per completed AI film. The 5-minute / 40-minute / 9-frame preset keeps evidence compact;
+  films end at the earlier of the duration or frame limit, with the boundary snapshot starting the next film.
+  Contact sheets with up to 9 frames use 720×405 photo areas; larger sets retain 480×270. Existing films finish unchanged.
+  The compatibility default is 36 frames; long, dense future films can now close earlier to respect that limit.
+- Offline checks cover timing boundaries, diagnostics, subpages, and responsive browser interactions.
+
 ## 5.2.1 – 2026-09-26 – reliable update progress
 
 - Escape version and log JSON in the updater's HTML attribute so progress tracking initializes correctly.

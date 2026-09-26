@@ -80,9 +80,34 @@ with contextlib.ExitStack() as stack:
    assert result.json()['outcome']==outcome
    assert result.headers['cache-control']=='no-store'
  ok('Updater HTML quoting, running health-check, completion, failure and unconfirmed outcomes')
+ assert 'name="pw1"' not in client.get('/system').text
+ assert 'name="pw1"' in client.get('/system/access').text
+ assert 'action="/system/api_key"' in client.get('/system/integrations').text
+ assert 'value="reboot"' in client.get('/system/maintenance').text
+ multiline='2026-09-26 09:00:00 old\n  detail one\n2026-09-26 10:00:00 new\n  detail two'
+ assert a.newest_log_first(multiline)=='2026-09-26 10:00:00 new\n  detail two\n2026-09-26 09:00:00 old\n  detail one'
+ assert len(a.log_rows(multiline))==2
+ with patch.object(a,'storage_status',return_value={'mode':'switching','reason':'Přepínám režim Frigate'}):
+  assert client.get('/system/runtime-status').json()['ready'] is False
+  assert 'Disk pro záznamy není připojený' not in client.get('/storage').text
+ with patch.object(a,'storage_status',return_value={'mode':'recording','reason':'OK'}):
+  assert client.get('/system/runtime-status').json()['ready'] is True
+ ok('System subpages, newest-first multiline logs and accurate transitioning storage state')
+
 
  token=re.search(r'name="csrf_token" value="([^"]+)"',client.get('/ai').text)[1]
- pages=['/ai/guide','/youtube','/videos/settings','/','/live','/live/all','/live/test_cam','/camera/test_cam','/cameras','/cameras/edit/test_cam','/discover','/storage','/ai','/history','/history?show=all','/detection/1','/videos','/studio/new/1','/studio/v/1','/studio/settings','/email','/vpn','/logs','/system','/system/update']
+ guard_marker=a.APP_DIR/'storage_guard.py'; guard_marker.touch()
+ response=client.post('/system/ctl',data={'action':'restart_frigate','csrf_token':token},follow_redirects=False)
+ assert response.status_code==303
+ request_id=(a.APP_DIR/'storage-restart').read_text().strip()
+ with patch.object(a,'storage_status',return_value={'mode':'recording','reason':'OK','checked_at':a.time.time()+1,'restart_request':'old'}):
+  assert client.get('/system/runtime-status').json()['ready'] is False
+ with patch.object(a,'storage_status',return_value={'mode':'recording','reason':'OK','checked_at':a.time.time()+1,'restart_request':request_id}):
+  assert client.get('/system/runtime-status').json()['ready'] is True
+ guard_marker.unlink()
+ ok('Restart recovery waits for exact guard acknowledgement, not an old online recorder')
+
+ pages=['/system/access','/system/integrations','/system/maintenance','/ai/guide','/youtube','/videos/settings','/','/live','/live/all','/live/test_cam','/camera/test_cam','/cameras','/cameras/edit/test_cam','/discover','/storage','/ai','/history','/history?show=all','/detection/1','/videos','/studio/new/1','/studio/v/1','/studio/settings','/email','/vpn','/logs','/system','/system/update']
  failed=[];form_count=0
  for page in pages:
   r=client.get(page)
@@ -118,7 +143,7 @@ with contextlib.ExitStack() as stack:
  form.update(provider='ollama',cam_test_cam='1',ax_enabled='1',ax_cam_test_cam='1',ax_before='2',ax_after='3',ax_playback='realtime',strip_enabled='1',strip_frames='6',strip_span_min='60',mode_test_cam='custom',thr_test_cam='8',cph_test_cam_cervanky='1',csrf_token=token)
  for p in saved['ai']['phenomena']:form['ph_'+p]='1'
  r=client.post('/ai',data=form,follow_redirects=False);assert r.status_code==303,(r.status_code,r.text[:200])
- after=a.load_config();assert after['ai']['enabled'] and after['ai']['cameras']==['test_cam'] and after['ai']['strip']=={'enabled':True,'frames':6,'span_min':60,'mode':'batch'}
+ after=a.load_config();assert after['ai']['enabled'] and after['ai']['cameras']==['test_cam'] and after['ai']['strip']=={'enabled':True,'frames':6,'span_min':60,'mode':'batch','max_frames':36}
  ok('Full AI form saves cameras, enable flags and filmstrip 4.7')
  # Each settings form writes only its own configuration.
  ai_before=copy.deepcopy(after['ai'])

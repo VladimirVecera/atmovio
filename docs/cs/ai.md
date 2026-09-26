@@ -125,3 +125,13 @@ sousední film i již uložená videa zůstanou. Doba uchovávání historie a s
 - Ušlé západy? Sniž práh na 6, ověř, že okno je *nautický* a kamera opravdu vidí obzor.
 - Kamera za šera přepne do IR/černobílé → to řeší filtr tmy; když přeskakuje moc brzo, sniž práh tmy (12–15).
 - „Doplňujícími pokyny“ řekni modelu o trvalých objektech v záběru.
+
+
+### Omezení snímků v AI filmu (5.3)
+
+V časování nastav **Nejvýše snímků v jednom AI filmu**. Film skončí při dosažení délky
+nebo počtu fotografií, podle toho, co přijde dříve. Předvolba 5 minut / 40 minut / 9 snímků
+obsahuje i oba krajní snímky. Další film začne na stejném časovém bodě; rozpracovaný film
+doběhne podle původního nastavení. Sady do 9 snímků mají fotografie až 720×405 bodů,
+větší sady 480×270. Model může obraz dále zpracovat a jemný jev přesto přehlédnout.
+Výchozí limit 36 zachovává většinu dosavadních nastavení; velmi husté dlouhé filmy zkrátí.

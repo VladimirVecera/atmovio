@@ -97,19 +97,21 @@ def probe_disk():
     """Volá se pouze v podprocesu; vadné USB může blokovat i stat/fsync."""
     mounts = Path('/proc/self/mountinfo').read_text().splitlines()
     entry = next((line for line in mounts if line.split()[4] == str(MOUNT)), '')
-    if not entry or entry.split(' - ', 1)[1].split()[0] != 'ext4':
-        return False
+    if not entry:
+        raise OSError('Disk není připojený v /mnt/nvr.')
+    if entry.split(' - ', 1)[1].split()[0] != 'ext4':
+        raise OSError('Disk v /mnt/nvr nemá očekávaný formát ext4.')
     if not MOUNT.is_mount() or MOUNT.stat().st_dev == Path('/').stat().st_dev:
-        return False
+        raise OSError('Úložiště není samostatný připojený disk.')
     # Ověřit právě prostor záznamů, ne pouze jiný adresář na témže disku.
     directories = ('frigate', 'frigate/recordings', 'atmovio', 'atmovio/snapshots')
     if any((MOUNT / name).is_symlink() for name in directories):
-        return False
+        raise OSError('Adresář záznamů nebo snímků je symbolický odkaz; zápis pozastaven.')
     for name in directories:
         directory = MOUNT / name
         directory.mkdir(exist_ok=True)
         if directory.stat().st_dev != MOUNT.stat().st_dev:
-            return False
+            raise OSError(f'Adresář {directory} není na disku pro záznamy.')
     # Bez zápisu nelze rozlišit připojený disk od read-only / vadného HDD.
     fd, name = tempfile.mkstemp(prefix='.atmovio-probe-', dir=MOUNT / 'frigate/recordings')
     try:
@@ -126,19 +128,24 @@ class Probe:
     def __init__(self):
         self.process = None
         self.started = 0
+        self.reason = "Čekám na ověření zápisu na disk."
 
     def sample(self):
         """None = měření běží; False = chyba/timeout; True = fsync prošel."""
         if self.process is None:
             self.process = subprocess.Popen([sys.executable, __file__, '--probe'],
-                                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
             self.started = time.monotonic()
             return None
         rc = self.process.poll()
         if rc is not None:
+            detail = self.process.stderr.read().decode("utf-8", errors="replace").strip()[-600:]
+            self.process.stderr.close()
+            self.reason = "HDD je zapisovatelný." if rc == 0 else (detail or "Kontrola zápisu na disk selhala.")
             self.process = None
             return rc == 0
         if time.monotonic() - self.started > 4:
+            self.reason = "Disk neodpověděl na kontrolu zápisu do 4 sekund. Zkontroluj USB, napájení a stav disku."
             self.process.kill()
             # Nečekat na proces v D state a nevytvářet další, dokud neskončí.
             return False
@@ -155,13 +162,15 @@ def command(args, timeout=90):
 _last_publish = {'key': None, 'at': 0.0}
 
 
-def publish(mode, reason):
+def publish(mode, reason, restart_request=None):
     """Zapíše stav jen při změně nebo nejpozději po 10 s (Atmovio bere stav za čerstvý 15 s)."""
     now = time.time()
     if _last_publish['key'] == (mode, reason) and now - _last_publish['at'] < 10:
         return
+    if _last_publish['key'] != (mode, reason):
+        print(f'{dt.datetime.now().isoformat(timespec="seconds")} [{mode}] {reason}', flush=True)
     _last_publish.update(key=(mode, reason), at=now)
-    atomic(STATUS, json.dumps({'mode': mode, 'reason': reason, 'checked_at': now, 'guard_pid': os.getpid()}, ensure_ascii=False))
+    atomic(STATUS, json.dumps({'mode': mode, 'reason': reason, 'checked_at': now, 'guard_pid': os.getpid(), 'restart_request': restart_request}, ensure_ascii=False))
 
 
 class Guard:
@@ -198,7 +207,7 @@ class Guard:
         except Exception:
             return
 
-    def reconcile(self, healthy, mount_id=None):
+    def reconcile(self, healthy, mount_id=None, reason="HDD chybí, neodpovídá nebo neprošel kontrolou zápisu."):
         if mount_id != self.mount_id:
             self.successes = 0
             self.mount_id = mount_id
@@ -208,6 +217,8 @@ class Guard:
             self.successes = 0
         # Návrat až po třech úspěšných zápisech; pád okamžitě.
         desired = 'recording' if self.successes >= 3 else 'live'
+        if 0 < self.successes < 3:
+            reason = f'Ověřuji stabilitu disku: {self.successes} ze 3 úspěšných zápisů.'
         if healthy is None and self.mode == 'recording':
             desired = 'recording'
         source = SOURCE_CONFIG.read_text()
@@ -222,7 +233,7 @@ class Guard:
             except Exception:
                 self.mode = None
         if self.mode == desired and not changed:
-            publish(self.mode, 'HDD je zapisovatelný.' if self.mode == 'recording' else 'HDD chybí, neodpovídá nebo neprošel kontrolou zápisu. Živý náhled bez záznamu.')
+            publish(self.mode, 'HDD je zapisovatelný.' if self.mode == 'recording' else reason + ' Živý náhled bez záznamu.', revision[1])
             return
         if time.monotonic() < self.retry_at:
             return
@@ -248,7 +259,7 @@ class Guard:
             # Omezená doba zastavení – na nemocný disk nečekat desítky sekund.
             command(['docker', 'compose', '-f', str(COMPOSE), 'up', '-d', '--no-deps', '--force-recreate', '--timeout', '5', 'frigate'])
             self.mode, self.config_text = desired, revision
-            publish(desired, 'HDD je zapisovatelný.' if desired == 'recording' else 'Pouze živý náhled. Nahrávání a ukládání snímků jsou vypnuté.')
+            publish(desired, 'HDD je zapisovatelný.' if desired == 'recording' else reason + ' Nahrávání a ukládání snímků jsou vypnuté.', revision[1])
         except Exception as exc:
             self.mode = None
             self.retry_at = time.monotonic() + 15
@@ -321,7 +332,8 @@ def main():
     if '--probe' in sys.argv:
         try:
             return 0 if probe_disk() else 1
-        except (OSError, ValueError):
+        except (OSError, ValueError) as exc:
+            print(str(exc), file=sys.stderr, flush=True)
             return 1
     if '--install' in sys.argv:
         install()
@@ -337,7 +349,8 @@ def main():
                 # Změna mount ID zachytí i rychlé odpojení/připojení mezi sondami.
                 mounts = Path('/proc/self/mountinfo').read_text().splitlines()
                 mount_id = next((line.split()[0] for line in mounts if line.split()[4] == str(MOUNT)), None)
-                guard.reconcile(probe.sample(), mount_id)
+                healthy = probe.sample()
+                guard.reconcile(healthy, mount_id, probe.reason)
             except Exception as exc:
                 publish('error', str(exc))
             time.sleep(2)

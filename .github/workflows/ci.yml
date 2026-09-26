@@ -37,6 +37,7 @@ jobs:
           python3 tests/regression.py
           python3 tests/ai_films.py
           python3 tests/video_ranges.py
+          python3 tests/storage_guard.py
       - name: No personal data in sources
         run: |
           # heslo zapsané natvrdo (ne odkaz na proměnnou jako PASSWORD="$ADMIN_PW")

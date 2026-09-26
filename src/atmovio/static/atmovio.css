@@ -1031,3 +1031,24 @@ main.page.settings-page { max-width: 1264px; }
  .guide-windows > div { padding:12px; }
  .guide-axis { font-size:12px; }
 }
+
+/* Administration 5.3: smaller laptops, clear service and media states. */
+.system-content { max-width:1000px; margin:0 auto; }
+.system-tabs { margin-bottom:24px; flex-wrap:wrap; }
+.action-row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+.btn { white-space:nowrap; }
+.page input[type="file"] { height:auto; min-height:56px; line-height:1.5; overflow:visible; }
+.page input[type="file"]::file-selector-button { margin:0 12px 0 0; height:auto; }
+.runtime-status { padding:12px 24px; background:var(--sw-warn-bg); color:var(--at-text); font-size:13px; }
+.runtime-status a { margin-left:12px; }
+.shot.video .thumb.media-state,.camera-unavailable { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:24px; text-align:center; background:var(--at-surface-2); color:var(--at-text); }
+.camera-unavailable { position:absolute; inset:0; font-size:13px; }
+.media-state-icon { display:flex; align-items:center; justify-content:center; border-radius:50%; background:var(--pico-card-background-color); width:52px; height:52px; color:var(--at-muted); font-size:28px; }
+.media-state-icon svg.i { width:26px; height:26px; }
+.media-reason { padding:12px 16px; background:var(--sw-warn-bg); color:var(--at-text); font-size:12px; line-height:1.6; }
+.storage-notice { border-left:4px solid var(--sw-warn); }
+@media(min-width:1000px) and (max-width:1440px) { .gallery.videos { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media(max-width:700px) { .btn { white-space:normal; } .action-row .btn { flex:1 1 100%; } }
+
+.live-big { position:relative; }
+.loglist .lx { white-space:pre-wrap; overflow-wrap:anywhere; }

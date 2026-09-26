@@ -116,7 +116,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "5.2.1"
+APP_VERSION = "5.3"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -210,7 +210,7 @@ DEFAULT_CONFIG = {
         "margin_min": 60,
         "twilight": "nautical",
         "dark_skip": True,
-        "strip": {"enabled": True, "frames": 6, "span_min": 60, "mode": "batch"},   # AI film: oddělený sběr a dokončené časové úseky
+        "strip": {"enabled": True, "frames": 6, "span_min": 60, "mode": "batch", "max_frames": 36},   # AI film: oddělený sběr a dokončené časové úseky
         "dark_level": 22,
         "threshold": 7,
         "cooldown_min": 15,
@@ -1719,8 +1719,8 @@ def film_context(film, parsed=None):
 
 def make_ai_film(cfg, items):
     """Exact chronological contact sheet submitted to the model and retained in detection detail."""
-    cols = min(4, len(items))
-    width, height = 480, 300
+    cols = min(3 if len(items) <= 9 else 4, len(items))
+    width, height = (720, 435) if len(items) <= 9 else (480, 300)
     canvas = Image.new("RGB", (cols * width, ((len(items) + cols - 1) // cols) * height), "#101828")
     draw = ImageDraw.Draw(canvas)
     try:
@@ -1740,11 +1740,18 @@ def make_ai_film(cfg, items):
     return out.getvalue()
 
 
+def film_collection_plan(ai):
+    requested = max(10, min(180, int(ai["strip"].get("span_min", 60))))
+    sample = max(1, min(int(ai.get("interval_min", 5)), requested))
+    limit = max(3, min(36, int(ai["strip"].get("max_frames", 36))))
+    return sample, min(requested, (limit - 1) * sample)
+
+
 def collect_ai_film(cfg, cam, now):
     """Persist samples and window boundaries. Restarting the service does not reset a film."""
     ts = now.timestamp()
-    span = max(10, min(180, int(cfg["ai"]["strip"].get("span_min", 60)))) * 60
-    sample = max(1, min(int(cfg["ai"].get("interval_min", 5)), span // 60))
+    sample, minutes = film_collection_plan(cfg["ai"])
+    span = minutes * 60
     with db() as con:
         row = con.execute("SELECT * FROM ai_films WHERE camera=? AND status='collecting' ORDER BY id DESC LIMIT 1", (cam,)).fetchone()
     film = dict(row) if row else None
@@ -2813,6 +2820,7 @@ TEMPLATES["base.html"] = """<!doctype html>
    </div></div>
  </div>
 </div></header>
+<div x-data="serviceStatus" class="runtime-status" x-cloak x-show="message" role="status"><span x-text="message"></span> <a href="/logs?src=storage">Diagnostika</a> <a href="" x-show="recovered">Načíst aktuální údaje</a></div>
 <main class="page {{ 'settings-page' if settings_open }}" data-page="{{ req_path }}">
 {% if settings_open %}<nav class="settings-nav" aria-label="Sekce nastavení">{% for href,name,ic in nav_settings %}<a href="{{ href }}" class="{{ 'active' if active==href }}" {% if active==href %}aria-current="page"{% endif %}>{{ name }}</a>{% endfor %}</nav>{% endif %}
 {% if storage.mode not in ['recording', 'legacy'] %}<div class="flash warn"><span>⚠️</span><div><b>Režim bez záznamu.</b> {{ storage.reason }} <a href="/storage">Nastavit disk pro záznamy</a> · <a href="{{ frigate_ui }}" target="_blank">Živý náhled kamer ↗</a></div></div>{% endif %}
@@ -2929,7 +2937,7 @@ TEMPLATES["dashboard.html"] = """{% extends "base.html" %}{% block head %}{% end
  <li><span class="sw" style="background:var(--c-green)"></span>Upozornění<b>{{ t.notified }}</b></li>
  <li><span class="sw" style="background:var(--pico-muted-border-color)"></span>Přeskočeno (tma / beze změny)<b>{{ t.skipped }}</b></li>
  <li><span class="sw" style="background:var(--c-red)"></span>Chyby<b>{{ t.errors }}</b></li>
- <li><span class="sw" style="background:var(--c-violet)"></span>Práh · vyhodnocení<b>{{ cfg.ai.threshold }}/10 · {{ cfg.ai.strip.span_min if cfg.ai.strip.enabled and cfg.ai.strip.mode == "batch" else cfg.ai.interval_min }} min</b></li>
+ <li><span class="sw" style="background:var(--c-violet)"></span>Práh · vyhodnocení<b>{{ cfg.ai.threshold }}/10 · {{ film_minutes if cfg.ai.strip.enabled and cfg.ai.strip.mode == "batch" else cfg.ai.interval_min }} min</b></li>
 </ul>
 <details style="margin:.7rem 0 0"><summary>Posledních 7 dní</summary>
 <div class="stats7"><table><thead><tr><th>Den</th><th>Dotazů</th><th>Zajímavé</th><th>Upoz.</th><th>Přesk.</th><th>Chyby</th></tr></thead><tbody>
@@ -2948,7 +2956,7 @@ TEMPLATES["dashboard.html"] = """{% extends "base.html" %}{% block head %}{% end
 <details class="card" id="guide" data-keep><summary>Nápověda – kam chodit a co kde najdu</summary>
 <div class="guide">
 <div><b>Atmovio (tady)</b> je jediná administrace: kamery, disk, AI hlídání oblohy, upozornění, síť, systém. Když nic neměníš, nemusíš sem chodit. Když něco nefunguje, podívej se do <a href="/logs">Logů</a>.</div>
-<div><b>Frigate</b> <a href="{{ frigate_ui }}" target="_blank" rel="noopener">{{ frigate_ui }} ↗</a> – přehrávání záznamů a <b>stažení videa od–do</b> (Review → Historie → Export). Uživatel <code>admin</code>, heslo stejné jako sem.</div>
+<div><b>Frigate</b> <a href="{{ frigate_ui }}" target="_blank" rel="noopener">{{ frigate_ui }} ↗</a> – přehrávání záznamů a <b>stažení videa od–do</b> (Review → Historie → Export). Uživatel <code>admin</code>, přístupy spravuješ v <a href="/system/access">Heslech a přístupech</a>.</div>
 <div><b>Vlastní web (webhook)</b>{% if cfg.web.enabled and cfg.web.token %} <span class="badge ok">propojeno – {{ cfg.web.url|urlhost }}</span>{% else %} <span class="badge mut">nepropojeno – volitelné, nastav v <a href="/email">Upozornění</a></span>{% endif %} – Atmovio umí posílat stav kamer a upozornění na libovolný web (ukázkový přijímač v PHP je v repozitáři). Web pak zprávy zobrazí nebo rozešle dál; RPi nemusí mít SMTP.</div>
 <div><b>REST API a Home Assistant</b> – klíč vytvoříš v <a href="/system">Systému</a>; hotové YAML a PHP skripty jsou na <a href="https://www.atmovio.com/api/" target="_blank" rel="noopener">atmovio.com/api ↗</a>.</div>
 <div><b>Cockpit</b> <a href="{{ cockpit_ui }}" target="_blank" rel="noopener">{{ cockpit_ui }} ↗</a> – servis systému (statická IP, aktualizace, disky). <b>Portainer</b> běžně nepotřebuješ.</div>
@@ -3032,9 +3040,9 @@ Se zadaným přihlášením se z ONVIF vytáhnou RTSP adresy streamů a každá 
 
 TEMPLATES["storage.html"] = """{% extends "base.html" %}{% block content %}
 {% if not ready %}
-<div class="card" style="border-color:var(--warn)"><h2>Disk pro záznamy není připojený</h2>
-{% if not disks %}<p>Nenašel jsem žádný externí disk. Zapoj HDD/SSD do <b>modrého USB 3.0 portu</b> Raspberry Pi a tuto stránku obnov. U 2,5" disků bez vlastního napájení použij originální 27W zdroj.</p>
-{% else %}<p>Našel jsem externí disk, ale ještě není připravený pro záznamy. Vyber ho níže – Atmovio ho připojí (nebo naformátuje a připojí) a nahrávání se pak zapne samo.</p>{% endif %}</div>
+<div class="card storage-notice"><h2>{{ 'Disk je připojený, nahrávání zatím není připravené' if disks|selectattr('state','equalto','nvr')|list else 'Úložiště není připravené pro nahrávání' }}</h2>
+<p>{{ storage.reason }}</p><p class="hint">Připojení disku a úspěšná kontrola zápisu jsou dvě různé věci. Během restartu se čeká na hlídač úložiště. Připojený disk kvůli této hlášce neformátuj.</p>
+<a class="btn small sec" href="/logs?src=storage">Diagnostika disku a nahrávání</a></div>
 {% endif %}
 <div class="card"><div class="section-head"><h2 style="margin:0">Disky</h2><a class="btn small sec" href="/storage">Obnovit</a></div>
 {% if not disks %}<p class="hint">Žádný externí disk nenalezen (systémový disk se nezobrazuje).</p>{% endif %}
@@ -3049,6 +3057,7 @@ TEMPLATES["storage.html"] = """{% extends "base.html" %}{% block content %}
 <div class="big" style="margin-top:8px">{{ d.usage.used_h }} <span class="hint">z {{ d.usage.total_h }}</span></div>
 <div class="bar"><i class="{{ 'err' if d.usage.pct > 92 else ('warn' if d.usage.pct > 80 else '') }}" style="width:{{ d.usage.pct }}%"></i></div>
 <div class="hint">{{ d.usage.pct }} % obsazeno · volné {{ d.usage.free_h }} · připojeno v /mnt/nvr</div>
+{% elif d.state == 'nvr' %}<p class="hint">Disk je připojený; využití místa se nyní nepodařilo načíst. Zkontroluj diagnostiku.</p>
 {% elif d.state == 'ready' %}
 <form method="post" action="/storage/disk" style="margin-top:8px"><input type="hidden" name="dev" value="{{ d.dev }}"><input type="hidden" name="action" value="mount">
 <button class="btn" data-busy="Připojuji disk">Připojit jako disk pro záznamy</button> <span class="hint">Disk už má formát ext4 – data na něm zůstanou.</span></form>
@@ -3099,8 +3108,9 @@ TEMPLATES["ai_guide.html"] = """{% extends "base.html" %}{% block actions %}<div
 
 <section class="card"><h2>Tři různé časy, které se nastavují zvlášť</h2><div class="guide-definitions"><div><span class="eyebrow">Jak často pořídím fotografii?</span><h3>Interval snímků</h3><p><b>5 minut</b> = fotografie v 18:00, 18:05, 18:10… Kratší interval zachytí více změn; krátký jev mezi fotografiemi může uniknout.</p></div><div><span class="eyebrow">Jak dlouhý děj posoudí AI najednou?</span><h3>Délka AI filmu</h3><p><b>60 minut</b> = v 19:00 se vyhodnotí dění od 18:00. Kratší film přinese dřívější závěr, delší film ukáže delší vývoj a znamená méně vyhodnocení.</p></div><div><span class="eyebrow">Kolik záznamu chci uchovat?</span><h3>Délka videa</h3><p><b>120 minut</b> = dvouhodinový výstřih ze záznamu. Nemění délku AI filmu ani četnost snímků. Alternativou je video podle skutečného průběhu jevu.</p></div></div></section>
 
-<section class="card" x-data="filmTiming('batch', true, {{ ai.interval_min }}, {{ ai.strip.span_min }})"><div class="section-head"><div><span class="eyebrow">Vyzkoušej si to</span><h2>Co se stane mezi 18:00 a koncem dvou filmů?</h2></div><button type="button" class="btn small sec" @click="sample=5; span=60">Příklad 5 / 60</button></div><p class="hint">Tato ukázka začíná hodnotami uloženými v nastavení. Její změny se <strong>neukládají</strong> a nevolají AI. Ukazuje ideální sběr jedné kamery bez výpadků a limitů.</p>
+<section class="card" x-data="filmTiming('batch', true, {{ ai.interval_min }}, {{ ai.strip.span_min }}, {{ ai.strip.max_frames }})"><div class="section-head"><div><span class="eyebrow">Vyzkoušej si to</span><h2>Co se stane mezi 18:00 a koncem dvou filmů?</h2></div><button type="button" class="btn small sec" @click="sample=5; span=60; limit=36">Příklad 5 / 60</button></div><p class="hint">Tato ukázka začíná hodnotami uloženými v nastavení. Její změny se <strong>neukládají</strong> a nevolají AI. Ukazuje ideální sběr jedné kamery bez výpadků a limitů.</p>
 <div class="row"><div><label for="guide-sample">Snímek každých (minut)</label><input id="guide-sample" type="number" min="1" max="1440" x-model.number="sample" value="{{ ai.interval_min }}"></div><div><label for="guide-span">Délka AI filmu (minut)</label><input id="guide-span" type="number" min="10" max="180" x-model.number="span" value="{{ ai.strip.span_min }}"></div></div>
+<label for="guide-limit">Nejvýše snímků v jednom filmu</label><select id="guide-limit" x-model.number="limit">{% for n in [3,6,9,13,20,36] %}<option value="{{ n }}" {{ 'selected' if ai.strip.max_frames==n }}>{{ n }}</option>{% endfor %}</select><p class="hint">Limit může film zkrátit. Například 5 minut a 9 fotografií znamená nejvýše 40 minut. Sady do 9 fotografií používají větší obrázky.</p>
 <div class="guide-timeline" role="img" :aria-label="'Dva navazující filmy. První od 18:00 do ' + clock(filmLength) + ', druhý do ' + clock(2*filmLength) + '. AI na konci každého vyhodnotí přibližně ' + count + ' snímků.'"><div class="guide-axis"><b>18:00</b><b x-text="clock(filmLength)"></b><b x-text="clock(2*filmLength)"></b></div><div class="guide-recording">Souvislý kamerový záznam na disku</div><div class="guide-windows"><div><b>AI film 1</b><span>Sbírá se <strong x-text="count"></strong> fotografií</span></div><div><b>AI film 2</b><span>Další sběr začíná hned</span></div></div><div class="guide-decisions"><div>↓ <b x-text="clock(filmLength)"></b><span>První závěr AI</span></div><div>↓ <b x-text="clock(2*filmLength)"></b><span>Druhý závěr AI</span></div></div></div>
 <div class="guide-summary" aria-live="polite"><strong x-text="summary"></strong><p x-text="frequency"></p><p class="hint" x-show="Number(sample)>filmLength">Interval je delší než film. Atmovio ho zkrátí na délku filmu, aby mělo alespoň začátek a konec.</p><p class="status-warning" x-show="count>36">Pro AI se vybere 36 rovnoměrně rozložených snímků, ostatní zůstanou k prohlédnutí. Velmi krátký jev může ve výběru chybět.</p></div>
 <details><summary>Jaké fotografie tvoří první film?</summary><div class="guide-frames"><template x-for="frame in previewFrames" :key="frame.index"><div><b x-text="'#' + (frame.index + 1)"></b><span x-text="clock(frame.minute)"></span></div></template></div><p class="hint" x-show="count>13">Schéma zobrazuje jen 13 časových bodů z celého filmu, nikoli přesný výběr pro AI. Skutečné podklady najdeš v AI detekci.</p></details>
@@ -3212,13 +3222,16 @@ TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block head %}{% endblock %
 
 <!-- ===== 3 · kdy se dívat ===== -->
 <div x-show="tab==='kdy'" x-cloak>
-<div class="card" x-data="filmTiming('{{ ai.strip.mode }}', {{ 'true' if ai.strip.enabled else 'false' }}, {{ ai.interval_min }}, {{ ai.strip.span_min }})">
+<div class="card" x-data="filmTiming('{{ ai.strip.mode }}', {{ 'true' if ai.strip.enabled else 'false' }}, {{ ai.interval_min }}, {{ ai.strip.span_min }}, {{ ai.strip.max_frames }})">
 <h2>Sběr snímků a vyhodnocení AI filmu</h2>
 <p class="hint">Snímky se sbírají průběžně. V režimu dokončených filmů se AI ptáme až na konci zvoleného časového úseku.</p>
 <label class="check"><input type="checkbox" name="strip_enabled" x-model="active"> Používat AI film z více snímků</label>
 <div class="row"><div><label>Způsob vyhodnocení</label><select name="strip_mode" x-model="mode"><option value="batch">Až po dokončení filmu · doporučeno</option><option value="rolling">Při každém snímku s pohledem dozadu · původní režim</option></select></div>
 <div><label>Snímek každých (minut)</label><input type="number" name="interval_min" x-model.number="sample" min="1" max="1440" value="{{ ai.interval_min }}"><div class="hint">V dokončeném filmu jde pouze o sběr, ne o dotaz na AI. Interval delší než film se zkrátí na délku filmu.</div></div>
-<div><label>Délka AI filmu (minut)</label><input type="number" name="strip_span_min" x-model.number="span" min="10" max="180" value="{{ ai.strip.span_min }}"><div class="hint">Např. 60 minut + snímek každých 5 minut = přibližně 13 snímků a jedno vyhodnocení za hodinu na kameru.</div></div></div>
+<div><label>Maximální délka AI filmu (minut)</label><input type="number" name="strip_span_min" x-model.number="span" min="10" max="180" value="{{ ai.strip.span_min }}"><div class="hint">Např. 60 minut + snímek každých 5 minut = přibližně 13 snímků a jedno vyhodnocení za hodinu na kameru.</div></div></div>
+<div x-show="active && mode==='batch'" class="film-quality"><label for="strip-limit">Nejvýše snímků v jednom AI filmu</label><select id="strip-limit" name="strip_max_frames" x-model.number="limit">{% for n in [3,6,9,13,20,36] %}<option value="{{ n }}" {{ 'selected' if ai.strip.max_frames==n }}>{{ n }} snímků{{ ' · doporučeno pro větší detaily' if n==9 else '' }}</option>{% endfor %}</select>
+<p class="hint">Film skončí při dosažení délky nebo limitu snímků, podle toho, co nastane dříve. Při 5 minutách a limitu 9 snímků pokryje nejvýše 40 minut, včetně první a poslední fotografie. Další film naváže okamžitě. Rozpracovaný film doběhne podle původního nastavení.</p>
+<button type="button" class="btn small sec" @click="sample=5;span=40;limit=9">Použít 5 min / 40 min / 9 snímků</button><p class="hint">Při nejvýše 9 snímcích má každá fotografie v podkladu až 720 × 405 bodů; u větších sad 480 × 270. Poskytovatel AI může podklad dále zpracovat. Rozpoznání jemných jevů není zaručené.</p></div>
 <div class="guide-inline" x-show="active && mode==='batch'" aria-live="polite"><span class="eyebrow">Co znamenají právě zadané hodnoty?</span><div class="guide-mini"><div><b x-text="'1 snímek / ' + interval + ' min'"></b><span>Fotografie se ukládají</span></div><span aria-hidden="true">→</span><div><b x-text="count + ' snímků / film'"></b><span x-text="'Přibližně za ' + filmLength + ' minut'"></span></div><span aria-hidden="true">→</span><div><b>1 vyhodnocení AI</b><span>Až po dokončení filmu</span></div></div><p class="hint" x-text="frequency"></p><p class="hint" x-show="count>36">AI dostane rovnoměrný výběr 36 snímků; všechny fotografie zůstanou k prohlédnutí.</p><p class="hint">Tato ukázka reaguje na formulář. Skutečné nastavení se změní až po uložení.</p><a href="/ai/guide">Grafický průvodce: od fotografie až k videu →</a></div>
 <div class="field-note" x-show="active && mode==='batch'">Upozornění přijde až po dokončení filmu. Snímky se ukládají i při tmě a malých změnách, aby se neztratil vývoj. Rozpracované filmy najdeš v <a href="/history">AI detekci</a>. Změna časování platí od následujícího filmu; ruční test hodnotí aktuální pohled a nerozděluje film.</div>
 <p class="hint" x-show="active && mode==='batch'">AI obdrží nejvýše 36 rovnoměrně vybraných snímků včetně prvního a posledního. Při hustším sběru zůstanou všechny snímky k prohlédnutí a uvidíš, které dostala AI. V noci se při zapnutém denním režimu vyhodnotí i kratší závěrečný film. Snímky nasbírané při vyčerpaném limitu čekají nejdéle po nastavenou dobu uchovávání historie.</p>
@@ -3358,42 +3371,44 @@ PersistentKeepalive = 25">{{ conf }}</textarea>
 {% endblock %}"""
 
 TEMPLATES["system.html"] = """{% extends "base.html" %}{% block content %}
-<div class="grid-wide">
+<nav class="tabs system-tabs" aria-label="Systém"><a href="/system" class="{{ 'on' if section=='overview' }}">Přehled</a><a href="/system/access" class="{{ 'on' if section=='access' }}">Hesla a přístupy</a><a href="/system/integrations" class="{{ 'on' if section=='integrations' }}">API a propojení</a><a href="/system/maintenance" class="{{ 'on' if section=='maintenance' }}">Údržba a restart</a><a href="/system/update">Aktualizace</a></nav>
+<div class="system-content">
+{% if section=='overview' %}
 <div class="card"><h2>Raspberry Pi</h2>
 <div class="tw"><table class="kv"><tr><td>Název v síti</td><td>{{ s.hostname }}</td></tr><tr><td>IP adresa</td><td>{{ s.ip }}</td></tr><tr><td>Teplota</td><td>{{ s.temp }}</td></tr><tr><td>Zátěž</td><td>{{ s.load }}</td></tr><tr><td>Paměť</td><td>{{ s.mem }}</td></tr><tr><td>Běží od restartu</td><td>{{ s.uptime }}</td></tr><tr><td>Systémový disk</td><td>{{ s.rootfs }}</td></tr><tr><td>Atmovio</td><td>verze {{ version }}</td></tr></table></div>
-<form method="post" action="/system/ctl" style="display:inline"><button class="btn small" name="action" value="restart_frigate">Restartovat nahrávání</button> <button class="btn small sec" name="action" value="fix_frigate">Opravit konfiguraci nahrávání</button> <button class="btn small danger" name="action" value="reboot" onclick="return confirm('Restartovat celé Raspberry Pi? Nahrávání se na minutu přeruší.')">Restartovat Raspberry Pi</button></form>
-<p class="hint" style="margin-top:10px">Když něco nefunguje, zkus nejdřív restart nahrávání; restart celého RPi až potom.</p></div>
+<a class="btn small sec" href="/system/maintenance">Údržba a restart →</a></div>
 <div class="card"><h2>Zdraví disků (S.M.A.R.T.)</h2>
 {% if not disks_health %}<p class="hint">Zatím žádné měření – první proběhne do hodiny po startu Atmovio.</p>{% endif %}
 {% for d in disks_health %}<div style="display:flex;gap:.6rem;align-items:flex-start;margin-bottom:.7rem"><span class="dot {{ d.level }}" style="margin-top:.45rem;width:10px;height:10px;border-radius:50%;flex:none"></span>
 <div><b>{{ d.role }}</b> · {{ d.model or d.dev }}{% if d.temp %} · {{ d.temp }} °C{% endif %}
 <div class="hint">{% if d.level == 'ok' %}bez vadných sektorů, stav {{ 'OK' if d.healthy else '?' }}{% else %}nečitelné {{ d.pending or 0 }} · přemapované {{ d.reallocated or 0 }} · neopravitelné {{ d.uncorrectable or 0 }}<br>{{ d.trend }}{% endif %} <span class="mut">· měřeno {{ d.ts[8:10] }}. {{ d.ts[5:7]|int }}. {{ d.ts[11:16] }}</span></div></div></div>{% endfor %}
 <p class="hint">Měří se každou hodinu. Nečitelné (pending) sektory jsou místa, která disk nedokázal přečíst – když jejich počet zůstane stejný, jde o jednorázovou chybu (typicky tvrdé vypnutí); když roste, disk končí a je čas ho vyměnit. Atmovio to sleduje a lišta nahoře zčervená jen při růstu nebo selhání.</p></div>
-<div class="card"><h2>Heslo do přehrávače záznamů (Frigate)</h2>
+{% endif %}{% if section=='access' %}<div class="card"><h2>Heslo do přehrávače záznamů (Frigate)</h2>
 <p class="hint">Přehrávač má vlastní přihlášení: uživatel <b>admin</b>, heslo stejné jako do Atmovio (nastaví se při instalaci i při každé změně hesla níže). Když se rozejdou, nech si vygenerovat nové – zobrazí se tady.</p>
 <form method="post" action="/system/ctl"><button class="btn small sec" name="action" value="frigate_pw" onclick="return confirm('Vygenerovat nové heslo pro přehrávač? Trvá cca 30 s, nahrávání se krátce restartuje.')">Vygenerovat nové heslo</button></form>
 {% if frigate_pw %}<pre>Uživatel: admin
 Heslo:    {{ frigate_pw }}</pre>{% endif %}</div>
-<div class="card" id="api"><h2>API pro jiné systémy</h2>
+{% endif %}{% if section=='integrations' %}<div class="card" id="api"><h2>API pro jiné systémy</h2>
 <p class="hint">Jen čtení: stav, kamery, snímky, detekce, videa (<code>/api/v1/…</code>, popis v <code>docs/api.md</code>). Hodí se pro Home Assistant, vlastní web nebo skripty. Klíč pošli v hlavičce <code>Authorization: Bearer &lt;klíč&gt;</code>.</p>
 <div class="flash" style="font-weight:400"><span>📤</span><div><b>Odesílání na tvůj web</b> (každou minutu stav + stejná data jako API, plus upozornění se snímkem) se nastavuje v <a href="/email">Upozornění → vlastní web (webhook)</a>{% if web_ok %} – <span class="badge ok">propojeno</span>{% else %} – <span class="badge warn">nenastaveno</span>{% endif %}. Tam se zadává adresa a token; API klíč níže slouží jen pro čtení <i>z</i> RPi.</div></div>
 {% if new_api_key %}<div class="flash"><span>🔑</span><div><b>Nový klíč (zobrazí se jen teď):</b><pre id="apikey" style="margin:.3rem 0 0;user-select:all">{{ new_api_key }}</pre><button type="button" class="btn small sec" onclick="swCopy('apikey', this)">Kopírovat</button></div></div>{% endif %}
 {% if api_keys %}<div class="tw"><table><tr><th>Název</th><th>Klíč</th><th>Vytvořen</th><th></th></tr>{% for k in api_keys %}<tr><td>{{ k.name }}</td><td><code>{{ k.hint }}</code></td><td class="hint">{{ k.created|czdt }}</td><td><form method="post" action="/system/api_key/delete" onsubmit="return confirm('Zrušit klíč {{ k.name }}? Co ho používá, přestane fungovat.')"><input type="hidden" name="hint" value="{{ k.hint }}"><button class="btn small sec">Zrušit</button></form></td></tr>{% endfor %}</table></div>{% endif %}
 <form method="post" action="/system/api_key" class="row" style="align-items:end;margin-top:.5rem"><div><label>Název nového klíče</label><input type="text" name="name" placeholder="např. Home Assistant" maxlength="40"></div><div style="flex:0"><button class="btn small">Vytvořit klíč</button></div></form>
 <div class="hint" style="margin-top:.4rem">Zkus: <code>curl -H "Authorization: Bearer KLÍČ" http://{{ s.ip.split(' ')[0] }}/api/v1/status</code></div></div>
-<div class="card" id="update"><h2>Aktualizace Atmovio</h2>
+{% endif %}{% if section=='overview' %}<div class="card" id="update"><h2>Aktualizace Atmovio</h2>
 <div class="tw"><table class="kv"><tr><td>Nainstalováno</td><td>verze {{ version }}</td></tr><tr><td>Nejnovější vydání</td><td>{% if update_info.latest %}verze {{ update_info.latest }}{% elif update_info.checked %}zatím žádné{% else %}ještě nezjištěno{% endif %}{% if update_info.checked %} <span class="hint">· zjištěno {{ update_info.checked|czdt }}</span>{% endif %}</td></tr></table></div>
 {% if update_info.available %}<div class="flash"><span>🆕</span><div><b>K dispozici je verze {{ update_info.latest }}.</b></div></div>{% elif update_info.error %}<div class="flash warn"><span>⚠️</span><div>Kontrola se nepovedla: {{ update_info.error }}</div></div>{% endif %}
 <a class="btn small{% if not update_info.available %} sec{% endif %}" href="/system/update">{% if update_info.available %}Co je nového a aktualizovat{% else %}Kontrola a novinky{% endif %}</a>
 <p class="hint" style="margin-top:10px">Nové verze se berou z GitHubu ({{ github_repo }}). Instaluje se jen na kliknutí, původní verze se zálohuje a při chybě se sama vrátí.</p></div>
-<div class="card"><h2>Heslo do Atmovio</h2>
+{% endif %}{% if section=='access' %}<div class="card"><h2>Heslo do Atmovio</h2>
 <form method="post" action="/system/password"><label>Nové heslo (min. 12 znaků)</label><input type="password" name="pw1" required minlength="12" autocomplete="new-password"><label>Znovu</label><input type="password" name="pw2" required minlength="12" autocomplete="new-password"><button class="btn">Změnit heslo</button></form></div>
-</div>
-<details><summary>Pro pokročilé: služby, aktualizace, logy</summary>
+{% endif %}
+{% if section=='maintenance' %}<div class="card"><h2>Nahrávání a Raspberry Pi</h2><form method="post" action="/system/ctl" class="action-row"><button class="btn small" name="action" value="restart_frigate">Restartovat nahrávání</button> <button class="btn small sec" name="action" value="fix_frigate">Opravit konfiguraci nahrávání</button> <button class="btn small danger" name="action" value="reboot" onclick="return confirm('Restartovat celé Raspberry Pi? Nahrávání se na minutu přeruší.')">Restartovat Raspberry Pi</button></form>
+<p class="hint" style="margin-top:10px">Když něco nefunguje, zkus nejdřív restart nahrávání; restart celého RPi až potom.</p></div><div class="card"><h2>Služby a kontejnery</h2>
 <pre>{{ docker }}</pre>
 <form method="post" action="/system/ctl" style="display:inline"><button class="btn small sec" name="action" value="restart_portainer">Restart Portainer</button> <button class="btn small sec" name="action" value="update" onclick="return confirm('Stáhnout verze z docker-compose.yml a restartovat kontejnery?')">Aktualizovat kontejnery</button></form>
-<p class="hint">Aktualizace systému, síť, uživatelé a disky: <a href="{{ cockpit_ui }}" target="_blank" rel="noopener">Cockpit ↗</a>. Kontejnery: <a href="{{ portainer_ui }}" target="_blank" rel="noopener">Portainer ↗</a>. Aktualizace Atmovio: karta výše, nebo ručně přes SSH <code>sudo bash update-atmovio.sh</code>.</p>
-<p class="hint">Logy všech částí (Atmovio, disk, VPN, nahrávání, systém) najdeš v sekci <a href="/logs">Logy</a>.</p></details>
+<p class="hint">Aktualizace systému, síť, uživatelé a disky: <a href="{{ cockpit_ui }}" target="_blank" rel="noopener">Cockpit ↗</a>. Kontejnery: <a href="{{ portainer_ui }}" target="_blank" rel="noopener">Portainer ↗</a>. Aktualizace Atmovio: záložka Aktualizace, nebo ručně přes SSH <code>sudo bash update-atmovio.sh</code>.</p>
+<p class="hint">Logy všech částí (Atmovio, disk, VPN, nahrávání, systém) najdeš v sekci <a href="/logs">Logy</a>.</p></div>{% endif %}</div>
 {% endblock %}"""
 
 TEMPLATES["update.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small sec" href="/system">← Systém</a></div>{% endblock %}{% block content %}
@@ -3442,7 +3457,7 @@ TEMPLATES["logs.html"] = """{% extends "base.html" %}{% block actions %}<div cla
 <pre class="logbox" id="logtext" hidden>{{ text }}</pre>
 <p class="hint">Nejnovější nahoře. ✖ chyba = něco je potřeba udělat · ⚠ stojí za pozornost · ◌ přechodné (hosting nebo AI chvíli neodpověděly, vyřešilo se samo) · · běžný provoz.</p>
 {% else %}<pre class="logbox" id="logtext">{{ text or 'Log je prázdný.' }}</pre>{% endif %}
-<p class="hint">Nejnovější řádky jsou dole; časy jsou v místním čase RPi. Systémové logy (Disk, VPN, Systém) ukazují i starší události od posledního startu – „Vymazat“ jen posune, odkdy se zobrazují. Tlačítko Kopírovat zkopíruje celý log do schránky.</p>
+<p class="hint">Nejnovější záznamy jsou nahoře; časy jsou v místním čase RPi. Systémové logy (Disk, VPN, Systém) ukazují i starší události od posledního startu – „Vymazat“ jen posune, odkdy se zobrazují. Tlačítko Kopírovat zkopíruje celý log do schránky.</p>
 </div>
 {% endblock %}"""
 
@@ -3565,7 +3580,7 @@ TEMPLATES["camera.html"] = """{% extends "base.html" %}{% block actions %}<div c
  <div class="item"><div class="k">Upozornit od</div><div class="v">{{ rl.threshold }}/10</div><div class="d">{% if rl.custom %}vlastní nastavení kamery{% else %}výchozí nastavení{% endif %}</div></div>
  <div class="item"><div class="k">Jevy</div><div class="v">{{ rl.phenomena|length }}</div><div class="d">{% if rl.any %}+ cokoli fotogenického{% else %}jen vybrané jevy{% endif %}</div></div>
  <div class="item"><div class="k">Automatické video</div><div class="v" style="font-size:.95rem">{% if auto_on %}zapnuto{% else %}vypnuto{% endif %}</div><div class="d">{% if auto_on %}−{{ ax.before_min }}/+{{ ax.after_min }} min{% if ax.playback == 'timelapse_25x' %}, 25×{% endif %}{% else %}po upozornění nic{% endif %}</div></div>
- <div class="item"><div class="k">Dotazů za 7 dní</div><div class="v">{{ week.calls }}</div><div class="d">{{ week.notified }} upozornění · {{ "AI film každých" if cfg.ai.strip.enabled and cfg.ai.strip.mode == "batch" else "kontrola každých" }} {{ cfg.ai.strip.span_min if cfg.ai.strip.enabled and cfg.ai.strip.mode == "batch" else cfg.ai.interval_min }} min</div></div>
+ <div class="item"><div class="k">Dotazů za 7 dní</div><div class="v">{{ week.calls }}</div><div class="d">{{ week.notified }} upozornění · {{ "AI film každých" if cfg.ai.strip.enabled and cfg.ai.strip.mode == "batch" else "kontrola každých" }} {{ film_minutes if cfg.ai.strip.enabled and cfg.ai.strip.mode == "batch" else cfg.ai.interval_min }} min</div></div>
 </div>
 {% if pending_auto %}<div class="hint" style="margin-top:.5rem">🎬 Čeká na vytvoření: {% for j in pending_auto %}{{ j.name }} ({% if j.film_open %}čeká na další AI film{% else %}v {{ j.due_h }}{% endif %}){% if not loop.last %} · {% endif %}{% endfor %}</div>{% endif %}
 <div style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;margin-top:.7rem"><a class="btn small" href="/ai#kamery">Nastavení AI pro tuto kameru</a>
@@ -3618,7 +3633,8 @@ TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block actions %}<a cla
 <div class="gallery videos">
 {% for v in videos %}<div class="shot video" id="v{{ v.id }}">
 {% if v.ready %}<a class="thumb" href="/videos/{{ v.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ v.name }}"><img src="{% if v.thumb %}/videos/{{ v.id }}/thumb.jpg{% endif %}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"><span class="play">▶</span><span class="dur">{{ v.duration_h }}</span></a>
-{% else %}<div class="thumb wait">{% if v.expired %}<span>⚠️ nedokončeno a záznam z té doby už je smazaný – video nejde vytvořit, smaž ho</span>{% elif v.stuck %}<span>⚠️ zaseklo se – Frigate export nedokončil (restart uprostřed)</span>{% elif v.in_progress %}<span><span class="spin" style="display:inline-block;vertical-align:middle;width:18px;height:18px;margin-right:.4rem"></span>vytváří se…</span>{% elif v.missing %}video už není k dispozici{% else %}čekám na Frigate…{% endif %}</div>{% endif %}
+{% else %}<div class="thumb media-state"><span class="media-state-icon" aria-hidden="true">{{ (icons['video'] if 'video' in icons else icons['camera'])|safe }}</span><b>{% if v.expired %}Záznam už není dostupný{% elif v.stuck %}Vytváření bylo přerušeno{% elif v.in_progress %}Připravujeme video{% elif v.missing %}Video není dostupné{% else %}Čekáme na nahrávání{% endif %}</b></div>{% endif %}
+{% if v.expired or v.stuck or v.missing %}<div class="media-reason" role="status">{% if v.expired %}Zdrojový záznam už byl odstraněn. Tento klip nelze znovu vytvořit.{% elif v.stuck %}Frigate export nedokončil, například po restartu. Pokud zdrojový záznam existuje, použij „Vytvořit znovu“.{% else %}Soubor se nepodařilo najít. Zkontroluj dostupnost disku a záznamů.{% endif %} <a href="/logs?src=frigate">Diagnostika</a></div>{% endif %}
 <div class="b">
 <div class="title">{{ v.name }}{% if v.auto %} <span class="badge ok" title="Vytvořeno automaticky po upozornění">auto</span>{% endif %}</div>
 <dl class="facts">
@@ -3668,7 +3684,7 @@ TEMPLATES["film.html"] = """{% extends "base.html" %}{% block actions %}<a class
 
 TEMPLATES["history.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small" href="/ai#kamery">⚙ Nastavení AI</a><form method="post" action="/history/delete" data-nobusy style="display:flex;gap:.4rem"><input type="hidden" name="camera" value="{{ f_cam }}"><button class="btn small sec" name="what" value="errors">Smazat chybná</button><button class="btn small danger" name="what" value="all" onclick="return confirm('Smazat celou historii{% if f_cam %} kamery {{ cam(f_cam) }}{% endif %} včetně snímků?')">Smazat vše{% if f_cam %} ({{ cam(f_cam) }}){% endif %}</button></form></div>{% endblock %}{% block content %}
 {% if batch or films %}<section class="card film-overview"><div class="section-head"><div><span class="eyebrow">Sběr → AI závěr → zajímavé video</span><h2>AI filmy z kamer</h2></div><a class="btn small sec" href="/ai#kdy">Časování filmů</a></div>
-<p class="hint">{% if not cfg.ai.enabled %}<strong>AI je vypnutá; sběr a vyhodnocení jsou pozastavené.</strong> {% endif %}{% if batch %}Snímek každých {{ cfg.ai.interval_min }} min · film {{ cfg.ai.strip.span_min }} min. AI hodnotí až dokončený film. Při pokračujícím jevu se plánovaný klip prodlouží podle dalšího filmu.{% else %}Aktivní je průběžné vyhodnocení; dříve rozpracované filmy jsou pozastavené.{% endif %} Obnov stránku pro aktuální stav.</p>
+<p class="hint">{% if not cfg.ai.enabled %}<strong>AI je vypnutá; sběr a vyhodnocení jsou pozastavené.</strong> {% endif %}{% if batch %}Snímek každých {{ cfg.ai.interval_min }} min · film nejvýše {{ film_minutes }} min. AI hodnotí až dokončený film. Při pokračujícím jevu se plánovaný klip prodlouží podle dalšího filmu.{% else %}Aktivní je průběžné vyhodnocení; dříve rozpracované filmy jsou pozastavené.{% endif %} Obnov stránku pro aktuální stav.</p>
 <div class="film-cards">{% for f in films %}<a class="film-card" href="/ai/films/{{ f.id }}">{% if f.thumb %}<img src="/snapshot/{{ f.thumb }}" alt="" loading="lazy">{% endif %}<div><b>{{ cam(f.camera) }}</b><span class="badge {{ 'err' if f.status=='failed' else 'info' }}">{{ {'collecting':'Sbírám snímky','ready':'Čeká na AI','failed':'Chyba AI','incomplete':'Neúplný film'}.get(f.status, f.status) }}</span><p>{{ f.start_h }} – {{ f.end_h }} · {{ f.count }} snímků</p><progress value="{{ f.progress }}" max="100" aria-label="Průběh sběru"></progress>{% if f.error %}<small>{{ f.error }}</small>{% endif %}<small>Otevřít AI film →</small></div></a>{% else %}<p class="hint">{% if cfg.ai.enabled and cfg.ai.cameras %}První film vznikne při nejbližším sběru v aktivní denní době.{% else %}Zapni AI a vyber kamery v nastavení.{% endif %}</p>{% endfor %}</div></section>{% endif %}
 
 {% macro link(cam_, min_, show_, page_=1) %}/history?camera={{ cam_|urlencode }}&min_score={{ min_ }}&show={{ show_ }}&phenomenon={{ f_phen|urlencode }}&since={{ f_since|urlencode }}&until={{ f_until|urlencode }}{% if page_ > 1 %}&page={{ page_ }}{% endif %}{% endmacro %}
@@ -3705,7 +3721,7 @@ TEMPLATES["history.html"] = """{% extends "base.html" %}{% block actions %}<div 
 
 TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small sec" href="/videos">← Videa</a><a class="btn small sec" href="/studio/settings">⚙ Nastavení studia</a></div>{% endblock %}{% block content %}
 {% set intro_sec = (sc.intro_seconds if intro and intro.suffix|lower in ('.png', '.jpg', '.jpeg') else 0) %}
-<form method="post" x-data="{intro: {{ 'true' if values.intro and intro else 'false' }}, textOn: {{ 'true' if values.text_on else 'false' }}}">
+<form method="post" onsubmit="return swReviewStudio(this)" x-data="{intro: {{ 'true' if values.intro and intro else 'false' }}, textOn: {{ 'true' if values.text_on else 'false' }}}">
 <div class="grid-2" style="grid-template-columns:minmax(0,3fr) minmax(320px,2fr)">
 <div>
  <div class="card studio-src"><a class="thumb" href="/videos/{{ export.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ export.name }}"><img src="/videos/{{ export.id }}/thumb.jpg" alt="" onerror="this.style.visibility='hidden'"><span class="play">▶</span></a>
@@ -3732,7 +3748,7 @@ TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<d
   <div x-show="textOn"><input type="text" name="text" value="{{ values.text }}" maxlength="200" placeholder="{kamera} · {datum} · {rychlost}×">
   <div class="hint">Zástupné značky: <code>{kamera}</code> <code>{datum}</code> <code>{cas}</code> <code>{jev}</code> <code>{skore}</code> <code>{rychlost}</code>. Umístění a velikost písma nastavíš v Nastavení studia.{% if not font %} <b>Na RPi chybí font – text se nepřidá</b> (nainstaluj balíček fonts-dejavu-core).{% endif %}</div></div></div>
 
- <div class="card" x-data="musicFinder('{{ values.music }}')"><h2>4. Hudba</h2>
+ <div class="card" x-data="musicFinder({{ values.music|tojson|forceescape }})"><h2>4. Hudba</h2>
   <select name="music" x-model="music" x-ref="sel"><option value="">bez hudby</option>{% for m in music %}<option value="{{ m.name }}">{{ m.name }}{% if m.duration %} ({{ (m.duration // 60)|int }}:{{ '%02d'|format(m.duration % 60) }}){% endif %}</option>{% endfor %}</select>
   <p class="hint" style="margin:.4rem 0 .6rem">Hudba začne až po intru, plynule zesílí a na konci ztichne ({{ sc.fade_in }} s / {{ sc.fade_out }} s); kratší skladba se opakuje. Do popisu videa se automaticky přidá autor skladby.</p>
   <details class="finder" :open="open" @toggle="open = $el.open"><summary>🔎 Najít hudbu k tomuto videu (Openverse – volně použitelná, CC0 / CC BY)</summary>
@@ -4002,6 +4018,7 @@ def render(request: Request, tpl: str, title: str, **ctx) -> HTMLResponse:
         side["disk_pct"] = disk_info(cfg["recordings_path"]).get("pct", 0)
     flashes = [{"text": flash, "kind": flash_kind}] if flash else []
     ctx.setdefault("version", APP_VERSION)
+    ctx.setdefault("film_minutes", film_collection_plan(cfg["ai"])[1])
     html = jenv.get_template(tpl).render(
         cam=lambda c: labels.get(c) or c, rule=lambda c: cam_rule(cfg["ai"], c),
         title=title, subtitle=ctx.pop("subtitle", SUBTITLES.get(path, "")), nav=NAV, nav_items=NAV_ITEMS, bottom_nav=BOTTOM_NAV,
@@ -4372,7 +4389,7 @@ def api_key_create(request: Request, name: str = Form("")):
                      "hint": key[:7] + "…", "created": dt.datetime.now().isoformat(timespec="seconds")})
     request.session["new_api_key"] = key
     flash(request, "API klíč vytvořen – zkopíruj si ho teď, znovu se nezobrazí.")
-    return RedirectResponse("/system#api", status_code=303)
+    return RedirectResponse("/system/integrations", status_code=303)
 
 
 @app.post("/system/api_key/delete")
@@ -4380,7 +4397,7 @@ def api_key_delete(request: Request, hint: str = Form(...)):
     with edit_config() as cfg:
         cfg["api_keys"] = [k for k in cfg.get("api_keys") or [] if k.get("hint") != hint]
     flash(request, "API klíč zrušen.")
-    return RedirectResponse("/system#api", status_code=303)
+    return RedirectResponse("/system/integrations", status_code=303)
 
 
 @app.get("/api/health")
@@ -5302,7 +5319,7 @@ def ai_estimate(cfg, cameras: int) -> int:
     if not ai.get("day_only", True):
         day_min = 1440
     if batch_mode(ai):
-        return int(cameras * day_min / max(10, int(ai["strip"].get("span_min", 60))))
+        return int(cameras * day_min / max(1, film_collection_plan(ai)[1]))
     fast_min = 4 * int(ai.get("golden_min", 60)) if ai.get("fast_mode") else 0
     fast_min = min(fast_min, day_min)
     normal = max(1, int(ai["interval_min"]))
@@ -5377,6 +5394,7 @@ def apply_ai_form(form, cfg, cameras):
         try:
             st["frames"] = max(2, min(12, int(form.get("strip_frames", st.get("frames", 6)))))
             st["span_min"] = max(10, min(180, int(form.get("strip_span_min", st.get("span_min", 60)))))
+            st["max_frames"] = max(3, min(36, int(form.get("strip_max_frames", st.get("max_frames", 36)))))
         except ValueError:
             pass
         if form.get("strip_mode") in ("batch", "rolling"):
@@ -8324,8 +8342,17 @@ def read_log_source(src: str, n: int = 300) -> str:
         _rc2, wg = run(["wg", "show", iface], timeout=5)
         return (f"# Aktuální stav tunelu {iface}:\n{wg or 'tunel neběží'}\n\n# Historie:\n" + out)
     if src == "frigate":
-        cmd = ["docker", "logs", "--tail", str(n)] + (["--since", since.replace(" ", "T")] if since else []) + [FRIGATE_CONTAINER]
+        cmd = ["docker", "logs", "--timestamps", "--tail", str(n)] + (["--since", since.replace(" ", "T")] if since else []) + [FRIGATE_CONTAINER]
         _rc, out = run(cmd, timeout=20)
+        local_lines = []
+        for line in out.splitlines():
+            stamp, separator, message = line.partition(" ")
+            try:
+                stamp = dt.datetime.fromisoformat(stamp.replace("Z", "+00:00")).astimezone(ZoneInfo(load_config()["tz"])).strftime("%Y-%m-%d %H:%M:%S")
+                local_lines.append(stamp + " " + message)
+            except ValueError:
+                local_lines.append(line)
+        out = "\n".join(local_lines)
         # Frigate hlásí chybnou konfiguraci jen jednou při startu – zvýrazni ji nahoře, ať se v logu neztratí.
         problem = frigate_safe_mode()
         if problem:
@@ -8371,8 +8398,11 @@ def log_rows(text: str) -> list[dict]:
     rows = []
     for line in text.splitlines():
         level, why = classify_log_line(line)
-        m = re.match(r"^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2})\s*(.*)$", line)
-        rows.append({"ts": m.group(1).replace("T", " ") if m else "", "text": m.group(2) if m else line, "level": level, "why": why})
+        m = re.match(r"^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2})(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?\s*(.*)$", line)
+        if not m and rows:
+            rows[-1]["text"] += "\n" + line
+        else:
+            rows.append({"ts": m.group(1).replace("T", " ") if m else "", "text": m.group(2) if m else line, "level": level, "why": why})
     return rows
 
 
@@ -8394,6 +8424,16 @@ def log_summary(text: str) -> list[tuple[str, str]]:
     return out
 
 
+def newest_log_first(text):
+    """Reverse timestamped entries, retaining traceback/continuation line order."""
+    groups = []
+    for line in text.splitlines():
+        if not groups or re.match(r"^(?:\[?\d{4}-\d{2}-\d{2}|\[?\d{2}:\d{2}:\d{2}|[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:)", line):
+            groups.append([])
+        groups[-1].append(line)
+    return "\n".join("\n".join(group) for group in reversed(groups))
+
+
 @app.get("/logs", response_class=HTMLResponse)
 def logs_page(request: Request, src: str = "atmovio", n: int = 300, q: str = "", raw: str = ""):
     keys = [k for k, _n, _d in LOG_SOURCES]
@@ -8409,7 +8449,7 @@ def logs_page(request: Request, src: str = "atmovio", n: int = 300, q: str = "",
     if q:
         text = "\n".join(line for line in text.splitlines() if q.lower() in line.lower())
     desc = dict((k, d) for k, _n, d in LOG_SOURCES)[src]
-    rows = log_rows(text) if src == "atmovio" else []
+    rows = log_rows(text) if not raw else []
     # Nahlášení na GitHub: předvyplněné issue s chybovými řádky (bez osobních údajů – jen log a verze)
     issue_url = ""
     bad = [r for r in rows if r["level"] in ("err", "warn")]
@@ -8419,7 +8459,7 @@ def logs_page(request: Request, src: str = "atmovio", n: int = 300, q: str = "",
                 f"Co jsem čekal / co se stalo:\n(doplň prosím)\n\n```\n{lines[:5000]}\n```\n")
         issue_url = ("https://github.com/" + GITHUB_REPO + "/issues/new?labels=bug&title="
                      + quote(f"[{APP_VERSION}] " + bad[-1]["text"][:70]) + "&body=" + quote(body))
-    return render(request, "logs.html", "Logy", sources=LOG_SOURCES, src=src, n=n, q=q, desc=desc, text=text,
+    return render(request, "logs.html", "Logy", sources=LOG_SOURCES, src=src, n=n, q=q, desc=desc, text=newest_log_first(text),
                   rows=rows if not raw else [], issue_url=issue_url,
                   summary=log_summary(text), since=log_since(src), raw=raw)
 
@@ -8464,13 +8504,50 @@ def logs_download(request: Request, src: str = "atmovio"):
 
 # ---- system
 
+@app.get("/system/runtime-status")
+def runtime_status(request: Request):
+    cfg = load_config()
+    st = storage_status()
+    pending = APP_DIR / "storage-restart"
+    requested = 0
+    request_id = ""
+    try:
+        request_id = pending.read_text().strip()
+        requested = int(request_id) / 1e9
+    except (OSError, ValueError):
+        pass
+    waiting = bool(request.session.get("frigate_restarting"))
+    acknowledged = st.get("checked_at", 0) >= requested and st.get("restart_request") == request_id if requested else True
+    # Older guards lack acknowledgement: a post-request status plus healthy API is the fallback.
+    if "restart_request" not in st:
+        acknowledged = st.get("checked_at", 0) > requested + 5 if requested else True
+    online = bool(frigate_status(cfg).get("online"))
+    ready = online and st.get("mode") in ("recording", "legacy", "live") and (not waiting or acknowledged)
+    if ready and waiting:
+        request.session.pop("frigate_restarting", None)
+    return JSONResponse({"online": online, "storage": st, "ready": ready, "waiting": waiting and not ready}, headers={"Cache-Control":"no-store"})
+
+
 @app.get("/system", response_class=HTMLResponse)
-def system_page(request: Request):
+def system_page(request: Request, section: str = "overview"):
     _rc, docker = run("docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'", timeout=15)
     cfg = load_config()
-    return render(request, "system.html", "Systém", s=sys_info(), docker=docker, version=APP_VERSION, web_ok=web_ready(cfg),
-                  frigate_pw=request.session.pop("frigate_pw", None), disks_health=disk_health(),
-                  new_api_key=request.session.pop("new_api_key", None), api_keys=cfg.get("api_keys") or [])
+    return render(request, "system.html", "Systém", s=sys_info(), docker=docker, version=APP_VERSION, web_ok=web_ready(cfg), section=section,
+                  frigate_pw=request.session.pop("frigate_pw", None) if section=="access" else None, disks_health=disk_health(),
+                  new_api_key=request.session.pop("new_api_key", None) if section=="integrations" else None, api_keys=cfg.get("api_keys") or [])
+
+
+@app.get("/system/access", response_class=HTMLResponse)
+def system_access(request: Request):
+    return system_page(request, "access")
+
+@app.get("/system/integrations", response_class=HTMLResponse)
+def system_integrations(request: Request):
+    return system_page(request, "integrations")
+
+@app.get("/system/maintenance", response_class=HTMLResponse)
+def system_maintenance(request: Request):
+    return system_page(request, "maintenance")
 
 
 @app.post("/system/ctl")
@@ -8483,11 +8560,13 @@ def system_ctl(request: Request, action: str = Form(...)):
         fixes = frigate_fix_config(cfg)
         rc, out = frigate_restart()
         watcher.frigate_problem = ""
+        request.session["frigate_restarting"] = rc == 0
         flash(request, ("Opraveno: " + "; ".join(fixes) + ". " if fixes else "V konfiguraci jsem nenašel nic k opravě. ")
-              + ("Frigate se restartuje – za minutu zkontroluj Přehled." if rc == 0 else out), "" if rc == 0 else "err")
+              + ("Frigate se restartuje – stav se po návratu automaticky obnoví." if rc == 0 else out), "" if rc == 0 else "err")
     elif action == "restart_frigate":
         rc, out = frigate_restart()
-        flash(request, "Frigate restartován." if rc == 0 else out, "" if rc == 0 else "err")
+        request.session["frigate_restarting"] = rc == 0
+        flash(request, "Požadavek na restart předán. Čekám na obnovení Frigate…" if rc == 0 else out, "" if rc == 0 else "err")
     elif action == "restart_portainer":
         rc, out = run(["docker", "restart", "portainer"], timeout=60)
         flash(request, "Portainer restartován." if rc == 0 else out, "" if rc == 0 else "err")
@@ -8500,14 +8579,14 @@ def system_ctl(request: Request, action: str = Form(...)):
     elif action == "frigate_pw":
         if not storage_ready():
             flash(request, "Heslo Frigate měň až po obnovení HDD; živý režim používá kopii přístupů.", "err")
-            return RedirectResponse("/system", status_code=303)
+            return RedirectResponse("/system/maintenance", status_code=303)
         pw = frigate_reset_admin_password(cfg)
         if pw:
             request.session["frigate_pw"] = pw
             flash(request, "Nové heslo Frigate vygenerováno.")
         else:
             flash(request, "Heslo se nepodařilo vyčíst z logu – zkus 'docker logs frigate | grep -i password'.", "err")
-    return RedirectResponse("/system", status_code=303)
+    return RedirectResponse("/system/access" if action=="frigate_pw" else "/system/maintenance", status_code=303)
 
 
 @app.get("/system/update", response_class=HTMLResponse)
@@ -8574,7 +8653,7 @@ def system_password(request: Request, pw1: str = Form(...), pw2: str = Form(...)
             flash(request, "Heslo změněno – platí pro Atmovio i Frigate (admin)." + note)
         else:
             flash(request, "Heslo Atmovio změněno, ale Frigate ho nepřevzal (neběží?). Nové mu vygeneruješ tlačítkem výše.", "err")
-    return RedirectResponse("/system", status_code=303)
+    return RedirectResponse("/system/access", status_code=303)
 
 
 def on_startup():
@@ -8700,19 +8779,21 @@ def probe_disk():
     """Volá se pouze v podprocesu; vadné USB může blokovat i stat/fsync."""
     mounts = Path('/proc/self/mountinfo').read_text().splitlines()
     entry = next((line for line in mounts if line.split()[4] == str(MOUNT)), '')
-    if not entry or entry.split(' - ', 1)[1].split()[0] != 'ext4':
-        return False
+    if not entry:
+        raise OSError('Disk není připojený v /mnt/nvr.')
+    if entry.split(' - ', 1)[1].split()[0] != 'ext4':
+        raise OSError('Disk v /mnt/nvr nemá očekávaný formát ext4.')
     if not MOUNT.is_mount() or MOUNT.stat().st_dev == Path('/').stat().st_dev:
-        return False
+        raise OSError('Úložiště není samostatný připojený disk.')
     # Ověřit právě prostor záznamů, ne pouze jiný adresář na témže disku.
     directories = ('frigate', 'frigate/recordings', 'atmovio', 'atmovio/snapshots')
     if any((MOUNT / name).is_symlink() for name in directories):
-        return False
+        raise OSError('Adresář záznamů nebo snímků je symbolický odkaz; zápis pozastaven.')
     for name in directories:
         directory = MOUNT / name
         directory.mkdir(exist_ok=True)
         if directory.stat().st_dev != MOUNT.stat().st_dev:
-            return False
+            raise OSError(f'Adresář {directory} není na disku pro záznamy.')
     # Bez zápisu nelze rozlišit připojený disk od read-only / vadného HDD.
     fd, name = tempfile.mkstemp(prefix='.atmovio-probe-', dir=MOUNT / 'frigate/recordings')
     try:
@@ -8729,19 +8810,24 @@ class Probe:
     def __init__(self):
         self.process = None
         self.started = 0
+        self.reason = "Čekám na ověření zápisu na disk."
 
     def sample(self):
         """None = měření běží; False = chyba/timeout; True = fsync prošel."""
         if self.process is None:
             self.process = subprocess.Popen([sys.executable, __file__, '--probe'],
-                                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
             self.started = time.monotonic()
             return None
         rc = self.process.poll()
         if rc is not None:
+            detail = self.process.stderr.read().decode("utf-8", errors="replace").strip()[-600:]
+            self.process.stderr.close()
+            self.reason = "HDD je zapisovatelný." if rc == 0 else (detail or "Kontrola zápisu na disk selhala.")
             self.process = None
             return rc == 0
         if time.monotonic() - self.started > 4:
+            self.reason = "Disk neodpověděl na kontrolu zápisu do 4 sekund. Zkontroluj USB, napájení a stav disku."
             self.process.kill()
             # Nečekat na proces v D state a nevytvářet další, dokud neskončí.
             return False
@@ -8758,13 +8844,15 @@ def command(args, timeout=90):
 _last_publish = {'key': None, 'at': 0.0}
 
 
-def publish(mode, reason):
+def publish(mode, reason, restart_request=None):
     """Zapíše stav jen při změně nebo nejpozději po 10 s (Atmovio bere stav za čerstvý 15 s)."""
     now = time.time()
     if _last_publish['key'] == (mode, reason) and now - _last_publish['at'] < 10:
         return
+    if _last_publish['key'] != (mode, reason):
+        print(f'{dt.datetime.now().isoformat(timespec="seconds")} [{mode}] {reason}', flush=True)
     _last_publish.update(key=(mode, reason), at=now)
-    atomic(STATUS, json.dumps({'mode': mode, 'reason': reason, 'checked_at': now, 'guard_pid': os.getpid()}, ensure_ascii=False))
+    atomic(STATUS, json.dumps({'mode': mode, 'reason': reason, 'checked_at': now, 'guard_pid': os.getpid(), 'restart_request': restart_request}, ensure_ascii=False))
 
 
 class Guard:
@@ -8801,7 +8889,7 @@ class Guard:
         except Exception:
             return
 
-    def reconcile(self, healthy, mount_id=None):
+    def reconcile(self, healthy, mount_id=None, reason="HDD chybí, neodpovídá nebo neprošel kontrolou zápisu."):
         if mount_id != self.mount_id:
             self.successes = 0
             self.mount_id = mount_id
@@ -8811,6 +8899,8 @@ class Guard:
             self.successes = 0
         # Návrat až po třech úspěšných zápisech; pád okamžitě.
         desired = 'recording' if self.successes >= 3 else 'live'
+        if 0 < self.successes < 3:
+            reason = f'Ověřuji stabilitu disku: {self.successes} ze 3 úspěšných zápisů.'
         if healthy is None and self.mode == 'recording':
             desired = 'recording'
         source = SOURCE_CONFIG.read_text()
@@ -8825,7 +8915,7 @@ class Guard:
             except Exception:
                 self.mode = None
         if self.mode == desired and not changed:
-            publish(self.mode, 'HDD je zapisovatelný.' if self.mode == 'recording' else 'HDD chybí, neodpovídá nebo neprošel kontrolou zápisu. Živý náhled bez záznamu.')
+            publish(self.mode, 'HDD je zapisovatelný.' if self.mode == 'recording' else reason + ' Živý náhled bez záznamu.', revision[1])
             return
         if time.monotonic() < self.retry_at:
             return
@@ -8851,7 +8941,7 @@ class Guard:
             # Omezená doba zastavení – na nemocný disk nečekat desítky sekund.
             command(['docker', 'compose', '-f', str(COMPOSE), 'up', '-d', '--no-deps', '--force-recreate', '--timeout', '5', 'frigate'])
             self.mode, self.config_text = desired, revision
-            publish(desired, 'HDD je zapisovatelný.' if desired == 'recording' else 'Pouze živý náhled. Nahrávání a ukládání snímků jsou vypnuté.')
+            publish(desired, 'HDD je zapisovatelný.' if desired == 'recording' else reason + ' Nahrávání a ukládání snímků jsou vypnuté.', revision[1])
         except Exception as exc:
             self.mode = None
             self.retry_at = time.monotonic() + 15
@@ -8924,7 +9014,8 @@ def main():
     if '--probe' in sys.argv:
         try:
             return 0 if probe_disk() else 1
-        except (OSError, ValueError):
+        except (OSError, ValueError) as exc:
+            print(str(exc), file=sys.stderr, flush=True)
             return 1
     if '--install' in sys.argv:
         install()
@@ -8940,7 +9031,8 @@ def main():
                 # Změna mount ID zachytí i rychlé odpojení/připojení mezi sondami.
                 mounts = Path('/proc/self/mountinfo').read_text().splitlines()
                 mount_id = next((line.split()[0] for line in mounts if line.split()[4] == str(MOUNT)), None)
-                guard.reconcile(probe.sample(), mount_id)
+                healthy = probe.sample()
+                guard.reconcile(healthy, mount_id, probe.reason)
             except Exception as exc:
                 publish('error', str(exc))
             time.sleep(2)
@@ -9999,6 +10091,27 @@ main.page.settings-page { max-width: 1264px; }
  .guide-windows > div { padding:12px; }
  .guide-axis { font-size:12px; }
 }
+
+/* Administration 5.3: smaller laptops, clear service and media states. */
+.system-content { max-width:1000px; margin:0 auto; }
+.system-tabs { margin-bottom:24px; flex-wrap:wrap; }
+.action-row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+.btn { white-space:nowrap; }
+.page input[type="file"] { height:auto; min-height:56px; line-height:1.5; overflow:visible; }
+.page input[type="file"]::file-selector-button { margin:0 12px 0 0; height:auto; }
+.runtime-status { padding:12px 24px; background:var(--sw-warn-bg); color:var(--at-text); font-size:13px; }
+.runtime-status a { margin-left:12px; }
+.shot.video .thumb.media-state,.camera-unavailable { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:24px; text-align:center; background:var(--at-surface-2); color:var(--at-text); }
+.camera-unavailable { position:absolute; inset:0; font-size:13px; }
+.media-state-icon { display:flex; align-items:center; justify-content:center; border-radius:50%; background:var(--pico-card-background-color); width:52px; height:52px; color:var(--at-muted); font-size:28px; }
+.media-state-icon svg.i { width:26px; height:26px; }
+.media-reason { padding:12px 16px; background:var(--sw-warn-bg); color:var(--at-text); font-size:12px; line-height:1.6; }
+.storage-notice { border-left:4px solid var(--sw-warn); }
+@media(min-width:1000px) and (max-width:1440px) { .gallery.videos { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media(max-width:700px) { .btn { white-space:normal; } .action-row .btn { flex:1 1 100%; } }
+
+.live-big { position:relative; }
+.loglist .lx { white-space:pre-wrap; overflow-wrap:anywhere; }
 ATMOVIO_CSS_EOF
   cat > "$1/atmovio.js" <<'ATMOVIO_JS_EOF'
 /* Atmovio – interakce (Alpine.js komponenty + pomocné funkce). */
@@ -10018,11 +10131,43 @@ ATMOVIO_CSS_EOF
 
   // ---------- Alpine komponenty ----------
   document.addEventListener('alpine:init', function () {
-    Alpine.data('filmTiming', function (mode, active, sample, span) {
+    Alpine.data('serviceStatus', function () {
+      return {message:'', recovered:false, waiting:false, timer:null, stopped:false, dirty:false,
+        init: function () {
+          this.onEdit = () => { this.dirty = true; };
+          document.addEventListener('input', this.onEdit); document.addEventListener('change', this.onEdit);
+          this.check();
+        },
+        destroy: function () { this.stopped=true; clearTimeout(this.timer); document.removeEventListener('input',this.onEdit); document.removeEventListener('change',this.onEdit); },
+        check: async function () {
+          if (this.stopped) return;
+          const controller=new AbortController(), timeout=setTimeout(()=>controller.abort(),12000);
+          try {
+            if (document.visibilityState!=='visible') return;
+            const r=await fetch('/system/runtime-status',{credentials:'same-origin',cache:'no-store',signal:controller.signal});
+            if (!r.ok || r.redirected) return;
+            const state=await r.json();
+            if (!state.ready) {
+              this.waiting=true; this.recovered=false;
+              this.message=state.storage.mode==='error' ? 'Nahrávání se nepodařilo obnovit: '+state.storage.reason : state.waiting ? 'Frigate se restartuje. Obraz a stav se po návratu obnoví automaticky.' :
+                (!state.online ? 'Frigate nyní neodpovídá. Čekám na obnovení spojení.' : state.storage.reason);
+            } else if (this.waiting) {
+              this.message=state.storage.mode==='recording' ? 'Frigate opět odpovídá a disk je připravený pro nahrávání.' : 'Frigate opět odpovídá. '+state.storage.reason;
+              this.recovered=true; this.waiting=false;
+              if (!this.dirty && ['/system/maintenance','/storage','/videos','/live','/live/all','/'].includes(location.pathname)
+                  && !Array.from(document.querySelectorAll('video')).some(v=>!v.paused) && !document.body.classList.contains('lb-open')) location.reload();
+            } else if (state.storage.mode==='live') { this.message=state.storage.reason; }
+          } catch(e) { this.waiting=true; this.message='Spojení s Atmovio je přerušené. Zkouším ho automaticky obnovit.'; }
+          finally { clearTimeout(timeout); if (!this.stopped) this.timer=setTimeout(()=>this.check(),10000); }
+        }
+      };
+    });
+    Alpine.data('filmTiming', function (mode, active, sample, span, limit) {
       return {
-        mode: mode, active: active, sample: sample, span: span,
-        get filmLength() { return Math.max(10, Math.min(180, Math.floor(Number(this.span) || 60))); },
-        get interval() { return Math.min(this.filmLength, Math.max(1, Math.floor(Number(this.sample) || 5))); },
+        mode: mode, active: active, sample: sample, span: span, limit: limit || 36,
+        get requestedLength() { return Math.max(10, Math.min(180, Math.floor(Number(this.span) || 60))); },
+        get interval() { return Math.min(this.requestedLength, Math.max(1, Math.floor(Number(this.sample) || 5))); },
+        get filmLength() { return Math.min(this.requestedLength, (Math.max(3,Math.min(36,Number(this.limit)||36))-1)*this.interval); },
         get count() { return Math.ceil(this.filmLength / this.interval) + 1; },
         get summary() { return `Za ${this.filmLength} minut přibližně ${this.count} fotografií → jeden závěr AI.`; },
         get frequency() { return `Při nepřetržitém 24hodinovém sběru přibližně ${Math.round(1440 / this.filmLength)} vyhodnocení za den na jednu kameru, bez výpadků, opakovaných pokusů a limitů. V denním režimu méně.`; },
@@ -10406,8 +10551,26 @@ ATMOVIO_CSS_EOF
   // ---------- Náhledy kamer: když obrázek nejde, ukázat text místo prázdna ----------
   window.swImgFail = function (img, text) {
     img.style.display = 'none';
-    var s = document.createElement('span'); s.textContent = text || 'bez obrazu';
-    img.parentNode.appendChild(s);
+    let state=img.parentNode.querySelector('.camera-unavailable');
+    if (!state) {
+      state=document.createElement('span'); state.className='camera-unavailable'; state.setAttribute('role','status');
+      const icon=document.createElement('span');icon.className='media-state-icon';icon.textContent='◉';icon.setAttribute('aria-hidden','true');
+      const title=document.createElement('strong');title.textContent='Obraz není dostupný';
+      const detail=document.createElement('span');detail.textContent=(text || 'Kamera nebo Frigate neodpovídá.')+' Spojení se automaticky obnovuje.';
+      state.append(icon,title,detail);img.parentNode.appendChild(state);
+      if (!img._recoveryInstalled) { img._recoveryInstalled=true; img.addEventListener('load',function(){clearTimeout(img._retry);img._retry=null;img.style.display='';img.parentNode.querySelector('.camera-unavailable')?.remove();}); }
+    }
+    if (!img._retry) img._retry=setTimeout(function(){img._retry=null;if(img.isConnected && document.visibilityState==='visible') { const url=new URL(img.src,location.href);url.searchParams.set('t',Date.now());img.src=url.href; } else if(img.isConnected) swImgFail(img,text);},10000);
+  };
+
+  window.swReviewStudio = function(form) {
+    const data=new FormData(form), missing=[];
+    if (!String(data.get('music') || '').trim()) missing.push('hudbu');
+    if (!data.get('intro')) missing.push('intro');
+    if (!String(data.get('title') || '').trim()) missing.push('nadpis');
+    if (!String(data.get('description') || '').trim()) missing.push('popis');
+    if (data.get('text_on') && !String(data.get('text') || '').trim()) missing.push('zapnutý text v obraze je prázdný');
+    return !missing.length || confirm('Před vytvořením videa zkontroluj: '+missing.join(', ')+'.\n\nTyto prvky jsou volitelné. Opravdu pokračovat bez nich?');
   };
 
   // ---------- Kamery: snímky se samy obnovují, živý přenos jen na kliknutí ----------

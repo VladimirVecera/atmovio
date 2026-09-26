@@ -113,6 +113,18 @@ try:
         many=[{'ts':i,'image':str(i)} for i in range(181)]; selected=a.selected_film_frames(many)
         assert len(selected)==36 and selected[0]==many[0] and selected[-1]==many[-1]
         ok('Whole-film prompt, validated event indices, conservative fallback, bounded 36-frame AI sheet')
+        detail_cfg=copy.deepcopy(cfg);detail_cfg['ai']['strip']['max_frames']=9
+        assert a.film_collection_plan(detail_cfg['ai'])==(5,40)
+        for minute in range(0,41,5): a.collect_ai_film(detail_cfg,'detail_test',moment(minute))
+        detail_film=next(f for f in rows('ai_films') if f['camera']=='detail_test' and f['status']=='ready')
+        detail_frames=a.film_frames(detail_film)
+        assert len(detail_frames)==9 and detail_film['end_ts']-detail_film['start_ts']==2400
+        sheet=Image.open(io.BytesIO(a.make_ai_film(detail_cfg,detail_frames)))
+        assert sheet.size==(2160,1305)
+        next_detail=next(f for f in rows('ai_films') if f['camera']=='detail_test' and f['status']=='collecting')
+        assert a.film_frames(next_detail)[0]['ts']==detail_frames[-1]['ts']
+        ok('Nine-frame limit ends a 60-minute request at 40 minutes, larger evidence and continuous next film')
+
         # Slow inference must not block the next camera sample.
         import threading
         entered, release = threading.Event(), threading.Event()
