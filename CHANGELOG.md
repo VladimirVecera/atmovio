@@ -2,6 +2,20 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 5.3.11 – 2026-09-26 – local system history and charts
+
+- Add System → Graphs for HDD usage, CPU temperature/utilization, RAM, system load and AI activity, with shared date ranges and Today/Yesterday/3/7/30-day presets.
+- Collect once a minute in a bounded subprocess; store history alongside snapshots on the external disk and skip collection when storage is unavailable.
+- Keep 30 days by default, configurable from 1 to 365 days; downsample long ranges and leave missing measurements blank.
+- Bundle the history collector with installers and preserve it in update backups.
+
+## 5.3.10 – 2026-09-26 – grouped event videos
+
+- Show linked YouTube video creation, queue, readiness, upload and failure states on each source AI video, with direct Studio links and automatic overview refresh during active work.
+- Keep intermediate event parts together in a separate detail instead of individual AI video gallery cards; link them from the final video or an unfinished event group.
+- Persist the final export's event association, including migration of existing exact export/job matches.
+- Deleting the final export also deletes its parts, with a group-wide check for active Studio/YouTube work and retained records when Frigate does not acknowledge deletion.
+
 ## 5.3.9 – 2026-09-26 – music preview and Openverse filters
 
 - Preview selected library music directly in the video form; pause other music previews and add Openverse license, creator and file format filters.

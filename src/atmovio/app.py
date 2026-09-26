@@ -25,6 +25,7 @@ import smtplib
 import sqlite3
 import ssl
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -56,7 +57,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "5.3.9"
+APP_VERSION = "5.3.11"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -703,6 +704,8 @@ def db_init():
         cols = {r["name"] for r in con.execute("PRAGMA table_info(exports)")}
         if "event_parent_id" not in cols:
             con.execute("ALTER TABLE exports ADD COLUMN event_parent_id INTEGER")
+        if "event_job_id" not in cols:
+            con.execute("ALTER TABLE exports ADD COLUMN event_job_id INTEGER")
         con.execute("CREATE TABLE IF NOT EXISTS event_parts (id INTEGER PRIMARY KEY, job_id INTEGER NOT NULL, start_ts REAL NOT NULL, end_ts REAL NOT NULL, export_id INTEGER, status TEXT NOT NULL DEFAULT 'pending', error TEXT DEFAULT '', UNIQUE(job_id,start_ts,end_ts))")
         con.execute("CREATE TABLE IF NOT EXISTS video_notifications (detection_id INTEGER PRIMARY KEY, payload TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER DEFAULT 0, retry_at REAL DEFAULT 0, error TEXT DEFAULT '')")
         for col in ("metadata_status", "metadata_error", "metadata_json"):
@@ -734,6 +737,10 @@ def db_init():
         )
         con.execute("UPDATE auto_exports SET status='pending',message='waiting_frigate' WHERE status='failed' AND message='Frigate neodpovídal 15 minut po detekci'")
         con.execute("UPDATE event_parts SET status='pending',error='Frigate neodpovídá. Po obnovení spojení zkusím export znovu.' WHERE status='failed' AND export_id IS NULL AND error='Frigate neodpovídá.'")
+        con.execute("""UPDATE exports SET event_job_id=(SELECT a.id FROM auto_exports a
+            WHERE a.status='done' AND (a.message=exports.frigate_id OR
+              (a.camera=exports.camera AND a.detection_id=exports.detection_id AND a.start_ts=exports.start_ts AND a.end_ts=exports.end_ts))
+            ORDER BY a.id DESC LIMIT 1) WHERE auto=1 AND event_parent_id IS NULL AND event_job_id IS NULL""")
         acols = {r["name"] for r in con.execute("PRAGMA table_info(auto_exports)")}
         for col, spec in (("film_open", "INTEGER DEFAULT 0"), ("film_hits", "TEXT DEFAULT ''"),
                           ("film_last", "REAL DEFAULT 0"), ("ai_context", "TEXT")):
@@ -1856,6 +1863,46 @@ def films_overview(cfg):
     return out
 
 
+# Metrics I/O is isolated from the recording/AI scheduler in a single bounded child.
+_metrics_process = None
+_metrics_started = 0.0
+_metrics_last = 0.0
+_metrics_error = ""
+
+
+def metrics_path(cfg):
+    return Path(cfg["snapshot_dir"]).parent / "metrics.sqlite3"
+
+
+def metrics_days(cfg):
+    return max(1, min(365, int((cfg.get("metrics") or {}).get("keep_days", 30))))
+
+
+def metrics_tick(cfg):
+    global _metrics_process, _metrics_started, _metrics_last, _metrics_error
+    now = time.monotonic()
+    if _metrics_process is not None:
+        if _metrics_process.poll() is None:
+            if now - _metrics_started > 10:
+                _metrics_process.kill()
+                _metrics_error = "Zápis statistik na HDD překročil časový limit."
+            return  # Never create another child while disk I/O is still blocked.
+        error = _metrics_process.stderr.read().decode("utf-8", errors="replace")[-400:]
+        _metrics_process.stderr.close()
+        _metrics_error = error if _metrics_process.returncode else ""
+        _metrics_process = None
+    if now - _metrics_last < 60 or not storage_ready():
+        return
+    _metrics_last = now
+    try:
+        _metrics_process = subprocess.Popen([sys.executable, str(Path(__file__).with_name("metrics.py")), "collect",
+                                            str(metrics_path(cfg)), cfg["recordings_path"], str(DB_FILE), str(metrics_days(cfg))],
+                                           stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        _metrics_started = now
+    except OSError as exc:
+        _metrics_error = str(exc)
+
+
 # --------------------------------------------------------------------------- scheduler
 
 class AtmovioWatcher(threading.Thread):
@@ -1893,6 +1940,7 @@ class AtmovioWatcher(threading.Thread):
     # ---- hlavní smyčka
     def tick(self):
         cfg = load_config()
+        metrics_tick(cfg)
         try:
             self.watchdog(cfg)
         except Exception as e:
@@ -3453,7 +3501,7 @@ PersistentKeepalive = 25">{{ conf }}</textarea>
 {% endblock %}"""
 
 TEMPLATES["system_layout.html"] = """{% extends "base.html" %}{% block head %}{% endblock %}{% block content %}
-{% set pages = [('/system','Přehled zařízení','Stav Raspberry Pi a disků','cpu'),('/system/access','Hesla a přístupy','Přihlášení do Atmovio a Frigate','user'),('/system/integrations','API a propojení','Přístup pro další aplikace','link'),('/system/maintenance','Údržba a restart','Nahrávání a systémové služby','cog'),('/system/update','Aktualizace','Nové verze Atmovio','refresh')] %}
+{% set pages = [('/system','Přehled zařízení','Stav Raspberry Pi a disků','cpu'),('/system/graphs','Grafy','Historie zařízení a AI','cpu'),('/system/access','Hesla a přístupy','Přihlášení do Atmovio a Frigate','user'),('/system/integrations','API a propojení','Přístup pro další aplikace','link'),('/system/maintenance','Údržba a restart','Nahrávání a systémové služby','cog'),('/system/update','Aktualizace','Nové verze Atmovio','refresh')] %}
 <div class="system-workspace">
 <aside class="system-sidebar"><div class="system-sidebar-title">Systém<span>Správa zařízení</span></div>
 <nav aria-label="Nastavení systému">{% for href,label,description,icon in pages %}<a href="{{ href }}" {% if req_path==href %}aria-current="page"{% endif %}><span class="system-nav-icon" aria-hidden="true">{{ icons.get(icon,icons['cog'])|safe }}</span><span>{{ label }}</span><span class="system-nav-arrow" aria-hidden="true">›</span></a>{% endfor %}</nav>
@@ -3461,6 +3509,18 @@ TEMPLATES["system_layout.html"] = """{% extends "base.html" %}{% block head %}{%
 <section class="system-content">{% for href,label,description,icon in pages %}{% if req_path==href %}<header class="system-page-heading"><span class="eyebrow">Nastavení / Systém</span><h1>{{ label }}</h1><p>{{ description }}.</p></header>{% endif %}{% endfor %}
 {% block system_body %}{% endblock %}
 </section></div>
+{% endblock %}"""
+
+TEMPLATES["system_graphs.html"] = """{% extends "system_layout.html" %}{% block system_body %}
+<div x-data="systemGraphs()" class="metrics-page">
+<div class="card metrics-controls"><div class="actions">{% for value,label in [('today','Dnes'),('yesterday','Včera'),('3','3 dny'),('7','7 dnů'),('30','30 dnů')] %}<button type="button" class="btn sec small" :aria-pressed="preset === '{{ value }}'" @click="choose('{{ value }}')">{{ label }}</button>{% endfor %}</div>
+<form @submit.prevent="preset='custom';load()" class="row" style="margin-top:.8rem;align-items:end"><div><label>OD</label><input type="datetime-local" x-model="from" required></div><div><label>DO</label><input type="datetime-local" x-model="to" required></div><button class="btn small" :disabled="busy">Zobrazit</button></form>
+<p class="hint">Časové pásmo: {{ tz }} · měření každou minutu</p></div>
+<p role="status" x-text="message"></p><div class="metrics-grid" x-ref="charts"></div>
+</div>
+<details class="card"><summary>Uchovávání a význam grafů</summary><form method="post" action="/system/graphs/settings" class="row" style="align-items:end;margin-top:.8rem"><div><label>Uchovávat historii (dnů)</label><input name="keep_days" type="number" min="1" max="365" value="{{ keep_days }}" required></div><button class="btn small">Uložit</button></form>
+<p class="hint">Data jsou na externím disku. Při výpadku se nesbírají; graf mezery nedoplňuje. Starší historie se odstraní při dalším úspěšném sběru.</p>
+<p class="hint">CPU = využití všech jader, RAM = obsazená paměť. Zátěž = systémová fronta práce. U delších rozsahů se měření slučují: teplota a zaplnění ukazují maxima, CPU a zátěž průměry. AI ukazuje počty mezi měřeními; první měření po startu historie nebo delším výpadku slouží jako výchozí bod.</p></details>
 {% endblock %}"""
 
 TEMPLATES["system.html"] = """{% extends "system_layout.html" %}{% block system_body %}
@@ -3725,7 +3785,7 @@ TEMPLATES["camera.html"] = """{% extends "base.html" %}{% block actions %}<div c
 <div class="card" id="videa"><div class="section-head"><h2>Videa z této kamery</h2><a class="btn small sec" href="/videos">Všechna videa</a></div>
 {% if videos %}<div class="tw"><table><tr><th>Název</th><th>Úsek</th><th>Velikost</th><th></th></tr>
 {% for v in videos %}<tr><td><b>{{ v.name }}</b>{% if v.auto %} <span class="badge ok">auto</span>{% endif %}</td><td class="hint">{{ v.range_h }} ({{ v.duration_h }})</td><td class="hint">{{ v.size_h or '–' }}</td>
-<td style="white-space:nowrap">{% if v.ready %}<a class="btn small" href="/videos/{{ v.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ v.name }}">▶ Přehrát</a> <a class="btn small sec" href="/videos/{{ v.id }}/download">⬇</a>{% elif v.expired %}<span class="badge err">záznam už neexistuje</span>{% elif v.stuck %}<span class="badge warn">zaseklo se</span> <form method="post" action="/videos/{{ v.id }}/retry" style="display:inline"><input type="hidden" name="back" value="/camera/{{ camera }}"><button class="btn small" data-busy="Zadávám video znovu">↻ Znovu</button></form> <form method="post" action="/videos/{{ v.id }}/delete" style="display:inline" onsubmit="return confirm('Smazat video {{ v.name }}?')"><button class="btn small sec">Smazat</button></form>{% elif v.in_progress %}<span class="hint">vytváří se…</span>{% else %}<span class="hint">není k dispozici</span>{% endif %}{% if v.expired %} <form method="post" action="/videos/{{ v.id }}/delete" style="display:inline" onsubmit="return confirm('Smazat video {{ v.name }}?')"><button class="btn small sec">Smazat</button></form>{% endif %}</td></tr>{% endfor %}</table></div>
+<td style="white-space:nowrap">{% if v.ready %}<a class="btn small" href="/videos/{{ v.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ v.name }}">▶ Přehrát</a> <a class="btn small sec" href="/videos/{{ v.id }}/download">⬇</a>{% elif v.expired %}<span class="badge err">záznam už neexistuje</span>{% elif v.stuck %}<span class="badge warn">zaseklo se</span> <form method="post" action="/videos/{{ v.id }}/retry" style="display:inline"><input type="hidden" name="back" value="/camera/{{ camera }}"><button class="btn small" data-busy="Zadávám video znovu">↻ Znovu</button></form> <form method="post" action="/videos/{{ v.id }}/delete" style="display:inline" onsubmit="return confirm('Smazat video{% if v.parts_count %} i všechny jeho průběžné části{% endif %}?')"><button class="btn small sec">Smazat</button></form>{% elif v.in_progress %}<span class="hint">vytváří se…</span>{% else %}<span class="hint">není k dispozici</span>{% endif %}{% if v.expired %} <form method="post" action="/videos/{{ v.id }}/delete" style="display:inline" onsubmit="return confirm('Smazat video{% if v.parts_count %} i všechny jeho průběžné části{% endif %}?')"><button class="btn small sec">Smazat</button></form>{% endif %}</td></tr>{% endfor %}</table></div>
 {% else %}<p class="hint">Žádné video. Vytvoříš ho z detailu detekce, nebo zapni automatické video v <a href="/ai#kamery">Nastavení AI</a>.</p>{% endif %}</div>
 
 <div class="card"><div class="section-head"><h2>Nastavení kamery</h2><span class="hint">ID ve Frigate: <code>{{ camera }}</code></span></div>
@@ -3739,6 +3799,7 @@ TEMPLATES["youtube.html"] = """{% extends "base.html" %}{% block actions %}<a cl
 <p class="hint">Zrychlená videa s intrem, hudbou, nadpisem a popisem. Stav YouTube u každého videa ukazuje, zda již bylo publikováno.</p>
 <div class="section-head" id="studio"><h2>YouTube videa</h2><span class="hint">s intrem, textem a hudbou · připravená ke stažení{% if studio_auto %} · automatika zapnutá{% endif %}</span></div>
 {% if not studio %}<div class="card"><p class="hint">Začni výběrem klipu v <a href="/videos">AI videích</a>.</p></div>{% endif %}
+{% if part_groups %}<div class="card"><h2>Průběžné části</h2>{% for g in part_groups %}<a class="overview-row" href="/events/{{ g.id }}/parts"><span><b>{{ g.name }}</b><small>Hlavní video zatím není vytvořené</small></span><span class="badge info">{{ g.parts|length }} částí →</span></a>{% endfor %}</div>{% endif %}
 <div class="gallery videos">
 {% for s in studio %}<div class="shot video">
 {% if s.ready %}<a class="thumb" href="/studio/v/{{ s.id }}"><img src="{% if s.thumb %}/studio/v/{{ s.id }}/thumb.jpg{% endif %}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"><span class="play">▶</span><span class="dur">{{ s.duration_h }} · {{ s.speed }}×</span></a>
@@ -3764,6 +3825,8 @@ TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block actions %}<a cla
 {% if v.expired or v.stuck or v.missing %}<div class="media-reason" role="status">{% if v.expired %}Zdrojový záznam už byl odstraněn. Tento klip nelze znovu vytvořit.{% elif v.stuck %}Frigate export nedokončil, například po restartu. Pokud zdrojový záznam existuje, použij „Vytvořit znovu“.{% else %}Soubor se nepodařilo najít. Zkontroluj dostupnost disku a záznamů.{% endif %} <a href="/logs?src=frigate">Diagnostika</a></div>{% endif %}
 <div class="b">
 {% if v.video_kind == 'event' %}<div class="video-kind"><span class="badge ok">Souvislé video události</span><strong>{{ v.duration_h }} záznamu</strong></div>{% elif v.video_kind == 'part' %}<div class="video-kind"><span class="badge info">Průběžná část</span><span>{{ v.duration_h }} záznamu</span></div>{% elif v.video_kind == 'fixed' %}<div class="video-kind"><span class="badge">Pevná délka</span><span>{{ v.duration_h }} záznamu</span></div>{% endif %}
+{% if v.parts_count %}<a class="badge info" href="/events/{{ v.event_job_id }}/parts">Průběžné části · {{ v.parts_count }} →</a>{% endif %}
+{% for link in v.studio_links %}<a class="badge {{ link.tone }}" style="display:flex;margin:.35rem 0;padding:.5rem;white-space:normal" href="/studio/v/{{ link.id }}">▶ {{ link.label }} →</a>{% endfor %}
 <div class="title">{{ v.metadata_title or v.name }}{% if v.auto %} <span class="badge ok" title="Vytvořeno automaticky po upozornění">auto</span>{% endif %}</div>
 {% if v.metadata_description %}<p class="desc2">{{ v.metadata_description }}</p>{% endif %}
 <dl class="facts">
@@ -3774,10 +3837,16 @@ TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block actions %}<a cla
 <dt>Smaže se</dt><dd>{% if v.days_left > 1 %}za {{ v.days_left }} dní{% elif v.days_left == 1 %}zítra{% else %}dnes{% endif %}</dd>
 </dl>
 <div class="acts"><a class="btn small sec" href="/recording/{{ v.id }}">Záznam a návrh AI</a>{% if v.ready %}<a class="btn small" href="/videos/{{ v.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ v.name }}">▶ Přehrát</a><a class="btn small" href="/studio/new/{{ v.id }}" title="Zrychlit, přidat intro, text a hudbu">Vytvořit YouTube video</a><a class="btn small sec" href="/videos/{{ v.id }}/download">⬇ Stáhnout MP4</a>{% endif %}{% if (v.stuck or v.missing) and not v.expired %}<form method="post" action="/videos/{{ v.id }}/retry"><button class="btn small" data-busy="Zadávám video znovu">↻ Vytvořit znovu</button></form>{% endif %}{% if v.detection_id %}<a class="btn small sec" href="/detection/{{ v.detection_id }}">Detekce</a>{% endif %}
-<form method="post" action="/videos/{{ v.id }}/delete" onsubmit="return confirm('Smazat video {{ v.name }}?')"><button class="btn small sec">Smazat</button></form></div></div></div>{% endfor %}
+<form method="post" action="/videos/{{ v.id }}/delete" onsubmit="return confirm('Smazat video{% if v.parts_count %} i všechny jeho průběžné části{% endif %}?')"><button class="btn small sec">Smazat</button></form></div></div></div>{% endfor %}
 </div>
 <p class="hint">Uchovávání klipů a výstupů: {{ keep_days }} dní. <a href="/videos/settings">Změnit nastavení</a></p>
-{% if pending_auto or videos|selectattr('in_progress')|list %}<div x-data="autorefresh(20)"></div>{% endif %}
+{% if pending_auto or videos|selectattr('in_progress')|list or studio|selectattr('status', 'in', ('queued','rendering'))|list or studio|selectattr('yt_status', 'in', ('queued','uploading'))|list %}<div x-data="autorefresh(20)"></div>{% endif %}
+{% endblock %}"""
+
+TEMPLATES["event_parts.html"] = """{% extends "base.html" %}{% block content %}
+<div class="section-head"><h1>Průběžné části</h1><a class="btn sec small" href="/videos">Zpět na AI videa</a></div>
+<p>{{ group.name }}</p>{% if group.main %}<a class="btn" href="/recording/{{ group.main.id }}">Hlavní video · {{ group.main.duration_h }}</a>{% else %}<p class="hint">Části lze přehrát už během přípravy hlavního videa.</p>{% endif %}
+<div class="card" style="margin-top:1rem">{% for v in group.parts %}<div class="overview-row"><span><b>Část {{ loop.index }} · {{ v.duration_h }}</b><small>{{ v.range_h }}</small>{% for link in v.studio_links %}<a class="badge {{ link.tone }}" href="/studio/v/{{ link.id }}">{{ link.label }} →</a>{% endfor %}<small>{{ 'Uloženo' if v.ready else ('Vyžaduje kontrolu' if v.stuck or v.expired else 'Připravuje se') }}</small></span><a class="btn small sec" href="/recording/{{ v.id }}">{{ 'Přehrát' if v.ready else 'Detail' }} →</a></div>{% endfor %}</div>
 {% endblock %}"""
 
 TEMPLATES["ai_settings_nav.html"] = """<nav class="ai-settings-flow" aria-label="Nastavení AI a videí"><a href="/ai" {% if req_path == '/ai' %}aria-current="page"{% endif %}>AI detekce</a><span aria-hidden="true">→</span><a href="/videos/settings" {% if req_path == '/videos/settings' %}aria-current="page"{% endif %}>Ukládání AI videí</a></nav>"""
@@ -6071,14 +6140,44 @@ def list_videos(cfg, limit: int = -1, thumbnails: bool = True) -> list:
 
 
 def delete_export(cfg, rec: dict):
+    if not _event_video_lock.acquire(blocking=False):
+        return False
+    try:
+        with db() as con:
+            current = con.execute("SELECT * FROM exports WHERE id=?", (rec["id"],)).fetchone()
+            if not current:
+                return True
+            rec = dict(current)
+            jid = rec.get("event_job_id")
+            parts = [dict(r) for r in con.execute("SELECT * FROM exports WHERE event_parent_id=?", (jid,))] if jid else []
+            members = parts + [rec]
+            for member in members:
+                if con.execute("SELECT 1 FROM studio_videos WHERE export_id=? AND (status IN ('queued','rendering') OR yt_status IN ('queued','uploading'))", (member["id"],)).fetchone():
+                    return False
+        # Keep the parent until all child deletions are acknowledged; failures remain retryable.
+        for member in members:
+            if not _delete_single_export(cfg, member):
+                return False
+        if jid:
+            with db() as con:
+                con.execute("DELETE FROM event_parts WHERE job_id=?", (jid,))
+        return True
+    finally:
+        _event_video_lock.release()
+
+
+def _delete_single_export(cfg, rec: dict):
     with db() as con:
         busy = con.execute("SELECT 1 FROM studio_videos WHERE export_id=? AND (status IN ('queued','rendering') OR yt_status IN ('queued','uploading')) LIMIT 1", (rec["id"],)).fetchone()
     if busy:
         return False
     try:
-        requests.delete(cfg["frigate_url"].rstrip("/") + f"/api/export/{rec['frigate_id']}", timeout=15)
+        response = requests.delete(cfg["frigate_url"].rstrip("/") + f"/api/export/{rec['frigate_id']}", timeout=15)
+        if not response.ok and response.status_code != 404:
+            raise RuntimeError(f"HTTP {response.status_code}")
     except Exception as e:
         log(f"Export {rec['frigate_id']}: smazání ve Frigate selhalo: {e}")
+        return False
     own = Path(cfg["snapshot_dir"]) / "exports" / f"{rec['id']}.jpg"
     own.unlink(missing_ok=True)
     with db() as con:
@@ -6675,9 +6774,8 @@ def _process_auto_exports(cfg):
             _auto_export_finish(job, "failed", str(e))
             continue
         eid = record_export(cfg, fid, job["detection_id"], job["camera"], job["name"], job["start_ts"], job["end_ts"], auto=1)
-        if job.get("ai_context"):
-            with db() as con:
-                con.execute("UPDATE exports SET ai_context=? WHERE id=?", (job["ai_context"], eid))
+        with db() as con:
+            con.execute("UPDATE exports SET event_job_id=?,ai_context=? WHERE id=?", (job["id"],job.get("ai_context"),eid))
         _auto_export_finish(job, "done", fid)
         log(f"[{job['camera']}] Automatické video „{job['name']}“ zadáno k vytvoření ({fid})")
 
@@ -6793,12 +6891,78 @@ def preparing_video_exports(videos):
     return rows
 
 
+def studio_source_status(row):
+    status, yt = row.get("status"), row.get("yt_status")
+    active = status in ("queued", "rendering") or yt in ("queued", "uploading")
+    if status == "rendering":
+        label, tone = "Vytváří se YouTube video", "info"
+    elif status == "queued":
+        label, tone = "YouTube video čeká ve frontě", "warn"
+    elif yt == "uploading":
+        label, tone = "Nahrává se na YouTube", "info"
+    elif yt == "queued":
+        label, tone = "Čeká na nahrání na YouTube", "warn"
+    elif yt == "done":
+        label, tone = "Nahráno na YouTube", "ok"
+    elif yt == "failed":
+        label, tone = "Nahrání na YouTube selhalo", "err"
+    elif status == "failed":
+        label, tone = "Tvorba YouTube videa selhala", "err"
+    elif row.get("ready"):
+        label, tone = "YouTube video připravené", "ok"
+    else:
+        label, tone = "YouTube video není dostupné", "warn"
+    return dict(id=row["id"], label=label, tone=tone, active=active)
+
+
+def attach_studio_sources(videos, studio):
+    by_export = {}
+    for row in studio:
+        by_export.setdefault(row["export_id"], []).append(studio_source_status(row))
+    for video in videos:
+        video["studio_links"] = by_export.get(video["id"], [])
+
+
+def group_event_videos(videos):
+    groups = {}
+    for v in videos:
+        jid = v.get("event_parent_id") or v.get("event_job_id")
+        if not jid:
+            continue
+        group = groups.setdefault(jid, dict(id=jid, main=None, parts=[], name=v["name"]))
+        if v.get("event_parent_id"):
+            group["parts"].append(v)
+        else:
+            group["main"] = v
+            group["name"] = v["name"]
+    for group in groups.values():
+        group["parts"].sort(key=lambda v:v["start_ts"])
+        if group["main"]:
+            group["main"]["parts_count"] = len(group["parts"])
+    return groups
+
+
+@app.get("/events/{jid}/parts", response_class=HTMLResponse)
+def event_parts_page(request: Request, jid: int):
+    cfg = load_config()
+    videos = list_videos(cfg, thumbnails=False)
+    attach_studio_sources(videos, studio_rows(cfg))
+    group = group_event_videos(videos).get(jid)
+    if not group:
+        return RedirectResponse("/videos", status_code=303)
+    return render(request, "event_parts.html", "Průběžné části události", group=group)
+
+
 @app.get("/videos", response_class=HTMLResponse)
 def videos_page(request: Request):
     cfg = load_config()
-    videos = list_videos(cfg)
-    return render(request, "videos.html", "AI videa", failed_auto=failed_auto_exports(), pending_auto=pending_auto_exports(cfg) + preparing_video_exports(videos), videos=videos, keep_days=int(cfg.get("export_keep_days", 30) or 30),
-                  ready=storage_ready(), studio=studio_rows(cfg), studio_auto=bool(studio_cfg(cfg).get("auto")))
+    all_videos = list_videos(cfg)
+    studio = studio_rows(cfg)
+    attach_studio_sources(all_videos, studio)
+    groups = group_event_videos(all_videos)
+    videos = [v for v in all_videos if not v.get("event_parent_id")]
+    return render(request, "videos.html", "AI videa", part_groups=[g for g in groups.values() if g["parts"] and not g["main"]], failed_auto=failed_auto_exports(), pending_auto=pending_auto_exports(cfg) + preparing_video_exports(videos), videos=videos, keep_days=int(cfg.get("export_keep_days", 30) or 30),
+                  ready=storage_ready(), studio=studio, studio_auto=bool(studio_cfg(cfg).get("auto")))
 
 
 @app.get("/youtube", response_class=HTMLResponse)
@@ -6931,7 +7095,7 @@ def video_delete(request: Request, vid: int):
         if delete_export(cfg, dict(rec)):
             flash(request, f"Video „{rec['name']}“ smazáno.")
         else:
-            flash(request, "Zdroj používá zpracovávané video. Počkej na dokončení.", "err")
+            flash(request, "Smazání není dokončené: video nebo jeho část se zpracovává, případně Frigate nepotvrdil smazání. Zkus to později.", "err")
     return RedirectResponse(request.headers.get("referer") or "/videos", status_code=303)
 
 
@@ -9148,6 +9312,52 @@ def logs_download(request: Request, src: str = "atmovio"):
 
 
 # ---- system
+
+@app.get("/system/graphs", response_class=HTMLResponse)
+def system_graphs(request: Request):
+    cfg = load_config()
+    return render(request, "system_graphs.html", "Grafy systému", tz=cfg["tz"], keep_days=metrics_days(cfg))
+
+
+@app.post("/system/graphs/settings")
+def metrics_settings(request: Request, keep_days: int = Form(...)):
+    if not 1 <= keep_days <= 365:
+        flash(request, "Zadej uchovávání od 1 do 365 dnů.", "err")
+    else:
+        with edit_config() as cfg:
+            cfg.setdefault("metrics", {})["keep_days"] = keep_days
+        flash(request, "Uchovávání historie uloženo.")
+    return RedirectResponse("/system/graphs", status_code=303)
+
+
+@app.get("/system/graphs/data")
+def metrics_data(request: Request, preset: str = "today", from_time: str = "", to_time: str = ""):
+    cfg = load_config()
+    now = dt.datetime.now(ZoneInfo(cfg["tz"]))
+    midnight = now.replace(hour=0,minute=0,second=0,microsecond=0)
+    try:
+        if preset == "custom":
+            start, end = clip_time(cfg, from_time), clip_time(cfg, to_time)
+        elif preset == "yesterday":
+            start,end = (midnight-dt.timedelta(days=1)).timestamp(),midnight.timestamp()-1
+        elif preset in ("today", "3", "7", "30"):
+            start,end = (midnight-dt.timedelta(days=(int(preset)-1 if preset.isdigit() else 0))).timestamp(),now.timestamp()
+        else:
+            raise ValueError("Neplatný časový rozsah.")
+        if not 0 < end-start <= 366*86400 or start > now.timestamp():
+            raise ValueError("Vyber rozsah OD–DO nejvýše 365 dnů, který nezačíná v budoucnosti.")
+        if not storage_ready():
+            raise ValueError("HDD není připravený. Historie nyní není dostupná.")
+        process = subprocess.run([sys.executable, str(Path(__file__).with_name("metrics.py")), "query", str(metrics_path(cfg)), str(start), str(end)],
+                                 capture_output=True, text=True, timeout=8)
+        if process.returncode:
+            raise ValueError("Historii se nepodařilo přečíst z HDD.")
+        data = json.loads(process.stdout)
+        data.update(start=start,end=end,from_time=clip_local(cfg,start)[:16],to_time=clip_local(cfg,end)[:16],tz=cfg["tz"],error=_metrics_error)
+        return JSONResponse(data, headers={"Cache-Control":"no-store"})
+    except (ValueError, OSError, subprocess.TimeoutExpired) as exc:
+        return JSONResponse({"error":str(exc)}, status_code=400, headers={"Cache-Control":"no-store"})
+
 
 @app.get("/system/runtime-status")
 def runtime_status(request: Request):

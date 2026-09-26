@@ -14,6 +14,9 @@ js = Path("atmovio/static/atmovio.js").read_text(encoding="utf-8").rstrip("\n")
 for name, text in (("atmovio.css", css), ("atmovio.js", js)):
     if "ATMOVIO_CSS_EOF" in text or "ATMOVIO_JS_EOF" in text:
         raise SystemExit(f"Kolize heredoc značky v {name}.")
+metrics = Path("atmovio/metrics.py").read_text(encoding="utf-8").rstrip("\n")
+ast.parse(metrics)
+if "ATMOVIO_METRICS_EOF" in metrics: raise SystemExit("Kolize metrics heredoc")
 ast.parse(storage)
 ast.parse(app)
 if "ATMOVIO_APP_EOF" in app or "ATMOVIO_REQUIREMENTS_EOF" in requirements or "ATMOVIO_STORAGE_EOF" in storage:
@@ -22,7 +25,7 @@ check = "--check" in sys.argv[1:]
 for tpl, out in (("install.template.sh", "../install.sh"), ("update.template.sh", "../update-atmovio.sh")):
     txt = Path(tpl).read_text(encoding="utf-8")
     for marker, value in (("__ATMOVIO_APP__", app), ("__ATMOVIO_REQUIREMENTS__", requirements), ("__ATMOVIO_STORAGE__", storage),
-                          ("__ATMOVIO_CSS__", css), ("__ATMOVIO_JS__", js)):
+                          ("__ATMOVIO_METRICS__", metrics), ("__ATMOVIO_CSS__", css), ("__ATMOVIO_JS__", js)):
         if txt.count(marker) != 1:
             raise SystemExit(f"{tpl}: značka {marker} musí být právě jednou.")
         txt = txt.replace(marker, value)

@@ -1186,3 +1186,13 @@ header.top nav.menu > a.active, header.top nav.menu .dd > button.active { backgr
 .dashboard-main .cam .ai-note .desc { display: none; }
 .dashboard-main .cam .ai-note .t b { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .dashboard-main .cam .acts .btn { padding: .45rem .6rem; font-size: .8rem; }
+.metrics-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.metric-chart{min-width:0;padding:18px!important;margin:0!important}
+.metric-chart h2{font-size:1rem;margin:0}.metric-value{font-size:1.3rem;color:var(--pico-primary)}
+.metric-chart svg{width:100%;display:block;height:auto}.metric-gridline{stroke:var(--pico-muted-border-color);stroke-width:1}
+.metric-axis{font-size:12px;fill:var(--pico-muted-color)}.metric-dot:hover{r:6}
+.metrics-legend{display:flex;flex-wrap:wrap;gap:10px;font-size:.78rem;color:var(--pico-muted-color)}
+.metrics-legend span{display:flex;align-items:center;gap:5px}.metrics-legend i{width:8px;height:8px;border-radius:50%}
+.metric-empty{min-height:180px;display:grid;place-items:center}
+.metrics-controls .btn[aria-pressed=true]{background:var(--pico-primary-background);color:#fff;opacity:1}
+@media(max-width:950px){.metrics-grid{grid-template-columns:minmax(0,1fr)}}

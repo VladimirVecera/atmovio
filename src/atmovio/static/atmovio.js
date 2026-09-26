@@ -15,6 +15,29 @@
 
   // ---------- Alpine komponenty ----------
   document.addEventListener('alpine:init', function () {
+    Alpine.data('systemGraphs', function () {
+      return {preset:'today', from:'', to:'', busy:false, message:'', controller:null,
+        init: function () { this.load(); },
+        destroy: function () { if(this.controller) this.controller.abort(); },
+        choose: function (value) { this.preset=value; this.load(); },
+        load: async function () {
+          if(this.controller) this.controller.abort();
+          const controller=new AbortController();this.controller=controller;this.busy=true;
+          try {
+            const params=new URLSearchParams({preset:this.preset,from_time:this.from,to_time:this.to});
+            const response=await fetch('/system/graphs/data?'+params,{credentials:'same-origin',signal:controller.signal});
+            const data=await response.json();if(controller!==this.controller)return;
+            if(!response.ok)throw new Error(data.error||'Historie není dostupná.');
+            this.from=data.from_time;this.to=data.to_time;
+            const stamp=t=>new Date(t*1000).toLocaleString('cs-CZ',{timeZone:data.tz});
+            this.message=data.error || (data.points.length ? 'Poslední měření: '+stamp(data.last) : 'Pro tento rozsah nejsou měření. Historie začíná až po aktualizaci.');
+            window.swMetricsCharts(this.$refs.charts,data);
+          } catch(error) {
+            if(error.name!=='AbortError'){this.message=error.message;this.$refs.charts.replaceChildren();}
+          } finally {if(controller===this.controller)this.busy=false;}
+        }
+      };
+    });
     Alpine.data('youtubeUpload', function (id, initial) {
       return {state:initial, offline:false, timer:null, stopped:false,
         init: function () { this.check(); },
@@ -644,4 +667,50 @@ window.swRecordingSpeed = function (button, rate) {
   try { video.playbackRate = rate; if (rate > 1) video.muted = true; }
   catch (_) { return; }
   button.parentElement.querySelectorAll('button').forEach(function (b) { b.setAttribute('aria-pressed', b === button ? 'true' : 'false'); });
+};
+
+// SVG charts use numeric measurements only, without third-party scripts or external telemetry.
+window.swMetricsCharts = function (root,data) {
+  root.replaceChildren();
+  const specs=[['Zaplnění HDD','%',[['disk','Využito','#2563eb']],100],
+    ['Teplota CPU','°C',[['temperature','Teplota','#e67e22']],null],
+    ['Využití CPU','%',[['cpu','CPU','#7c3aed']],100],
+    ['Paměť RAM','%',[['ram','RAM','#0891b2']],100],
+    ['Zátěž systému','',[['load','Load 1 min','#059669']],null],
+    ['Aktivita AI','',[['calls','Vyhodnocení','#2563eb'],['interesting','Zajímavé jevy','#16a34a'],['errors','Chyby','#dc2626']],null]];
+  const ns='http://www.w3.org/2000/svg';
+  const svgNode=(tag,attrs,text)=>{const el=document.createElementNS(ns,tag);Object.entries(attrs||{}).forEach(([k,v])=>el.setAttribute(k,v));if(text!==undefined)el.textContent=text;return el;};
+  const number=v=>Number.isFinite(v);
+  const format=v=>v.toLocaleString('cs-CZ',{maximumFractionDigits:1});
+  const time=t=>new Date(t*1000).toLocaleString('cs-CZ',{timeZone:data.tz,day:'numeric',month:'numeric',hour:'2-digit',minute:'2-digit'});
+  for(const [title,unit,series,fixed] of specs){
+    const card=document.createElement('section');card.className='card metric-chart';
+    const head=document.createElement('div');head.className='section-head';const h=document.createElement('h2');h.textContent=title;head.append(h);card.append(head);root.append(card);
+    const width=Math.max(260,card.clientWidth-36),right=width-16;
+    const valid=data.points.flatMap(p=>series.map(([key])=>p[key])).filter(number);
+    if(!valid.length){const empty=document.createElement('p');empty.className='hint metric-empty';empty.textContent='Zatím bez měření';card.append(empty);root.append(card);continue;}
+    if(series.length===1){const key=series[0][0],last=[...data.points].reverse().find(p=>number(p[key]));const value=document.createElement('strong');value.className='metric-value';value.textContent=format(last[key])+' '+unit;head.append(value);}
+    const max=fixed||Math.max(1,...valid)*1.15;
+    const svg=svgNode('svg',{viewBox:'0 0 '+width+' 240',role:'img','aria-label':title+' od '+time(data.start)+' do '+time(data.end)});
+    svg.append(svgNode('title',{},title));
+    const x=t=>48+Math.max(0,Math.min(1,(t-data.start)/(data.end-data.start)))*(right-48);
+    const y=v=>204-Math.max(0,Math.min(1,v/max))*178;
+    for(let i=0;i<5;i++){const value=max*i/4,py=y(value);svg.append(svgNode('line',{x1:48,x2:right,y1:py,y2:py,class:'metric-gridline'}));svg.append(svgNode('text',{x:40,y:py+4,'text-anchor':'end',class:'metric-axis'},format(value)));}
+    svg.append(svgNode('text',{x:48,y:230,class:'metric-axis'},time(data.start)),svgNode('text',{x:right,y:230,'text-anchor':'end',class:'metric-axis'},time(data.end)));
+    for(const [key,label,color] of series){
+      let path='',prev=null;
+      for(const point of data.points){
+        if(!number(point[key])){prev=null;continue;}
+        const px=x(point.ts),py=y(point[key]);
+        path+=(prev!==null&&point.ts-prev<=Math.max(180,data.bucket*2)?' L':' M')+px+' '+py;prev=point.ts;
+        const dot=svgNode('circle',{cx:px,cy:py,r:3,fill:color,class:'metric-dot'});
+        dot.append(svgNode('title',{},time(point.ts)+' · '+label+': '+format(point[key])+' '+unit+(key==='disk'?' · '+format(point.used_gb)+' / '+format(point.total_gb)+' GiB':'')));svg.append(dot);
+      }
+      svg.append(svgNode('path',{d:path,fill:'none',stroke:color,'stroke-width':2,'pointer-events':'none'}));
+    }
+    card.append(svg);const legend=document.createElement('div');legend.className='metrics-legend';
+    for(const [,label,color] of series){const item=document.createElement('span');const dot=document.createElement('i');dot.style.background=color;item.append(dot,document.createTextNode(label));legend.append(item);}
+    if(series.length>1){const interval=document.createElement('small');interval.textContent='Součty za interval přibližně '+Math.ceil(data.bucket/60)+' min';legend.append(interval);}
+    card.append(legend);root.append(card);
+  }
 };

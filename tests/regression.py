@@ -84,6 +84,23 @@ with contextlib.ExitStack() as stack:
  assert client.post('/login',data={'password':os.environ['ATMOVIO_ADMIN_PASSWORD']}).status_code==403;ok('POST without CSRF rejected')
  assert client.post('/login',data={'password':os.environ['ATMOVIO_ADMIN_PASSWORD'],'csrf_token':token},follow_redirects=False).status_code==303
  ok('Session login with CSRF')
+ graphs=client.get('/system/graphs');assert graphs.status_code==200
+ metrics_token=re.search(r'name="csrf_token" value="([^"]+)"',graphs.text)[1]
+ with patch.object(a,'storage_ready',return_value=True),patch.object(a.subprocess,'run',return_value=subprocess.CompletedProcess([],0,json.dumps({'points':[],'first':None,'last':None}),'')) as query:
+  response=client.get('/system/graphs/data?preset=yesterday')
+  assert response.status_code==200 and response.json()['end']>response.json()['start']
+  assert query.call_args.kwargs['timeout']==8
+  assert client.get('/system/graphs/data?preset=custom&from_time=bad&to_time=bad').status_code==400
+ with patch.object(a,'storage_ready',return_value=False),patch.object(a.subprocess,'run') as query:
+  assert client.get('/system/graphs/data').status_code==400
+  query.assert_not_called()
+ assert client.post('/system/graphs/settings',data={'keep_days':90}).status_code==403
+ assert client.post('/system/graphs/settings',data={'keep_days':90,'csrf_token':metrics_token},follow_redirects=False).status_code==303
+ assert a.load_config()['metrics']['keep_days']==90
+ client.post('/system/graphs/settings',data={'keep_days':0,'csrf_token':metrics_token},follow_redirects=False)
+ assert a.load_config()['metrics']['keep_days']==90
+ ok('Metrics page, bounded query, invalid ranges, offline guard, CSRF and retention validation')
+
  with patch.object(a,'openverse_headers',return_value={}), patch.object(a.requests,'get') as search:
   search.return_value.status_code=200;search.return_value.ok=True;search.return_value.json.return_value={'results':[]}
   a.music_search(cfg,'piano','medium','cc0','A & B','mp3')

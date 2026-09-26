@@ -63,6 +63,9 @@ ATMOVIO_APP_EOF
 cat > "$STAGE/storage_guard.py" <<'ATMOVIO_STORAGE_EOF'
 __ATMOVIO_STORAGE__
 ATMOVIO_STORAGE_EOF
+cat > "$STAGE/metrics.py" <<'ATMOVIO_METRICS_EOF'
+__ATMOVIO_METRICS__
+ATMOVIO_METRICS_EOF
 cat > "$STAGE/requirements.txt" <<'ATMOVIO_REQUIREMENTS_EOF'
 __ATMOVIO_REQUIREMENTS__
 ATMOVIO_REQUIREMENTS_EOF
@@ -96,10 +99,11 @@ write_static "$STAGE/static"
 python3 -m venv "$NEW_VENV"
 "$NEW_VENV/bin/python" -m pip install -q -r "$STAGE/requirements.txt"
 "$NEW_VENV/bin/python" -m pip check
-ATMOVIO_DIR="$SKY_DIR" PYTHONPATH="$STAGE" PYTHONDONTWRITEBYTECODE=1 "$NEW_VENV/bin/python" -c 'import app, storage_guard; app.load_config()'
+ATMOVIO_DIR="$SKY_DIR" PYTHONPATH="$STAGE" PYTHONDONTWRITEBYTECODE=1 "$NEW_VENV/bin/python" -c 'import app, storage_guard, metrics; app.load_config()'
 cp -a "$SKY_DIR/app.py" "$BACKUP/app.py"
 if [[ -f "$SKY_DIR/storage_guard.py" ]]; then cp -a "$SKY_DIR/storage_guard.py" "$BACKUP/storage_guard.py"; fi
 if [[ -f "$SKY_DIR/requirements.txt" ]]; then cp -a "$SKY_DIR/requirements.txt" "$BACKUP/requirements.txt"; fi
+if [[ -f "$SKY_DIR/metrics.py" ]]; then cp -a "$SKY_DIR/metrics.py" "$BACKUP/metrics.py"; fi
 cp -a "$SKY_DIR/config.json" "$BACKUP/config.json"
 if [[ -d "$SKY_DIR/static" ]]; then cp -a "$SKY_DIR/static" "$BACKUP/static"; fi
 
@@ -110,6 +114,7 @@ rollback() {
   systemctl stop atmovio.service
   cp -a "$BACKUP/app.py" "$SKY_DIR/app.py"
   if [[ -f "$BACKUP/storage_guard.py" ]]; then cp -a "$BACKUP/storage_guard.py" "$SKY_DIR/storage_guard.py"; fi
+  if [[ -f "$BACKUP/metrics.py" ]]; then cp -a "$BACKUP/metrics.py" "$SKY_DIR/metrics.py"; fi
   if [[ -f "$BACKUP/requirements.txt" ]]; then cp -a "$BACKUP/requirements.txt" "$SKY_DIR/requirements.txt"; fi
   if [[ -d "$BACKUP/static" ]]; then rm -rf "$SKY_DIR/static"; cp -a "$BACKUP/static" "$SKY_DIR/static"; fi
   if [[ -e "$BACKUP/venv" || -L "$BACKUP/venv" ]]; then
@@ -130,6 +135,7 @@ mv "$SKY_DIR/venv" "$BACKUP/venv"
 ln -s "$NEW_VENV" "$SKY_DIR/venv"
 mv "$STAGE/app.py" "$SKY_DIR/app.py"
 mv "$STAGE/storage_guard.py" "$SKY_DIR/storage_guard.py"
+mv "$STAGE/metrics.py" "$SKY_DIR/metrics.py"
 mv "$STAGE/requirements.txt" "$SKY_DIR/requirements.txt"
 mkdir -p "$SKY_DIR/static/vendor"
 mv -f "$STAGE/static/atmovio.css" "$SKY_DIR/static/atmovio.css"
