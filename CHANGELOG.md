@@ -2,6 +2,15 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 5.3.8 – 2026-09-26 – storage stability, export recovery and log copying
+
+- Preserve managed recording mode during upgrades so restarting the guard does not unnecessarily recreate Frigate. Allow up to 30 seconds for a bounded write probe, while still reacting to explicit write failures and mount loss.
+- Offer recovery of missing exports using their original full range; check recorder/source availability before retrying and protect ready or actively creating files.
+- Keep full and intermediate exports pending through recorder outages, retaining their original time ranges; recover legacy connectivity failures on upgrade.
+- Treat failed recording API requests as unavailable, not proof of missing recordings.
+- Keep automatic file creation and interrupted exports visible in the AI video overview until a saved file is confirmed.
+- Copy hidden logs and input values using a selected textarea on HTTP; offer manual copying when the browser rejects clipboard access.
+
 ## 5.3.7 – 2026-09-26 – compact dashboard for any camera count
 
 - Show all dashboard cameras, removing the previous four-camera limit.

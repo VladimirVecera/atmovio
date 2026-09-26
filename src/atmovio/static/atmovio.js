@@ -474,13 +474,28 @@
       btn.textContent = ok ? 'Zkopírováno ✓' : 'Vyber text a stiskni Ctrl/Cmd+C';
       setTimeout(function () { btn.textContent = old; }, 2500);
     }
-    if (navigator.clipboard && window.isSecureContext) {
-      navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); });
-      return;
+    function fallback() {
+      // Hidden <pre> and input values cannot reliably be copied with a DOM range.
+      var input = document.createElement('textarea');
+      input.value = text; input.readOnly = true;
+      input.setAttribute('aria-label', 'Text ke zkopírování');
+      input.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;';
+      document.body.appendChild(input);
+      input.focus(); input.select(); input.setSelectionRange(0, input.value.length);
+      var copied = false;
+      try { copied = document.execCommand('copy') === true; } catch (e) {}
+      if (copied) {
+        input.remove(); if (btn) btn.focus(); done(true);
+      } else {
+        // Leave a visible, selected copy for manual Cmd+C, even when the source was hidden.
+        input.style.cssText = 'position:fixed;z-index:10000;inset:20% 5%;width:90%;height:50%;padding:1rem;';
+        input.focus(); input.select(); done(false);
+        input.addEventListener('blur', function () { input.remove(); }, {once:true});
+      }
     }
-    var r = document.createRange(); r.selectNodeContents(node);
-    var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
-    try { done(document.execCommand('copy')); } catch (e) { done(false); }
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(function () { done(true); }, fallback);
+    } else { fallback(); }
   };
 
   // ---------- Náhledy kamer: když obrázek nejde, ukázat text místo prázdna ----------

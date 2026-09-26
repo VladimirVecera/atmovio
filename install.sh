@@ -475,7 +475,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "5.3.7"
+APP_VERSION = "5.3.8"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -1151,6 +1151,8 @@ def db_init():
                 created TEXT NOT NULL
             )"""
         )
+        con.execute("UPDATE auto_exports SET status='pending',message='waiting_frigate' WHERE status='failed' AND message='Frigate neodpovídal 15 minut po detekci'")
+        con.execute("UPDATE event_parts SET status='pending',error='Frigate neodpovídá. Po obnovení spojení zkusím export znovu.' WHERE status='failed' AND export_id IS NULL AND error='Frigate neodpovídá.'")
         acols = {r["name"] for r in con.execute("PRAGMA table_info(auto_exports)")}
         for col, spec in (("film_open", "INTEGER DEFAULT 0"), ("film_hits", "TEXT DEFAULT ''"),
                           ("film_last", "REAL DEFAULT 0"), ("ai_context", "TEXT")):
@@ -4170,7 +4172,7 @@ TEMPLATES["youtube.html"] = """{% extends "base.html" %}{% block actions %}<a cl
 
 TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block actions %}<a class="btn small sec" href="/videos/settings">Nastavení AI videí</a>{% endblock %}{% block content %}
 <div class="workflow"><a href="/history">1 · AI detekce</a><span>→</span><b>2 · AI videa</b><span>→</span><a href="/youtube">3 · YouTube videa</a></div>
-{% if pending_auto %}<section class="card pending-videos"><div class="section-head"><h2>Rozpracovaná videa <span class="badge warn">{{ pending_auto|length }}</span></h2><span class="hint">Stav se obnovuje automaticky</span></div>{% for j in pending_auto %}<div class="video-status waiting"><div class="video-status-icon" aria-hidden="true">▣</div><div><strong>{{ j.video_status.title }}</strong><b class="video-status-name">{{ j.name }}</b><p>{{ j.video_status.detail }}</p>{% if j.part_error %}<p class="status-warning">Průběžná část: {{ j.part_error }}</p>{% endif %}</div>{% if j.ready_part_id %}<a class="btn small" href="/recording/{{ j.ready_part_id }}">Přehrát uloženou část · {{ j.parts_ready }}</a>{% endif %}<a class="btn small sec" href="/detection/{{ j.detection_id }}">Detekce →</a></div>{% endfor %}</section>{% endif %}
+{% if pending_auto %}<section class="card pending-videos"><div class="section-head"><h2>Rozpracovaná videa <span class="badge warn">{{ pending_auto|length }}</span></h2><span class="hint">Stav se obnovuje automaticky</span></div>{% for j in pending_auto %}<div class="video-status {{ j.video_status.tone }}"><div class="video-status-icon" aria-hidden="true">▣</div><div><strong>{{ j.video_status.title }}</strong><b class="video-status-name">{{ j.name }}</b><p>{{ j.video_status.detail }}</p>{% if j.part_error %}<p class="status-warning">Průběžná část: {{ j.part_error }}</p>{% endif %}</div>{% if j.ready_part_id %}<a class="btn small" href="/recording/{{ j.ready_part_id }}">Přehrát uloženou část · {{ j.parts_ready }}</a>{% endif %}{% if j.export_id %}<a class="btn small sec" href="/recording/{{ j.export_id }}">Detail videa →</a>{% elif j.detection_id %}<a class="btn small sec" href="/detection/{{ j.detection_id }}">Detekce →</a>{% endif %}</div>{% endfor %}</section>{% endif %}
 {% if failed_auto %}<details class="card" open><summary>Automatická videa, která se nepodařilo vytvořit</summary>{% for j in failed_auto %}<p><a href="/detection/{{ j.detection_id }}">{{ j.name }}</a> · {{ j.message }}</p>{% endfor %}<p class="hint">V detailu detekce lze ověřit dostupnost záznamu a zadat nový klip.</p></details>{% endif %}
 <div class="section-head" style="margin-top:1.2rem"><h2>AI videa</h2><span class="hint">zdrojové klipy z detekcí a ručních exportů</span></div>
 {% if not videos and pending_auto %}<p class="hint">Hotová videa se zde objeví po dokončení exportu. Rozpracované záznamy vidíš výše.</p>{% elif not videos %}<div class="card"><p>Zatím žádné video. Otevři detekci v <a href="/history">Historii</a> a klikni na <b>Vytvořit video</b> – vybereš, kolik minut před a po snímku se má vystřihnout.</p></div>{% endif %}
@@ -4190,7 +4192,7 @@ TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block actions %}<a cla
 <dt>Vytvořeno</dt><dd>{{ v.created|czdt }}</dd>
 <dt>Smaže se</dt><dd>{% if v.days_left > 1 %}za {{ v.days_left }} dní{% elif v.days_left == 1 %}zítra{% else %}dnes{% endif %}</dd>
 </dl>
-<div class="acts"><a class="btn small sec" href="/recording/{{ v.id }}">Záznam a návrh AI</a>{% if v.ready %}<a class="btn small" href="/videos/{{ v.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ v.name }}">▶ Přehrát</a><a class="btn small" href="/studio/new/{{ v.id }}" title="Zrychlit, přidat intro, text a hudbu">Vytvořit YouTube video</a><a class="btn small sec" href="/videos/{{ v.id }}/download">⬇ Stáhnout MP4</a>{% endif %}{% if v.stuck and not v.expired %}<form method="post" action="/videos/{{ v.id }}/retry"><button class="btn small" data-busy="Zadávám video znovu">↻ Vytvořit znovu</button></form>{% endif %}{% if v.detection_id %}<a class="btn small sec" href="/detection/{{ v.detection_id }}">Detekce</a>{% endif %}
+<div class="acts"><a class="btn small sec" href="/recording/{{ v.id }}">Záznam a návrh AI</a>{% if v.ready %}<a class="btn small" href="/videos/{{ v.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ v.name }}">▶ Přehrát</a><a class="btn small" href="/studio/new/{{ v.id }}" title="Zrychlit, přidat intro, text a hudbu">Vytvořit YouTube video</a><a class="btn small sec" href="/videos/{{ v.id }}/download">⬇ Stáhnout MP4</a>{% endif %}{% if (v.stuck or v.missing) and not v.expired %}<form method="post" action="/videos/{{ v.id }}/retry"><button class="btn small" data-busy="Zadávám video znovu">↻ Vytvořit znovu</button></form>{% endif %}{% if v.detection_id %}<a class="btn small sec" href="/detection/{{ v.detection_id }}">Detekce</a>{% endif %}
 <form method="post" action="/videos/{{ v.id }}/delete" onsubmit="return confirm('Smazat video {{ v.name }}?')"><button class="btn small sec">Smazat</button></form></div></div></div>{% endfor %}
 </div>
 <p class="hint">Uchovávání klipů a výstupů: {{ keep_days }} dní. <a href="/videos/settings">Změnit nastavení</a></p>
@@ -6385,7 +6387,7 @@ def recording_state(cfg, camera: str, start: float, end: float) -> str:
     try:
         r = frigate_api(cfg, f"/api/{camera}/recordings?after={start:.0f}&before={end:.0f}", timeout=8)
         if not r.ok:
-            return "offline" if r.status_code >= 500 else "none"
+            return "offline"  # HTTP errors do not prove recordings are absent.
         return "ok" if r.json() else "none"
     except Exception:
         return "offline"
@@ -6851,7 +6853,9 @@ def process_event_parts(cfg):
     for part in parts:
         try:
             state = recording_state(cfg, part["camera"], part["start_ts"], part["end_ts"])
-            if state == "offline" and time.time()-part["end_ts"] < 945:
+            if state == "offline":
+                with db() as con:
+                    con.execute("UPDATE event_parts SET error='Frigate neodpovídá. Po obnovení spojení zkusím export znovu.' WHERE id=?", (part["id"],))
                 continue
             if state != "ok":
                 raise RuntimeError("Frigate neodpovídá." if state == "offline" else "Pro tuto část není záznam.")
@@ -6861,13 +6865,13 @@ def process_event_parts(cfg):
             eid = record_export(cfg, fid, part["detection_id"], part["camera"], name[:100], part["start_ts"], part["end_ts"], auto=0)
             with db() as con:
                 con.execute("UPDATE exports SET event_parent_id=?,ai_context=? WHERE id=?", (part["job_id"], json.dumps({"source": "event_part"}), eid))
-                con.execute("UPDATE event_parts SET export_id=?,status='exporting' WHERE id=?", (eid, part["id"]))
+                con.execute("UPDATE event_parts SET export_id=?,status='exporting',error='' WHERE id=?", (eid, part["id"]))
         except Exception as exc:
             with db() as con:
                 con.execute("UPDATE event_parts SET status='failed',error=? WHERE id=?", (str(exc)[:300], part["id"]))
     # A persisted link survives recorder retries (which replace the Frigate id).
     with db() as con:
-        parts = [dict(r) for r in con.execute("SELECT * FROM event_parts WHERE status='exporting'")]
+        parts = [dict(r) for r in con.execute("SELECT * FROM event_parts WHERE export_id IS NOT NULL AND status IN ('exporting','failed')")]
     if parts:
         videos = {v["id"]:v for v in list_videos(cfg, thumbnails=False)}
         for part in parts:
@@ -6975,7 +6979,7 @@ def pending_video_status(cfg, job):
         title = "Čeká na zahájení exportu"
         detail = "Plánovaný čas uplynul. Čeká na zpracování nebo dostupnost Frigate; hotové video zatím není potvrzené."
         if job.get("message") == "waiting_frigate":
-            detail = "Frigate neodpovídá. Automaticky zkouším export znovu, nejvýše 15 minut od plánovaného času."
+            detail = "Frigate neodpovídá. Po obnovení spojení automaticky zkusím export znovu. Původní časový rozsah zůstává zachovaný."
     elif job.get("film_open"):
         title = "Jev pokračuje · souvislé video se připravuje"
         detail = f"Průběžné části se ukládají už během jevu. Na další AI film čeká do {due}; pokud nenaváže, uzavře dostupný rozsah."
@@ -6998,7 +7002,7 @@ def pending_auto_exports(cfg, detection_id=None) -> list:
         r["ready_part_id"] = parts[0]["export_id"] if parts else None
         r["parts_ready"] = len(parts)
         with db() as con:
-            failed_part = con.execute("SELECT error FROM event_parts WHERE job_id=? AND status='failed' ORDER BY id DESC LIMIT 1", (r["id"],)).fetchone()
+            failed_part = con.execute("SELECT error FROM event_parts WHERE job_id=? AND error!='' AND status IN ('pending','failed') ORDER BY id DESC LIMIT 1", (r["id"],)).fetchone()
         r["part_error"] = failed_part["error"] if failed_part else ""
     return rows
 
@@ -7072,11 +7076,8 @@ def _process_auto_exports(cfg):
     for job in due:
         state = recording_state(cfg, job["camera"], job["start_ts"], job["end_ts"])
         if state == "offline":
-            if now - job["due_ts"] < 900:
-                with db() as con:
-                    con.execute("UPDATE auto_exports SET message='waiting_frigate' WHERE id=?", (job["id"],))
-                continue  # Frigate zrovna neběží – zkusit později (max 15 min)
-            _auto_export_finish(job, "failed", "Frigate neodpovídal 15 minut po detekci")
+            with db() as con:
+                con.execute("UPDATE auto_exports SET message='waiting_frigate' WHERE id=?", (job["id"],))
             continue
         if state == "none":
             _auto_export_finish(job, "failed", "pro tento čas není záznam (kamera nenahrávala)")
@@ -7191,10 +7192,25 @@ def detection_export(request: Request, rid: int, name: str = Form(""), before: i
     return RedirectResponse("/videos", status_code=303)
 
 
+def preparing_video_exports(videos):
+    rows = []
+    for v in videos:
+        if not (v.get("auto") or v.get("event_parent_id")) or v["ready"]:
+            continue
+        failed = v["expired"] or v["stuck"]
+        rows.append(dict(name=v["name"], detection_id=v.get("detection_id"), ready_part_id=None,
+                         part_error="", parts_ready=0, export_id=v["id"],
+                         video_status=dict(title="Export vyžaduje kontrolu" if failed else "Vytváří se soubor videa",
+                                           detail="Otevři video pro podrobnosti a možnost opakování exportu." if failed else "Požadavek byl předán Frigate. Čekáme na potvrzení uloženého souboru; ještě není připravený k přehrání.",
+                                           tone="failed" if failed else "waiting", active=not failed)))
+    return rows
+
+
 @app.get("/videos", response_class=HTMLResponse)
 def videos_page(request: Request):
     cfg = load_config()
-    return render(request, "videos.html", "AI videa", failed_auto=failed_auto_exports(), pending_auto=pending_auto_exports(cfg), videos=list_videos(cfg), keep_days=int(cfg.get("export_keep_days", 30) or 30),
+    videos = list_videos(cfg)
+    return render(request, "videos.html", "AI videa", failed_auto=failed_auto_exports(), pending_auto=pending_auto_exports(cfg) + preparing_video_exports(videos), videos=videos, keep_days=int(cfg.get("export_keep_days", 30) or 30),
                   ready=storage_ready(), studio=studio_rows(cfg), studio_auto=bool(studio_cfg(cfg).get("auto")))
 
 
@@ -7290,6 +7306,16 @@ def video_retry(request: Request, vid: int, back: str = Form("")):
     if not rec:
         return RedirectResponse(back or "/videos", status_code=303)
     rec = dict(rec)
+    back = back if back.startswith("/") and not back.startswith("//") else "/videos"
+    state = recording_state(cfg, rec["camera"], rec["start_ts"], rec["end_ts"])
+    if not storage_ready() or state != "ok":
+        flash(request, "Obnovu nelze spustit: disk nebo Frigate nejsou připravené." if state != "none" else "Frigate pro tento rozsah nevrátil žádný záznam. Původní požadavek zůstává zachovaný.", "err")
+        return RedirectResponse(back, status_code=303)
+    fr = frigate_exports(cfg).get(rec['frigate_id'])
+    path = frigate_media_path(fr.get('video_path', '')) if fr else None
+    if fr and ((path and path.is_file() and not fr.get('in_progress')) or (fr.get('in_progress') and (dt.datetime.now() - dt.datetime.fromisoformat(rec['created'])).total_seconds() < 7200)):
+        flash(request, "Video už je uložené nebo ho Frigate právě vytváří. Obnov stránku pro aktuální stav.")
+        return RedirectResponse(back, status_code=303)
     try:
         requests.delete(cfg["frigate_url"].rstrip("/") + f"/api/export/{rec['frigate_id']}", timeout=15)
     except Exception:
@@ -7305,7 +7331,7 @@ def video_retry(request: Request, vid: int, back: str = Form("")):
     with db() as con:
         con.execute("UPDATE exports SET frigate_id=?, created=? WHERE id=?", (new_id, dt.datetime.now().isoformat(timespec="seconds"), vid))
     log(f"Video „{rec['name']}“ zadáno znovu ({new_id}) – původní export se zasekl")
-    flash(request, f"Video „{rec['name']}“ se vytváří znovu – hotové bude za pár minut.")
+    flash(request, f"Video „{rec['name']}“ se vytváří znovu – průběh ověříš v AI videích.")
     return RedirectResponse(back or "/videos", status_code=303)
 
 
@@ -9852,8 +9878,8 @@ class Probe:
             self.reason = "HDD je zapisovatelný." if rc == 0 else (detail or "Kontrola zápisu na disk selhala.")
             self.process = None
             return rc == 0
-        if time.monotonic() - self.started > 4:
-            self.reason = "Disk neodpověděl na kontrolu zápisu do 4 sekund. Zkontroluj USB, napájení a stav disku."
+        if time.monotonic() - self.started > 30:
+            self.reason = "Disk neodpověděl na kontrolu zápisu do 30 sekund. Zkontroluj USB, napájení a stav disku."
             self.process.kill()
             # Nečekat na proces v D state a nevytvářet další, dokud neskončí.
             return False
@@ -9927,7 +9953,7 @@ class Guard:
         desired = 'recording' if self.successes >= 3 else 'live'
         if 0 < self.successes < 3:
             reason = f'Ověřuji stabilitu disku: {self.successes} ze 3 úspěšných zápisů.'
-        if healthy is None and self.mode == 'recording':
+        if healthy is None and self.mode == 'recording' and mount_id is not None:
             desired = 'recording'
         source = SOURCE_CONFIG.read_text()
         request = SKY / 'storage-restart'
@@ -9995,7 +10021,14 @@ def install():
         if path.exists():
             atomic(backup / f'{index}-{path.name}', path.read_text())
     atomic(LIVE_CONFIG, dump(live_config(config)))
-    compose['services']['frigate'] = media_config(compose['services']['frigate'], False)
+    service = compose['services']['frigate']
+    env = service.get('environment', {})
+    if isinstance(env, list):
+        env = dict(item.split('=', 1) if '=' in item else (item, None) for item in env)
+    preserve_recording = env.get('CONFIG_FILE') == '/config/config.yml' and any(
+        isinstance(v, dict) and v.get('target') == '/media/frigate' and v.get('type') == 'bind'
+        and v.get('source') == str(MOUNT / 'frigate') for v in service.get('volumes', []))
+    compose['services']['frigate'] = media_config(service, preserve_recording)
     atomic(COMPOSE, dump(compose))
     # Zrušit pouze starou závislost vytvořenou tímto projektem.
     files[2].unlink(missing_ok=True)
@@ -11751,13 +11784,28 @@ ATMOVIO_CSS_EOF
       btn.textContent = ok ? 'Zkopírováno ✓' : 'Vyber text a stiskni Ctrl/Cmd+C';
       setTimeout(function () { btn.textContent = old; }, 2500);
     }
-    if (navigator.clipboard && window.isSecureContext) {
-      navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); });
-      return;
+    function fallback() {
+      // Hidden <pre> and input values cannot reliably be copied with a DOM range.
+      var input = document.createElement('textarea');
+      input.value = text; input.readOnly = true;
+      input.setAttribute('aria-label', 'Text ke zkopírování');
+      input.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;';
+      document.body.appendChild(input);
+      input.focus(); input.select(); input.setSelectionRange(0, input.value.length);
+      var copied = false;
+      try { copied = document.execCommand('copy') === true; } catch (e) {}
+      if (copied) {
+        input.remove(); if (btn) btn.focus(); done(true);
+      } else {
+        // Leave a visible, selected copy for manual Cmd+C, even when the source was hidden.
+        input.style.cssText = 'position:fixed;z-index:10000;inset:20% 5%;width:90%;height:50%;padding:1rem;';
+        input.focus(); input.select(); done(false);
+        input.addEventListener('blur', function () { input.remove(); }, {once:true});
+      }
     }
-    var r = document.createRange(); r.selectNodeContents(node);
-    var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
-    try { done(document.execCommand('copy')); } catch (e) { done(false); }
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(function () { done(true); }, fallback);
+    } else { fallback(); }
   };
 
   // ---------- Náhledy kamer: když obrázek nejde, ukázat text místo prázdna ----------

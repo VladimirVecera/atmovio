@@ -144,8 +144,8 @@ class Probe:
             self.reason = "HDD je zapisovatelný." if rc == 0 else (detail or "Kontrola zápisu na disk selhala.")
             self.process = None
             return rc == 0
-        if time.monotonic() - self.started > 4:
-            self.reason = "Disk neodpověděl na kontrolu zápisu do 4 sekund. Zkontroluj USB, napájení a stav disku."
+        if time.monotonic() - self.started > 30:
+            self.reason = "Disk neodpověděl na kontrolu zápisu do 30 sekund. Zkontroluj USB, napájení a stav disku."
             self.process.kill()
             # Nečekat na proces v D state a nevytvářet další, dokud neskončí.
             return False
@@ -219,7 +219,7 @@ class Guard:
         desired = 'recording' if self.successes >= 3 else 'live'
         if 0 < self.successes < 3:
             reason = f'Ověřuji stabilitu disku: {self.successes} ze 3 úspěšných zápisů.'
-        if healthy is None and self.mode == 'recording':
+        if healthy is None and self.mode == 'recording' and mount_id is not None:
             desired = 'recording'
         source = SOURCE_CONFIG.read_text()
         request = SKY / 'storage-restart'
@@ -287,7 +287,14 @@ def install():
         if path.exists():
             atomic(backup / f'{index}-{path.name}', path.read_text())
     atomic(LIVE_CONFIG, dump(live_config(config)))
-    compose['services']['frigate'] = media_config(compose['services']['frigate'], False)
+    service = compose['services']['frigate']
+    env = service.get('environment', {})
+    if isinstance(env, list):
+        env = dict(item.split('=', 1) if '=' in item else (item, None) for item in env)
+    preserve_recording = env.get('CONFIG_FILE') == '/config/config.yml' and any(
+        isinstance(v, dict) and v.get('target') == '/media/frigate' and v.get('type') == 'bind'
+        and v.get('source') == str(MOUNT / 'frigate') for v in service.get('volumes', []))
+    compose['services']['frigate'] = media_config(service, preserve_recording)
     atomic(COMPOSE, dump(compose))
     # Zrušit pouze starou závislost vytvořenou tímto projektem.
     files[2].unlink(missing_ok=True)
