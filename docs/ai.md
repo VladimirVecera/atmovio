@@ -72,14 +72,39 @@ The clip is created once the "after" minutes have passed; you find it in **Videa
 - Camera goes to IR/black-and-white at dusk → the dark-frame filter handles it; lower the dark threshold (12–15) if it skips too early.
 - Add "extra instructions" to tell the model about permanent objects in the frame.
 
-## Filmstrip (since 4.7)
+## Completed AI films (since 5.2)
 
-By default the AI does not see a single snapshot but one composite picture: the current frame on top (labelled
-"teď") and a strip of older frames from the same camera below, each with its age ("−45 min"). The prompt asks the
-model to judge the current sky *in the light of how it developed* and to return, besides score and phenomena, a
-`trend` (nastupuje / vrcholí / odeznívá / beze změny) and a `timelapse` score 0–10 (how impressive a time-lapse of
-the last minutes would be). Both are stored and shown in Historie and on the detection page ("Co AI viděla").
-Alerts are still triggered by the score. Settings: Nastavení → AI → Kdy se dívat → Filmový pás (on/off, number of
-frames, minutes back). The strip is built from thumbnails Atmovio keeps in memory from every check, so it fills up
-during the first hour after a start.
+Settings → AI → Timing and AI film separates **sample interval** (e.g. 5 minutes) from **film duration**
+(e.g. 60 minutes, configurable from 10 to 180). The default enabled-film mode evaluates completed windows,
+not each incoming snapshot. Existing installations retain their interval/duration; new installs use 5/60.
+The former rolling-window mode remains available. Its fast cadence and dark/unchanged-frame filters do not
+apply to completed films. Alerts arrive after a window finishes, not immediately.
 
+Per-camera samples and windows persist across restarts. Inference runs in the background while the next film
+collects. Daily quotas pause inference but not sampling. Provider failures retry twice, then remain available
+for an explicit retry. Night/outage gaps produce partial or explicitly incomplete films. Pending and completed
+films expire with snapshot retention, including unevaluated backlog.
+
+AI detections shows ongoing films. The film viewer plays actual snapshots, shows their timestamps and the exact
+contact sheet submitted to AI. At most 36 evenly spaced frames including both endpoints are submitted; all samples
+remain viewable and selected frames are labelled. Frames never stored by older versions cannot be reconstructed.
+
+The model assesses the whole sequence, including events already over at its end, and returns event frame indices.
+Validated boundaries are padded with neighbouring samples and the configured before/after margins. Missing or
+invalid boundaries fall back to the full observed sequence. Interesting-film video creation is independent of
+email success and notification cooldown. Matching events continuing into the next film extend a pending clip.
+Clips finalize at event end, after the next-window duration plus 15 minutes without continuation, or in bounded
+parts of about six hours at film boundaries. Camera recordings must remain available for the entire interval.
+Combined evidence is retained with the exported clip for subsequent YouTube title/description generation.
+
+Manual tests retain the current-view behavior and do not reset or split a collecting film. Manual clip playback
+and exports from a completed film use the observed event bounds. Original rolling-mode behavior remains available.
+
+### Fixed source length and exact clip corrections
+
+AI-video settings can use the event duration or a fixed total source duration of 1–120 minutes, including the
+before-event margin (the after-margin is ignored in fixed mode). Continuing events use subsequent adjacent parts.
+Detection details provide device-local OD–DO datetimes and a duration control for previewing or creating a new
+corrected clip while retaining the original. Future endpoints queue creation until recordings finish. Manual
+ranges over 120 minutes, reversed/invalid dates and nonexistent/ambiguous daylight-saving times are rejected.
+The duration describes source time: 120 minutes at normal speed remains 120 minutes, while 25× timelapse is 4:48.

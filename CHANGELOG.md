@@ -2,6 +2,30 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 5.2 – 2026-09-26 – completed AI films and continuous event clips
+
+- Separate snapshot collection from AI evaluation: completed-film mode is the new default for enabled filmstrips.
+  Existing sample intervals and film durations remain; new installations default to 5-minute samples / 60-minute films.
+  The previous rolling-window mode remains selectable in Settings → AI → Timing and AI film.
+- Persist per-camera films and samples across restarts. Collect the next film while background inference processes
+  the previous one. Daily AI limits pause inference, not collection; provider failures retry twice and remain visible.
+- Show ongoing films in AI detections, chronological snapshot playback, exact timestamps, selected AI frames and the
+  actual contact sheet sent to the provider. At most 36 evenly spaced frames are submitted; all collected frames remain viewable.
+- Evaluate the whole film, including events that ended before its last frame. Validate model frame indices and pad
+  event boundaries with neighbouring samples. Missing boundary evidence falls back to the full observed film.
+- Create interesting-film clips independently of email delivery and notification cooldown. Join continuing matching
+  events across adjacent films; finalize when the event ends, on continuation timeout, or in bounded six-hour parts.
+  Keep accumulated AI evidence with the exported source for subsequent title/description generation.
+- Optional fixed-length source clips (1–120 minutes, including the before-margin) for both AI modes.
+  Exact device-local date/time OD–DO controls preview or create a corrected clip; a future end queues creation.
+  Corrections preserve existing videos. Invalid/reversed/overlong and ambiguous DST ranges are rejected.
+- Manual clip playback/export uses the observed event range for completed films. Legacy detection and clip behavior
+  remains available. Night/outage partial films are explicit; historical unsaved frames cannot be reconstructed.
+- Plain-language illustrated guide inside AI/video settings, with a non-saving timing simulator and a live
+  explanation beside the real timing fields. Covers overlapping events, fixed clip length, OD–DO and YouTube.
+- Offline tests cover sampling, restart, quotas, slow inference, retries, hour-boundary episodes, immutable evidence,
+  authenticated playback/deletion and migration. Installer and updater regenerated.
+
 ## 5.1 – 2026-09-25 – polished administration and forms
 
 - Compact desktop header with a single horizontal navigation row, quieter service status and a separate account/tools menu.

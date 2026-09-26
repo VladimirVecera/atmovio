@@ -33,15 +33,41 @@ Jevy přidané v nové verzi se u existující instalace jednorázově zapnou sa
 
 **Doplňující pokyny** pro model jsou volitelné (např. „kamera míří na západ, dole je střecha – ignoruj ji“).
 
-## Kdy se dívá (3 · Jak často se dívat)
+V administraci je dostupný také **Jak funguje AI film?**: grafický průvodce, časová osa a ukázka různých intervalů.
+Najdeš ho v nastavení AI i AI videí. Hodnoty v průvodci se neukládají; změny ve skutečném formuláři je nutné uložit.
 
-- **Okno:** od *svítání* do *soumraku* – občanský (slunce 6° pod obzorem, ≈ ±35 min), **nautický (12°, ≈ ±75 min, výchozí)** nebo
-  astronomický soumrak, případně pevně ± minut kolem východu/západu. Potřebuje tvoje souřadnice (Pokročilé).
-- **Běžný interval** (výchozí 10 min) a **rychlý interval** (výchozí 3 min) kolem svítání/soumraku a po zajímavém snímku.
-- **Tmavé snímky** (průměrný jas pod prahem, výchozí 22/255) se přeskočí – bez dotazu, nic se neukládá.
-- **Nezměněné snímky** (předfiltr – rozdíl oproti poslednímu vyhodnocenému snímku pod prahem) se přeskočí také.
-- Odhad dotazů za den je ve formuláři; tabulka za 7 dní dole ukazuje skutečná čísla (dotazy, zajímavé, upozornění, přeskočeno, chyby)
-  a nemění se při mazání historie.
+## Sběr snímků a AI film (od 5.2)
+
+V **Nastavení → AI detekce → Časování a AI film** zvol:
+
+- **Používat AI film** a **Až po dokončení filmu**.
+- **Snímek každých:** například 5 minut.
+- **Délka AI filmu:** například 60 minut (10–180 minut).
+
+Kamera nasbírá přibližně 13 snímků včetně začátku a konce hodiny. Teprve potom AI vyhodnotí celý průběh.
+Další film už mezitím sbírá snímky; pomalá odpověď modelu sběr neblokuje. Každá kamera má vlastní posloupnost.
+Hranice dvou filmů sdílí stejný okamžik. Časování se mění až od dalšího filmu; delší interval snímků než film se zkrátí na délku filmu.
+
+**Upozornění má zpoždění až o délku filmu**, případně o čekání ve frontě. Hodinový film není okamžitý poplach.
+Vypnutím denního omezení se sbírá i v noci. Při denním režimu se na konci světla uzavře i kratší film;
+při delší mezeře ve snímcích se začne nový. Jediný snímek zůstane označen jako neúplný film, bez AI vyhodnocení.
+
+V **AI detekci** jsou rozpracované filmy, počty snímků a plánovaný konec. **Otevřít AI film** umožní přehrávání
+fotografií, posuvník, jednotlivé náhledy a jejich skutečné časy. U dokončeného filmu je také přesný obrázek odeslaný AI.
+Při více než 36 snímcích dostane AI rovnoměrný výběr včetně prvního a posledního; označení **Podklad AI** ukazuje výběr.
+Ostatní snímky zůstávají v archivu pro uživatele. Krátký jev mezi dvěma snímky nemusí být zachycen.
+
+Stav i snímky přežijí restart. Denní limit zastaví pouze AI dotazy, sběr pokračuje a filmy čekají ve frontě.
+Neúspěšná AI se zopakuje nejvýše dvakrát; pak lze použít **Zkusit vyhodnocení znovu**. Historie i čekající filmy
+podléhají době uchovávání snímků. Při dlouho vyčerpaném limitu proto staré nevyhodnocené filmy mohou expirovat.
+
+Původní režim **Při každém snímku s pohledem dozadu** lze znovu zvolit. V něm se AI ptá průběžně a přidává
+starší snímky z paměti. Rychlý interval kolem východu/západu, přeskočení tmy a předfiltr nezměněného obrazu platí
+pro tento režim a jednotlivé snímky. U dokončených filmů se tmavé i nezměněné snímky zachovávají.
+Ruční test hodnotí aktuální pohled, nemění rozpracovaný film a neposílá upozornění.
+
+Po aktualizaci je při zapnutém filmovém pásu výchozí nový režim dokončených filmů. Původní interval a délka filmu
+zůstávají zachované. Starší hodnocení zůstávají dostupná včetně uloženého pásu; neuložené jednotlivé snímky zpětně vytvořit nelze.
 
 ## Upozornění, epizody, odstupy
 
@@ -51,18 +77,47 @@ Jevy přidané v nové verzi se u existující instalace jednorázově zapnou sa
 - **Vyhodnotit oblohu teď** (ruční test) nikdy neposílá upozornění.
 - Upozornění jde e-mailem a/nebo na [webhook](webhook.md) se snímkem a odkazem na detail detekce.
 
-## Video automaticky (4 · Video automaticky)
+## Video podle události
 
-Po upozornění může Atmovio sám vystřihnout úsek −N/+M minut kolem snímku (pro vybrané kamery, volitelně timelapse 25×).
-Video vznikne, až uplynou minuty „po“; najdeš ho ve **Videích** se štítkem *auto* a u detekce je „video exportováno“.
-Videa se mažou po době nastavené na stránce Videa (výchozí 30 dní).
+V **Nastavení → AI videa** zapni automatické ukládání a vyber kamery. U dokončených filmů vzniká video podle
+skóre a sledovaných jevů nezávisle na doručení e-mailu nebo odstupu upozornění. Průběžný režim zachovává původní
+vytváření klipu po odeslaném upozornění.
 
-## Historie a Přehled
+AI označí první a poslední snímek události. Atmovio přidá sousední snímek jako rezervu nejistoty a nastavené
+minuty před/po. Když model neurčí platný rozsah, použije se celý zachycený film. Pokud jev na posledním snímku
+pokračuje, klip čeká na další film. Stejný navazující jev prodlouží tentýž klip; skončený nebo jiný jev původní klip uzavře.
+Například červánky od 18:55 do 19:20 se mohou spojit přes hranici filmů v 19:00.
 
-- **Historie AI detekcí** ukazuje ve výchozím stavu detekce s upozorněním; přepni na všechna vyhodnocení nebo chyby.
-- Detail detekce: snímek, přehrání záznamu kolem něj (výchozí −2/+1 min), okolní upozornění ze všech kamer, vystřižení videa.
-- Snímky a historie se drží *keep_days* (výchozí 14); přeskočené snímky se neukládají nikdy.
-- Stránka každé kamery ukazuje její čísla za 7 dní, poslední vyhodnocení a poslední upozornění.
+Čekání má pojistku: nejvýše délka dalšího filmu + 15 minut po posledním zachyceném snímku. Při výpadku se tedy uloží
+dosud známý rozsah. Dlouhé události se ukládají v částech přibližně po šesti hodinách (na hranici filmu).
+Navazující část může obsahovat překryv rezerv. Běžný záznam Frigate musí být na disku po celou dobu sběru,
+vyhodnocení i čekání; bez něj fotografie samy kvalitní kamerové MP4 nenahradí.
+
+Na detailu detekce lze přehrát a ručně vystřihnout rozsah události se zvolenými rezervami. V **AI videích** je vidět,
+zda klip čeká na pokračování nebo už na export. U zdroje se uchovává souhrn AI z navazujících filmů pro návrh nadpisu
+a popisu YouTube videa. Výsledek stále vychází z fotografií, nikoli z analýzy všech políček MP4.
+
+### Celková délka a ruční korekce OD–DO
+
+V **Nastavení → AI videa → Délka ukládaného videa** lze místo délky podle události zvolit **Pevná celková délka**
+a zadat 1–120 minut. Počítá se od začátku jevu (u jednotlivého snímku od detekce) minus rezerva „Před detekcí“.
+Rezerva před jevem je již součástí celkové délky; rezerva „Po detekci“ se nepřičítá. Při dalším pokračování jevu
+vzniká další navazující pevně dlouhá část. Výchozí režim podle události zůstává zachován.
+
+Na detailu detekce nebo u odkazu **Detekce** z uloženého videa nastav konkrétní **OD a DO** včetně data.
+Změna pole délky přepočítá DO; ruční zadání obou časů přepočítá délku. Zvolený rozsah lze nejprve přehrát a potom
+vytvořit jako nový klip, původní video se nepřepíše. Maximální ručně zadaný rozsah je 120 minut. Když DO ještě
+nenastalo, klip čeká ve frontě na dokončení záznamu. Začátek musí být v minulosti. Časy používají pásmo zařízení,
+ne pásmo počítače s prohlížečem; neexistující a opakované místní časy při změně letního času jsou odmítnuty.
+
+Délka označuje **zdrojový záznam**. Při původní rychlosti má 120 minut záznamu i výsledné video 120 minut;
+časosběr 25× má 4 minuty 48 sekund. Chybějící kamerový záznam se nedoplňuje ani nenahrazuje fotografiemi.
+
+## Historie
+
+Výchozí pohled ukazuje všechna hodnocení; lze filtrovat kameru, jev, skóre, datum a upozornění/chyby.
+Čas hodnocení a časový rozsah snímků jsou uvedeny odděleně. Film lze smazat spolu s jeho snímky;
+sousední film i již uložená videa zůstanou. Doba uchovávání historie a snímků je výchozí 14 dní.
 
 ## Ladění
 

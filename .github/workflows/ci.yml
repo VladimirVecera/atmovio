@@ -35,6 +35,8 @@ jobs:
         run: |
           python3 -m pip install -q httpx
           python3 tests/regression.py
+          python3 tests/ai_films.py
+          python3 tests/video_ranges.py
       - name: No personal data in sources
         run: |
           # heslo zapsané natvrdo (ne odkaz na proměnnou jako PASSWORD="$ADMIN_PW")

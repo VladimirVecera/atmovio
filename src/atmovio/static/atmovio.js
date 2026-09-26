@@ -15,6 +15,71 @@
 
   // ---------- Alpine komponenty ----------
   document.addEventListener('alpine:init', function () {
+    Alpine.data('filmTiming', function (mode, active, sample, span) {
+      return {
+        mode: mode, active: active, sample: sample, span: span,
+        get filmLength() { return Math.max(10, Math.min(180, Math.floor(Number(this.span) || 60))); },
+        get interval() { return Math.min(this.filmLength, Math.max(1, Math.floor(Number(this.sample) || 5))); },
+        get count() { return Math.ceil(this.filmLength / this.interval) + 1; },
+        get summary() { return `Za ${this.filmLength} minut přibližně ${this.count} fotografií → jeden závěr AI.`; },
+        get frequency() { return `Při nepřetržitém 24hodinovém sběru přibližně ${Math.round(1440 / this.filmLength)} vyhodnocení za den na jednu kameru, bez výpadků, opakovaných pokusů a limitů. V denním režimu méně.`; },
+        clock: function (minute) {
+          const total = 18 * 60 + Math.round(minute), hour = Math.floor(total / 60) % 24, min = total % 60;
+          return String(hour).padStart(2, '0') + ':' + String(min).padStart(2, '0') + (total >= 1440 ? ' (+1 den)' : '');
+        },
+        get previewFrames() {
+          const n = Math.min(13, this.count);
+          return Array.from({length:n}, (_, i) => {
+            const index = Math.round(i * (this.count - 1) / (n - 1));
+            return {index:index, minute:Math.min(this.filmLength,index*this.interval)};
+          });
+        }
+      };
+    });
+    Alpine.data('clipRange', function (from, to, zone) {
+      return {
+        from: from, to: to, minutes: 0,
+        local: function (stamp) {
+          const parts = new Intl.DateTimeFormat('sv-SE', {timeZone: zone, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hourCycle:'h23'}).formatToParts(new Date(stamp));
+          const p = Object.fromEntries(parts.map(x => [x.type, x.value]));
+          return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}`;
+        },
+        stamp: function (value) {
+          if (!value) return NaN;
+          const text = value.length === 16 ? value + ':00' : value;
+          const wall = Date.parse(text + 'Z');
+          if (!Number.isFinite(wall)) return NaN;
+          let guess = wall;
+          for (let i=0; i<3; i++) guess += wall - Date.parse(this.local(guess) + 'Z');
+          // Match the server's first occurrence during the autumn clock change.
+          const candidates = [-7200000,-3600000,-1800000,0,1800000,3600000,7200000].map(d => guess+d).filter(t => this.local(t)===text);
+          return candidates.length ? Math.min(...candidates) : NaN;
+        },
+        init: function () { this.measure(); },
+        measure: function () {
+          const delta = (this.stamp(this.to) - this.stamp(this.from)) / 60000;
+          this.minutes = Number.isFinite(delta) ? Math.round(delta * 100) / 100 : '';
+        },
+        resize: function () {
+          const start = this.stamp(this.from), minutes = Number(this.minutes);
+          if (Number.isFinite(start) && minutes > 0 && minutes <= 120)
+            this.to = this.local(start + minutes * 60000);
+        }
+      };
+    });
+    Alpine.data('filmPlayer', function (frames) {
+      return {
+        frames: frames, index: 0, playing: false, timer: null,
+        pause: function () { clearInterval(this.timer); this.timer = null; this.playing = false; },
+        toggle: function () {
+          if (this.playing) { this.pause(); return; }
+          this.playing = true;
+          this.timer = setInterval(() => { this.index = (this.index + 1) % this.frames.length; }, 900);
+        },
+        step: function (delta) { this.pause(); this.index = (this.index + delta + this.frames.length) % this.frames.length; },
+        destroy: function () { this.pause(); }
+      };
+    });
     // Kostra stránky: mobilní menu, rozbalovací nabídky v hlavičce (dd), přepínač vzhledu, toasty, lightbox.
     Alpine.data('shell', function (opts) {
       opts = opts || {};

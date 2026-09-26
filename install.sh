@@ -475,7 +475,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "5.1"
+APP_VERSION = "5.2"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -561,7 +561,7 @@ DEFAULT_CONFIG = {
         "model": "auto",
         "base_url": "https://api.groq.com/openai/v1",
         "ollama_url": "http://127.0.0.1:11434",
-        "interval_min": 10,
+        "interval_min": 5,
         "fast_mode": True,
         "fast_interval_min": 3,
         "golden_min": 60,
@@ -569,7 +569,7 @@ DEFAULT_CONFIG = {
         "margin_min": 60,
         "twilight": "nautical",
         "dark_skip": True,
-        "strip": {"enabled": True, "frames": 6, "span_min": 60},   # filmový pás: AI vidí i vývoj oblohy dozadu
+        "strip": {"enabled": True, "frames": 6, "span_min": 60, "mode": "batch"},   # AI film: oddělený sběr a dokončené časové úseky
         "dark_level": 22,
         "threshold": 7,
         "cooldown_min": 15,
@@ -582,7 +582,7 @@ DEFAULT_CONFIG = {
         "prompt_extra": "",
         "keep_days": 14,
         "export_keep_days": 30,
-        "auto_export": {"enabled": False, "before_min": 2, "after_min": 3, "playback": "realtime", "cameras": []},
+        "auto_export": {"enabled": False, "length_mode": "event", "duration_min": 60, "before_min": 2, "after_min": 3, "playback": "realtime", "cameras": []},
     },
     "studio": {   # Video studio: zrychlení, intro, text v obraze, hudba, šablony titulku/popisu
         "speed": 20, "intro": True, "intro_seconds": 4, "intro_title": True, "intro_text": "{kamera}\n{datum}",
@@ -718,6 +718,7 @@ def cam_label(cfg, cam: str) -> str:
 
 _config_lock = threading.RLock()
 _frigate_lock = threading.RLock()
+_export_schedule_lock = threading.RLock()
 _logger = logging.getLogger("atmovio")
 
 
@@ -958,6 +959,14 @@ def db_init():
             )"""
         )
         con.execute("CREATE INDEX IF NOT EXISTS idx_eval_ts ON evaluations(ts)")
+        con.execute("""CREATE TABLE IF NOT EXISTS ai_films (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, camera TEXT NOT NULL,
+            start_ts REAL NOT NULL, end_ts REAL NOT NULL, sample_min INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'collecting', frames TEXT NOT NULL DEFAULT '[]',
+            evaluation_id INTEGER, attempts INTEGER NOT NULL DEFAULT 0,
+            retry_ts REAL NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '')""")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_films_camera ON ai_films(camera, status)")
+
         cols = {r["name"] for r in con.execute("PRAGMA table_info(evaluations)")}
         if "phenomena" not in cols:
             con.execute("ALTER TABLE evaluations ADD COLUMN phenomena TEXT")
@@ -1052,6 +1061,11 @@ def db_init():
                 created TEXT NOT NULL
             )"""
         )
+        acols = {r["name"] for r in con.execute("PRAGMA table_info(auto_exports)")}
+        for col, spec in (("film_open", "INTEGER DEFAULT 0"), ("film_hits", "TEXT DEFAULT ''"),
+                          ("film_last", "REAL DEFAULT 0"), ("ai_context", "TEXT")):
+            if col not in acols:
+                con.execute(f"ALTER TABLE auto_exports ADD COLUMN {col} {spec}")
         con.execute(
             """CREATE TABLE IF NOT EXISTS studio_videos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1402,12 +1416,20 @@ def frigate_reset_admin_password(cfg) -> str:
 def build_prompt(ai: dict, strip: int = 0) -> str:
     selected = phenomena_catalog(ai)
     lines = [DEFAULT_PROMPT]
-    if strip:
+    if strip and not ai.get("_film_batch"):
         lines += ["",
                   f"Obrázek má dvě části: NAHOŘE velký AKTUÁLNÍ snímek (označený „teď“), DOLE pás {strip} starších snímků ze stejné kamery "
                   "s časovým odstupem (nejstarší vlevo, např. „−60 min“). Hodnoť aktuální snímek, ale využij pás k posouzení vývoje: "
                   "zda jev teprve nastupuje, právě vrcholí, odeznívá, nebo se obloha nemění. Zajímavé pro časosběr je to, co se v čase výrazně mění "
                   "(barvy, pohyb a tvary oblačnosti, přicházející bouřka), ne statická obloha."]
+    if ai.get("_film_batch"):
+        lines += ["Jde o DOKONČENÝ AI film: časově seřazenou mřížku snímků jedné kamery, zleva doprava a shora dolů. "
+                  "Každý má číslo a skutečný čas. Posuď CELÝ průběh, nikoli jen poslední fotografii. "
+                  "Score a phenomena vyjadřují nejzajímavější doloženou událost v celém filmu, i když už na konci zmizela. "
+                  "Description a evolution musí popsat průběh a případné mezery mezi snímky. "
+                  "event_start_frame a event_end_frame jsou čísla prvního a posledního snímku zajímavé události (od 1). "
+                  "Bez události vrať null. ongoing=true pouze když tento jev na posledním snímku stále probíhá. "
+                  "Neodhaduj přesné časy mezi snímky. Trend popisuje stav na konci filmu."]
     lines += ["", "Sledované jevy (id – popis):"]
     lines += [f"- {pid}: {label} – {desc}" for pid, label, desc in selected]
     lines += [
@@ -1427,6 +1449,7 @@ def build_prompt(ai: dict, strip: int = 0) -> str:
         '{"score": <celé číslo 0-10>, "phenomena": ["id", ...], '
         '"phenomenon": "<krátký název jevu česky nebo \\"nic zajímavého\\">", "description": "<1-2 věty česky, co je vidět>"'
         + (', "trend": "<nastupuje|vrcholí|odeznívá|beze změny>", "timelapse": <celé číslo 0-10, jak působivý by byl časosběr posledních minut>' if strip else "")
+        + (', "event_start_frame": <číslo nebo null>, "event_end_frame": <číslo nebo null>, "ongoing": <true nebo false>' if ai.get('_film_batch') else '')
         + ', "evolution": "<pozorovaný vývoj v pásu, nebo prázdný řetězec>"}',
     ]
     return "\n".join(lines)
@@ -1627,6 +1650,7 @@ def _ai_evaluate_once(ai: dict, image_bytes: bytes, strip: int = 0) -> tuple[dic
         "phenomena": phenomena,
         "phenomenon": str(parsed.get("phenomenon", ""))[:200],
         "description": str(parsed.get("description", ""))[:1000],
+        "event_start_frame": parsed.get("event_start_frame"), "event_end_frame": parsed.get("event_end_frame"), "ongoing": parsed.get("ongoing"),
         "trend": trend, "timelapse": tl, "evolution": str(parsed.get("evolution") or "")[:1600],
     }, raw
 
@@ -2006,6 +2030,141 @@ def image_brightness(img: bytes) -> float:
     return ImageStat.Stat(im).mean[0]
 
 
+def batch_mode(ai):
+    sc = ai.get("strip") or {}
+    return bool(sc.get("enabled", True) and sc.get("mode", "batch") == "batch")
+
+
+def film_frames(row):
+    try:
+        items = json.loads(row.get("frames") or "[]")
+        return items if isinstance(items, list) else []
+    except (ValueError, TypeError):
+        return []
+
+
+def selected_film_frames(items):
+    """Bound the contact sheet; retain every collected frame for the human viewer."""
+    if len(items) <= 36:
+        return items
+    return [items[round(i * (len(items) - 1) / 35)] for i in range(36)]
+
+
+def film_context(film, parsed=None):
+    items = film["items"]
+    parsed = parsed or {}
+    # Expand the detected range by a neighbouring sample: AI cannot know the exact onset between frames.
+    try:
+        first, last = parsed["event_start_frame"], parsed["event_end_frame"]
+        if type(first) is not int or type(last) is not int:
+            raise ValueError("Frame indices must be integers")
+        if not 1 <= first <= last <= len(items):
+            raise ValueError("Invalid frame indices")
+        start = items[max(0, first - 2)]["ts"]
+        end = items[min(len(items) - 1, last)]["ts"]
+        bounds_valid = True
+    except (ValueError, TypeError, KeyError, OverflowError):
+        start, end, bounds_valid = items[0]["ts"], items[-1]["ts"], False
+    ongoing = parsed.get("ongoing")
+    # Unknown/malformed boundary evidence gets a conservative continuation, never an invented exact boundary.
+    ongoing = ongoing if isinstance(ongoing, bool) and bounds_valid else True
+    if ongoing:
+        end = items[-1]["ts"]
+    return {"mode": "batch", "film_id": film["id"], "frames": len(items), "collected": len(film_frames(film)),
+            "start": items[0]["ts"], "end": items[-1]["ts"], "evolution": parsed.get("evolution", ""),
+            "event_start": start, "event_end": end, "bounds_valid": bounds_valid, "ongoing": ongoing,
+            "sample_min": film["sample_min"], "duration_min": (film["end_ts"] - film["start_ts"]) / 60}
+
+
+def make_ai_film(cfg, items):
+    """Exact chronological contact sheet submitted to the model and retained in detection detail."""
+    cols = min(4, len(items))
+    width, height = 480, 300
+    canvas = Image.new("RGB", (cols * width, ((len(items) + cols - 1) // cols) * height), "#101828")
+    draw = ImageDraw.Draw(canvas)
+    try:
+        font = ImageFont.truetype(studio_font(), 20)
+    except (OSError, TypeError):
+        font = ImageFont.load_default()
+    for i, item in enumerate(items):
+        x, y = (i % cols) * width, (i // cols) * height
+        with Image.open(Path(cfg["snapshot_dir"]) / item["image"]) as source:
+            im = source.convert("RGB")
+            im.thumbnail((width, height - 30))
+            canvas.paste(im, (x + (width - im.width) // 2, y + 30))
+        stamp = dt.datetime.fromtimestamp(item["ts"], ZoneInfo(cfg["tz"])).strftime("%d.%m. %H:%M:%S")
+        draw.text((x + 8, y + 4), f"{i + 1}.  {stamp}", fill="white", font=font)
+    out = io.BytesIO()
+    canvas.save(out, "JPEG", quality=86)
+    return out.getvalue()
+
+
+def collect_ai_film(cfg, cam, now):
+    """Persist samples and window boundaries. Restarting the service does not reset a film."""
+    ts = now.timestamp()
+    span = max(10, min(180, int(cfg["ai"]["strip"].get("span_min", 60)))) * 60
+    sample = max(1, min(int(cfg["ai"].get("interval_min", 5)), span // 60))
+    with db() as con:
+        row = con.execute("SELECT * FROM ai_films WHERE camera=? AND status='collecting' ORDER BY id DESC LIMIT 1", (cam,)).fetchone()
+    film = dict(row) if row else None
+    items = film_frames(film) if film else []
+    daytime = is_daytime(cfg, now)
+    # At night or after a long outage, finish the actual captured sequence, without pretending to cover the gap.
+    stale = bool(film and items and ts - items[-1]["ts"] > max(600, film["sample_min"] * 120))
+    if film and (not daytime or stale):
+        with db() as con:
+            con.execute("UPDATE ai_films SET status=?, end_ts=? WHERE id=?", ("ready" if len(items) >= 2 else "incomplete", items[-1]["ts"] if items else ts, film["id"]))
+        film, items = None, []
+    if not daytime:
+        return
+    if film and items and ts - items[-1]["ts"] < film["sample_min"] * 60 and ts < film["end_ts"]:
+        return
+    img = fetch_snapshot(cfg, cam)
+    if not img:
+        if film:
+            with db() as con:
+                con.execute("UPDATE ai_films SET error=? WHERE id=?", ("Kamera neposkytla snímek; čekám na další pokus.", film["id"]))
+        return
+    thumb = strip_thumb(img, 960)
+    if not film:
+        with db() as con:
+            fid = con.execute("INSERT INTO ai_films(camera,start_ts,end_ts,sample_min) VALUES(?,?,?,?)", (cam, ts, ts + span, sample)).lastrowid
+        film = {"id": fid, "start_ts": ts, "end_ts": ts + span, "sample_min": sample}
+    directory = Path(cfg["snapshot_dir"]) / now.strftime("%Y-%m-%d") / f"film_{film['id']}"
+    directory.mkdir(parents=True, exist_ok=True)
+    image = directory / f"{len(items):04d}.jpg"
+    image.write_bytes(thumb)
+    items.append({"ts": ts, "image": str(image.relative_to(cfg["snapshot_dir"]))})
+    finished = ts >= film["end_ts"] and len(items) >= 2
+    with db() as con:
+        con.execute("UPDATE ai_films SET frames=?, status=?, error='' WHERE id=?", (json.dumps(items), "ready" if finished else "collecting", film["id"]))
+        if finished:
+            # The boundary sample belongs to both adjacent windows, with its own file in each.
+            fid = con.execute("INSERT INTO ai_films(camera,start_ts,end_ts,sample_min) VALUES(?,?,?,?)", (cam, ts, ts + span, sample)).lastrowid
+            next_dir = directory.parent / f"film_{fid}"
+            next_dir.mkdir(parents=True, exist_ok=True)
+            next_img = next_dir / "0000.jpg"
+            next_img.write_bytes(thumb)
+            con.execute("UPDATE ai_films SET frames=? WHERE id=?", (json.dumps([{"ts": ts, "image": str(next_img.relative_to(cfg["snapshot_dir"]))}]), fid))
+
+
+def films_overview(cfg):
+    with db() as con:
+        rows = [dict(r) for r in con.execute("SELECT * FROM ai_films WHERE status IN ('collecting','ready','failed','incomplete') ORDER BY id DESC LIMIT 100")]
+    out = []
+    for r in rows:
+        if r["camera"] not in cfg["ai"]["cameras"]:
+            continue
+        frames = film_frames(r)
+        r["count"] = len(frames)
+        r["thumb"] = frames[-1]["image"] if frames else ""
+        r["start_h"] = dt.datetime.fromtimestamp(r["start_ts"], ZoneInfo(cfg["tz"])).strftime("%d.%m. %H:%M")
+        r["end_h"] = dt.datetime.fromtimestamp(r["end_ts"], ZoneInfo(cfg["tz"])).strftime("%H:%M")
+        r["progress"] = min(100, max(0, round(100 * ((frames[-1]["ts"] if frames else r["start_ts"]) - r["start_ts"]) / max(1, r["end_ts"] - r["start_ts"]))))
+        out.append(r)
+    return out
+
+
 # --------------------------------------------------------------------------- scheduler
 
 class AtmovioWatcher(threading.Thread):
@@ -2019,6 +2178,8 @@ class AtmovioWatcher(threading.Thread):
         self.last_image: dict[str, Path] = {}
         self.strip_frames: dict[str, list] = {}   # kamera → [(ts, malý JPEG)] posledních pár hodin pro filmový pás
         self.check_lock = threading.Lock()
+        self.film_sample_lock = threading.Lock()
+        self._film_thread = None
         self.stop_event = threading.Event()
         self.running = True
         self.status = "start"
@@ -2085,6 +2246,9 @@ class AtmovioWatcher(threading.Thread):
             self.status = "AI vypnuto"
             return
         now = dt.datetime.now(ZoneInfo(cfg["tz"]))
+        if batch_mode(ai):
+            self.tick_films(cfg, now)
+            return
         if not is_daytime(cfg, now):
             dawn, dusk = watch_window(cfg, now.date())
             nxt = dawn if now < dawn else watch_window(cfg, now.date() + dt.timedelta(days=1))[0]
@@ -2112,6 +2276,70 @@ class AtmovioWatcher(threading.Thread):
             self.last_check[cam] = time.time()
             self.check_camera(cfg, cam, now)
 
+    def tick_films(self, cfg, now):
+        # Capture runs in the scheduler even while a slow cloud/local model is evaluating a previous film.
+        with self.film_sample_lock:
+            for cam in cfg["ai"]["cameras"]:
+                if re.fullmatch(r"[a-zA-Z0-9_]{1,64}", cam):
+                    try:
+                        collect_ai_film(cfg, cam, now)
+                    except Exception as ex:
+                        log(f"[{cam}] Sběr AI filmu: {ex}")
+        if self._film_thread and self._film_thread.is_alive():
+            return
+        self._film_thread = threading.Thread(target=self._evaluate_next_film, args=(cfg, now), daemon=True)
+        self._film_thread.start()
+
+    def _evaluate_next_film(self, cfg, now):
+        if not self.check_lock.acquire(blocking=False):
+            return
+        try:
+            used = self.calls_today(cfg, now)
+            limit = int(cfg["ai"].get("daily_limit", 0) or 0)
+            if limit and used >= limit:
+                self.status = f"AI filmy: sbírám snímky, vyčerpán denní limit {limit}; hotové filmy čekají"
+                return
+            self.status = "AI filmy: sbírám snímky, vyhodnocení až po dokončení filmu"
+            with db() as con:
+                rows = [dict(r) for r in con.execute("SELECT * FROM ai_films WHERE status='ready' AND retry_ts<=? ORDER BY end_ts,id", (now.timestamp(),))]
+            film = next((r for r in rows if r["camera"] in cfg["ai"]["cameras"]), None)
+            if not film:
+                return
+            # A crash after recording an evaluation must not cause the same film to be submitted again.
+            with db() as con:
+                recorded = con.execute("SELECT * FROM evaluations WHERE film_context LIKE ? AND score IS NOT NULL ORDER BY id DESC LIMIT 1", ('%"film_id": ' + str(film["id"]) + ',%',)).fetchone()
+            if recorded:
+                recovered = dict(recorded)
+                rule = cam_rule(cfg["ai"], film["camera"])
+                hits = [p for p in (recovered.get("phenomena") or "").split(",") if p in rule["phenomena"]]
+                if not hits and rule.get("any"):
+                    hits = ["jine"]
+                schedule_film_export(cfg, recovered, hits if recovered["score"] >= rule["threshold"] else [])
+                with db() as con:
+                    con.execute("UPDATE ai_films SET status='done',evaluation_id=? WHERE id=?", (recovered["id"], film["id"]))
+                return
+            items = selected_film_frames(film_frames(film))
+            film["items"] = items
+            self.status = f"Vyhodnocuji AI film: {cam_label(cfg, film['camera'])}, {len(items)} snímků"
+            try:
+                if len(items) < 2:
+                    raise ValueError("Film nemá alespoň dva snímky.")
+                result = self._check_camera(cfg, film["camera"], now, film=film)
+                complete = result.get("score") is not None
+                error = result.get("error", "")
+            except Exception as ex:
+                result, complete, error = {}, False, str(ex)
+            attempts = film["attempts"] + 1
+            with db() as con:
+                con.execute("UPDATE ai_films SET status=?,evaluation_id=?,attempts=?,retry_ts=?,error=? WHERE id=?", (
+                    "done" if complete else ("failed" if attempts >= 3 else "ready"), result.get("id"), attempts,
+                    now.timestamp() + 120, error, film["id"]))
+        except Exception as ex:
+            self.status = f"Vyhodnocení AI filmu se nepodařilo: {ex}"
+            log(self.status)
+        finally:
+            self.check_lock.release()
+
     def calls_today(self, cfg, now) -> int:
         try:
             with db() as con:
@@ -2134,11 +2362,11 @@ class AtmovioWatcher(threading.Thread):
         finally:
             self.check_lock.release()
 
-    def _check_camera(self, cfg, cam, now, force=False) -> dict:
+    def _check_camera(self, cfg, cam, now, force=False, film=None) -> dict:
         ai = cfg["ai"]
         result = {"camera": cam, "ts": now.isoformat(timespec="seconds")}
         day = now.strftime("%Y-%m-%d")
-        img = fetch_snapshot(cfg, cam)
+        img = (Path(cfg["snapshot_dir"]) / film["items"][-1]["image"]).read_bytes() if film else fetch_snapshot(cfg, cam)
         if not img:
             ai_stat(day, cam, errors=1)
             self.record(result, error="Nepodařilo se získat snímek z kamery")
@@ -2146,14 +2374,15 @@ class AtmovioWatcher(threading.Thread):
         # paměť pro filmový pás: každý získaný snímek (i přeskočený) jako malý náhled, drží se ~3 h
         try:
             buf = self.strip_frames.setdefault(cam, [])
-            buf.append((now.timestamp(), strip_thumb(img)))
+            if not film:
+                buf.append((now.timestamp(), strip_thumb(img)))
             cutoff = now.timestamp() - 3 * 3600
             self.strip_frames[cam] = [x for x in buf if x[0] >= cutoff][-60:]
         except Exception as e:
             log(f"Filmový pás: náhled se nepodařilo uložit ({e})")
 
         # tma (noc, kamera přepnutá do IR bez oblohy): AI se neptá, snímek se neukládá – jen se počítá
-        if ai.get("dark_skip", True) and not force:
+        if ai.get("dark_skip", True) and not force and not film:
             try:
                 bright = image_brightness(img)
                 if bright < float(ai.get("dark_level", 22)):
@@ -2165,7 +2394,7 @@ class AtmovioWatcher(threading.Thread):
             except Exception as e:
                 log(f"Měření jasu selhalo: {e}")
         # předfiltr – změna oproti poslednímu vyhodnocenému snímku; přeskočené snímky se neukládají (jen se počítají)
-        if ai["prefilter"] and not force and cam in self.last_image and self.last_image[cam].exists():
+        if ai["prefilter"] and not force and not film and cam in self.last_image and self.last_image[cam].exists():
             try:
                 diff = image_diff(self.last_image[cam].read_bytes(), img)
                 if diff < float(ai["prefilter_diff"]):
@@ -2180,12 +2409,11 @@ class AtmovioWatcher(threading.Thread):
         fpath = day_dir / fname
         fpath.write_bytes(img)
         result["image"] = str(fpath.relative_to(cfg["snapshot_dir"]))
-        ai_stat(day, cam, calls=1)
         # filmový pás: k aktuálnímu snímku přidat N starších z posledních span_min minut (rovnoměrně), pokud jsou
         strip_n = 0
         to_ai = img
         sc = ai.get("strip") or {}
-        if sc.get("enabled", True):
+        if sc.get("enabled", True) and not film:
             try:
                 span = int(sc.get("span_min", 60) or 60) * 60
                 want = max(2, min(12, int(sc.get("frames", 6) or 6)))
@@ -2200,6 +2428,13 @@ class AtmovioWatcher(threading.Thread):
             except Exception as e:
                 log(f"[{cam}] Filmový pás se nepodařilo sestavit ({e}) – posílám jen aktuální snímek")
                 to_ai, strip_n = img, 0
+        if film:
+            to_ai = make_ai_film(cfg, film["items"])
+            strip_n = len(film["items"]) - 1
+            (day_dir / (fpath.stem + "_strip.jpg")).write_bytes(to_ai)
+            ai = dict(ai, _film_batch=True)
+            result["film_context"] = json.dumps(film_context(film), ensure_ascii=False)
+        ai_stat(day, cam, calls=1)
         try:
             parsed, raw = ai_evaluate(ai, to_ai, strip_n)
         except Exception as e:
@@ -2213,8 +2448,10 @@ class AtmovioWatcher(threading.Thread):
         parsed.setdefault("phenomena", [])
         result.update(parsed)
         result["raw"] = raw
-        result["film_context"] = json.dumps({"frames": strip_n + 1, "start": min(x[0] for x in cand) if strip_n else now.timestamp(),
+        result["film_context"] = json.dumps({"frames": strip_n + 1, "start": min(x[0] for x in cand) if strip_n and not film else now.timestamp(),
                                               "end": now.timestamp(), "evolution": parsed.get("evolution", "") if strip_n else ""}, ensure_ascii=False)
+        if film:
+            result["film_context"] = json.dumps(film_context(film, parsed), ensure_ascii=False)
         self.last_score[cam] = int(parsed["score"])
         rule = cam_rule(ai, cam)
         if int(parsed["score"]) >= rule["threshold"]:
@@ -2229,6 +2466,14 @@ class AtmovioWatcher(threading.Thread):
         # „Cokoli fotogenického“: upozornit i bez shody s vybranými jevy, když je záběr podle skóre výjimečný
         if not hits and rule.get("any") and parsed["score"] >= threshold:
             hits = ["jine"]
+        if film:
+            # Store evidence before notifications. Video capture must not depend on successful email delivery.
+            rid = self.record(result)
+            try:
+                schedule_film_export(cfg, result, hits if parsed["score"] >= threshold else [])
+            except Exception as ex:
+                log(f"[{cam}] Plánování AI filmu selhalo: {ex}")
+                result["video_error"] = f"Video se nepodařilo naplánovat: {ex}"
         if force:
             note = "ruční test – bez e-mailu"
         elif parsed["score"] >= threshold and hits:
@@ -2251,7 +2496,10 @@ class AtmovioWatcher(threading.Thread):
                 # Nejdřív uložit (kvůli id pro odkaz na detail), potom odeslat.
                 result["notified"] = 0
                 result["note"] = "odesílám…"
-                rid = self.record(result)
+                if film:
+                    self.record_update(rid, note=result["note"])
+                else:
+                    rid = self.record(result)
                 urls = public_urls()
                 link = f"{urls['atmovio']}/detection/{rid}" if urls["atmovio"] else ""
                 try:
@@ -2272,16 +2520,16 @@ class AtmovioWatcher(threading.Thread):
                     ai_stat(day, cam, notified=1)
                     add_event("sky", f"{title}: {labels} ({parsed['score']}/10)", parsed["description"], emailed=1)
                     ax = ai.get("auto_export") or {}
-                    if ax.get("enabled") and cam in (ax.get("cameras") or []):
+                    if not film and ax.get("enabled") and cam in (ax.get("cameras") or []):
                         try:
                             schedule_auto_export(cfg, rid, cam, now, labels)
                             note += " · video se vytvoří automaticky"
                         except Exception as e:
                             log(f"[{cam}] Automatické video se nepodařilo naplánovat: {e}")
-                    self.record_update(rid, notified=1, note=note)
+                    self.record_update(rid, notified=1, note=" · ".join(x for x in (note, result.get("video_error")) if x))
                 except Exception as e:
                     result["error"] = f"Upozornění: {e}"
-                    self.record_update(rid, error=result["error"], note="")
+                    self.record_update(rid, error=result["error"], note=result.get("video_error", ""))
                     log(f"[{cam}] {result['error']}")
                 result["notified"] = notified
                 result["note"] = note
@@ -2290,7 +2538,10 @@ class AtmovioWatcher(threading.Thread):
             note = "jev není mezi sledovanými – bez e-mailu"
         result["notified"] = notified
         result["note"] = note
-        self.record(result)
+        if film:
+            self.record_update(rid, notified=notified, note=" · ".join(x for x in (note, result.get("video_error")) if x))
+        else:
+            self.record(result)
         return result
 
     def episode_seen(self, cam) -> dict:
@@ -2455,7 +2706,8 @@ class AtmovioWatcher(threading.Thread):
             con.execute("DELETE FROM evaluations WHERE ts < ?", (cutoff.isoformat(),))
             con.execute("DELETE FROM events WHERE ts < ?", (cutoff.isoformat(),))
             con.execute("DELETE FROM ai_stats WHERE day < ?", ((cutoff - dt.timedelta(days=366)).isoformat(),))
-            con.execute("DELETE FROM auto_exports WHERE created < ?", (cutoff.isoformat(),))
+            con.execute("DELETE FROM auto_exports WHERE created < ? AND status!='pending'", (cutoff.isoformat(),))
+            con.execute("DELETE FROM ai_films WHERE start_ts < ?", (dt.datetime.combine(cutoff, dt.time(), ZoneInfo(cfg["tz"])).timestamp(),))
         try:
             n = _delete_evaluations(cfg, "skipped=1", ())
             if n:
@@ -3036,13 +3288,13 @@ TEMPLATES["dashboard.html"] = """{% extends "base.html" %}{% block head %}{% end
  <li><span class="sw" style="background:var(--c-green)"></span>Upozornění<b>{{ t.notified }}</b></li>
  <li><span class="sw" style="background:var(--pico-muted-border-color)"></span>Přeskočeno (tma / beze změny)<b>{{ t.skipped }}</b></li>
  <li><span class="sw" style="background:var(--c-red)"></span>Chyby<b>{{ t.errors }}</b></li>
- <li><span class="sw" style="background:var(--c-violet)"></span>Práh · kontrola<b>{{ cfg.ai.threshold }}/10 · {{ cfg.ai.interval_min }} min</b></li>
+ <li><span class="sw" style="background:var(--c-violet)"></span>Práh · vyhodnocení<b>{{ cfg.ai.threshold }}/10 · {{ cfg.ai.strip.span_min if cfg.ai.strip.enabled and cfg.ai.strip.mode == "batch" else cfg.ai.interval_min }} min</b></li>
 </ul>
 <details style="margin:.7rem 0 0"><summary>Posledních 7 dní</summary>
 <div class="stats7"><table><thead><tr><th>Den</th><th>Dotazů</th><th>Zajímavé</th><th>Upoz.</th><th>Přesk.</th><th>Chyby</th></tr></thead><tbody>
 {% for d in stats7 %}<tr{% if loop.first %} class="today"{% endif %}><td>{{ d.label }} <span class="hint">{{ d.dow }}</span></td><td><b>{{ d.calls }}</b></td><td>{{ d.interesting }}</td><td>{% if d.notified %}<span class="badge ok">{{ d.notified }}</span>{% else %}0{% endif %}</td><td class="hint">{{ d.skipped }}</td><td>{% if d.errors %}<span class="badge err">{{ d.errors }}</span>{% else %}0{% endif %}</td></tr>{% endfor %}
 </tbody></table></div></details>
-{% if pending_auto %}<div class="hint" style="margin-top:.5rem">🎬 Čeká na vytvoření: {% for j in pending_auto %}{{ j.name }} (v {{ j.due_h }}){% if not loop.last %} · {% endif %}{% endfor %}</div>{% endif %}
+{% if pending_auto %}<div class="hint" style="margin-top:.5rem">🎬 Čeká na vytvoření: {% for j in pending_auto %}{{ j.name }} ({% if j.film_open %}čeká na další AI film{% else %}v {{ j.due_h }}{% endif %}){% if not loop.last %} · {% endif %}{% endfor %}</div>{% endif %}
 {% else %}<p class="hint">Hlídání oblohy je vypnuté. <a href="/ai">Vyber poskytovatele a zapni ho</a> – Atmovio pak sám hlásí červánky, bouřky, duhy a další jevy.</p>{% endif %}
 </div>
 
@@ -3198,11 +3450,45 @@ TEMPLATES["storage.html"] = """{% extends "base.html" %}{% block content %}
 <p class="hint">Smaže video vybrané kamery v zadaném rozmezí (kromě právě nahrávané hodiny). Časová osa v přehrávači se srovná do jednoho dne.</p></form></details>
 {% endblock %}"""
 
-TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block head %}{% endblock %}{% block content %}
+TEMPLATES["ai_guide.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small" href="/ai#kdy">Nastavit AI film</a><a class="btn small sec" href="/videos/settings">Nastavit ukládání videa</a></div>{% endblock %}{% block content %}
+<div class="guide-page">
+<section class="card"><span class="eyebrow">Nejdřív to nejdůležitější</span><h2>Kamera nahrává video. AI si prohlíží fotografie.</h2><p>Kamerový záznam je souvislé video na disku. <strong>AI film je sada fotografií z určité doby</strong>, ze které AI poznává vývoj oblohy. Když najde zajímavý jev, Atmovio vystřihne video z kamerového záznamu. Z fotografií se toto MP4 neskládá.</p>
+<ol class="guide-flow" aria-label="Od kamery k YouTube videu"><li><b>1 · Kamera</b><span>Nahrává na disk</span></li><li><b>2 · Fotografie</b><span>Například každých 5 minut</span></li><li><b>3 · Závěr AI</b><span>Například po 60 minutách</span></li><li><b>4 · Uložený klip</b><span>Výstřih ze záznamu</span></li><li><b>5 · YouTube video</b><span>Volitelné zrychlení a úpravy</span></li></ol>
+<p class="hint">Kamera může nahrávat i bez AI. Kroky 4 a 5 vyžadují zapnuté ukládání a případně automatickou tvorbu ve studiu. Samotná detekce ještě nezaručuje odeslání upozornění ani vznik klipu.</p></section>
+
+<section class="card"><h2>Tři různé časy, které se nastavují zvlášť</h2><div class="guide-definitions"><div><span class="eyebrow">Jak často pořídím fotografii?</span><h3>Interval snímků</h3><p><b>5 minut</b> = fotografie v 18:00, 18:05, 18:10… Kratší interval zachytí více změn; krátký jev mezi fotografiemi může uniknout.</p></div><div><span class="eyebrow">Jak dlouhý děj posoudí AI najednou?</span><h3>Délka AI filmu</h3><p><b>60 minut</b> = v 19:00 se vyhodnotí dění od 18:00. Kratší film přinese dřívější závěr, delší film ukáže delší vývoj a znamená méně vyhodnocení.</p></div><div><span class="eyebrow">Kolik záznamu chci uchovat?</span><h3>Délka videa</h3><p><b>120 minut</b> = dvouhodinový výstřih ze záznamu. Nemění délku AI filmu ani četnost snímků. Alternativou je video podle skutečného průběhu jevu.</p></div></div></section>
+
+<section class="card" x-data="filmTiming('batch', true, {{ ai.interval_min }}, {{ ai.strip.span_min }})"><div class="section-head"><div><span class="eyebrow">Vyzkoušej si to</span><h2>Co se stane mezi 18:00 a koncem dvou filmů?</h2></div><button type="button" class="btn small sec" @click="sample=5; span=60">Příklad 5 / 60</button></div><p class="hint">Tato ukázka začíná hodnotami uloženými v nastavení. Její změny se <strong>neukládají</strong> a nevolají AI. Ukazuje ideální sběr jedné kamery bez výpadků a limitů.</p>
+<div class="row"><div><label for="guide-sample">Snímek každých (minut)</label><input id="guide-sample" type="number" min="1" max="1440" x-model.number="sample" value="{{ ai.interval_min }}"></div><div><label for="guide-span">Délka AI filmu (minut)</label><input id="guide-span" type="number" min="10" max="180" x-model.number="span" value="{{ ai.strip.span_min }}"></div></div>
+<div class="guide-timeline" role="img" :aria-label="'Dva navazující filmy. První od 18:00 do ' + clock(filmLength) + ', druhý do ' + clock(2*filmLength) + '. AI na konci každého vyhodnotí přibližně ' + count + ' snímků.'"><div class="guide-axis"><b>18:00</b><b x-text="clock(filmLength)"></b><b x-text="clock(2*filmLength)"></b></div><div class="guide-recording">Souvislý kamerový záznam na disku</div><div class="guide-windows"><div><b>AI film 1</b><span>Sbírá se <strong x-text="count"></strong> fotografií</span></div><div><b>AI film 2</b><span>Další sběr začíná hned</span></div></div><div class="guide-decisions"><div>↓ <b x-text="clock(filmLength)"></b><span>První závěr AI</span></div><div>↓ <b x-text="clock(2*filmLength)"></b><span>Druhý závěr AI</span></div></div></div>
+<div class="guide-summary" aria-live="polite"><strong x-text="summary"></strong><p x-text="frequency"></p><p class="hint" x-show="Number(sample)>filmLength">Interval je delší než film. Atmovio ho zkrátí na délku filmu, aby mělo alespoň začátek a konec.</p><p class="status-warning" x-show="count>36">Pro AI se vybere 36 rovnoměrně rozložených snímků, ostatní zůstanou k prohlédnutí. Velmi krátký jev může ve výběru chybět.</p></div>
+<details><summary>Jaké fotografie tvoří první film?</summary><div class="guide-frames"><template x-for="frame in previewFrames" :key="frame.index"><div><b x-text="'#' + (frame.index + 1)"></b><span x-text="clock(frame.minute)"></span></div></template></div><p class="hint" x-show="count>13">Schéma zobrazuje jen 13 časových bodů z celého filmu, nikoli přesný výběr pro AI. Skutečné podklady najdeš v AI detekci.</p></details>
+<p><b>AI se neptá při každé fotografii.</b> V režimu „Až po dokončení filmu“ nejdřív čeká na celý úsek. Zatímco hodnotí první film, kamera už sbírá druhý. Upozornění může přijít až po dokončení filmu a zpracování odpovědi.</p></section>
+
+<section class="card" id="hranice"><span class="eyebrow">Příklad s červánky · snímek 5 min / film 60 min</span><h2>Co když zajímavý jev začne těsně před koncem hodiny?</h2><p>Červánky začnou v <b>18:55</b> a skončí v <b>19:20</b>. Předpokládejme, že je AI správně rozpozná a automatické ukládání je zapnuté.</p>
+<div class="guide-event-axis" role="img" aria-label="První film 18 až 19 hodin, druhý 19 až 20 hodin. Červánky 18:55 až 19:20 zasahují do obou filmů."><div class="guide-axis"><b>18:00</b><b>19:00</b><b>20:00</b></div><div class="guide-windows"><div>Film 1</div><div>Film 2</div></div><div class="guide-event-track"><div style="margin-left:45.833%;width:20.834%"></div></div><p class="hint">Barevný úsek: červánky 18:55–19:20, přes hranici obou filmů.</p></div>
+<ol class="guide-story"><li><b>V 19:00: AI vidí, že červánky začínají.</b><p>V režimu videa podle události naplánuje klip a nechá ho čekat na další film. Hranice hodiny sama video neukončí.</p></li><li><b>Od 19:00 do 20:00: sbírá se pokračování.</b><p>Kamera stále nahrává. Fotografie zachytí, jak červánky pokračují a potom mizí.</p></li><li><b>Po 20:00: další závěr uzavře událost.</b><p>Pokud AI potvrdí pokračování stejného jevu, Atmovio spojí jeho rozsah do jednoho klipu. Přidá rezervu, protože fotografie neukazují každou sekundu.</p></li></ol>
+<div class="guide-definitions"><div><h3>Video podle události</h3><p>Sousední snímky mohou rozšířit rozsah na 18:50–19:25. S rezervou 2 minuty před a 3 po by příklad dal <b>18:48–19:28</b>. Skutečný výsledek závisí na závěru AI.</p></div><div><h3>Pevná délka 120 minut</h3><p>Při stejném začátku 18:48 bude konec <b>20:48</b>. Rezerva před jevem už je v těchto dvou hodinách. Klip vznikne až po zaznamenání konce; dál trvající jev může vytvořit další část.</p></div><div><h3>Ruční OD–DO</h3><p>Na detailu detekce můžeš zadat vlastní rozsah, třeba <b>18:45–19:30</b>. Nejprve ho přehraješ a pak uložíš jako nový klip. Oba časy obsahují také datum.</p></div></div>
+<p class="hint">Pokud další AI film nepřijde, čekání na návaznost skončí nejpozději po délce dalšího filmu + 15 minutách a uloží se dosud známý rozsah. Dlouhé události se v režimu podle události dělí přibližně po šesti hodinách na hranici filmu. Chybějící kamerový záznam se nedomýšlí.</p></section>
+
+<section class="card"><h2>Jak to nastavit na svém RPi5</h2><ol class="guide-story"><li><b>Kamery a úložiště</b><p>Ověř obraz kamery a skutečné nahrávání na disk. Záznam musí zůstat dostupný po celou dobu filmu, čekání na pokračování i vytváření klipu.</p></li><li><b>AI detekce → Kamery a jevy</b><p>Vyber kamery, sledované jevy a práh skóre. Skóre 7/10 znamená míru zajímavosti podle modelu, nikoli 70% jistotu správného rozpoznání.</p></li><li><b>Časování a AI film</b><p>Zapni AI film, vyber „Až po dokončení filmu“ a začni například s <b>5 minutami / 60 minutami</b>. Chceš-li závěr dříve, zkrať délku filmu. Chceš-li více zachycených okamžiků, zkrať interval snímků.</p></li><li><b>AI videa</b><p>Zapni automatické ukládání pro správné kamery. Vyber video podle události, nebo pevnou délku. U pevné délky musí být celkový čas delší než rezerva před jevem.</p></li><li><b>Zkontroluj první výsledek</b><p>V <a href="/history">AI detekci</a> otevři film. Prohlédni skutečné fotografie, označené podklady pro AI, její závěr a rozsah navrženého videa. Až podle výsledku dolaď interval, jevy nebo práh.</p></li></ol>
+<p class="field-note">Dvě hodiny záznamu zůstanou při původní rychlosti dvěma hodinami videa. Při časosběru 25× mají <b>4 minuty 48 sekund</b>. Délka AI filmu ani délka klipu samy neurčují rychlost přehrávání.</p></section>
+
+<section class="card"><h2>Časté nejasnosti</h2>
+<details><summary>Proč AI nereaguje hned na bouřku?</summary><p>V dokončeném filmu čeká na konec zvoleného úseku. Při 60 minutách může být událost vyhodnocená skoro o hodinu později, při frontě nebo výpadku ještě později. Kratší film zkrátí toto čekání, ale zvýší počet dotazů. Délka filmu může být 10–180 minut.</p></details>
+<details><summary>Proč se žádné video neuložilo?</summary><p>Ověř zapnuté automatické ukládání i vybranou kameru, skóre a shodu se sledovanými jevy (případně volbu „Cokoli fotogenického“), dostupný záznam a stav fronty AI videí. U dokončených filmů video nezávisí na úspěšném doručení e-mailu. Upozornění má vlastní odstupy a podmínky.</p></details>
+<details><summary>Co se stane v noci, po restartu nebo při vyčerpaném limitu?</summary><p>Restart zachová nasbírané snímky. Denní limit zastaví AI dotazy, ale sběr pokračuje. Při denním režimu se na konci světla uzavře i kratší film; noční jevy vyžadují vypnutí denního omezení. Výpadek může zanechat mezeru nebo neúplný film. Čekající snímky i historie podléhají době uchovávání.</p></details>
+<details><summary>Co změna nastavení a ruční test?</summary><p>Nový interval a délka se uplatní od následujícího filmu. Pro demonstraci nic ukládat nemusíš; skutečné hodnoty se mění až tlačítkem uložení v nastavení. Ruční test hodnotí aktuální pohled, nečeká na celý film a nerozděluje rozpracovaný film.</p></details>
+<details><summary>Proč starší historie obsahuje hodnocení každých pár minut?</summary><p>Původní průběžný režim se ptal při každé kontrole a starší fotografie přidával jen jako pohled dozadu. Nový dokončený film nejprve nasbírá celý časový úsek. Starší uložené pásy lze prohlédnout, ale fotografie, které se nikdy neuložily, zpětně nevzniknou.</p></details>
+<details><summary>Musím video poslat na YouTube?</summary><p>Ne. AI klip může zůstat pouze na disku. YouTube studio je samostatný další krok pro zrychlení, intro, hudbu, nadpis a popis. Publikování závisí na vlastním nastavení propojení a automatizace.</p></details>
+</section></div>
+{% endblock %}"""
+
+TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block head %}{% endblock %}{% block actions %}<a class="btn small sec" href="/ai/guide">Jak funguje AI film?</a>{% endblock %}{% block content %}
 {% set thr_opts = [(4, '4 – i docela obyčejná obloha (hodně upozornění)'), (5, '5 – hezká obloha'), (6, '6 – hezká, spíš výraznější'), (7, '7 – výrazný jev (doporučeno)'), (8, '8 – opravdu výrazný'), (9, '9 – jen výjimečná podívaná')] %}
 <div x-data="{tab: (['kdo','kamery','kdy','test'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'kdo')}" x-init="$watch('tab', t => history.replaceState(null, '', '#' + t))">
 <div class="page-head"><div><h1>Nastavení AI detekce</h1><p class="sub">Umělá inteligence se dívá do kamer a dá vědět, když je na obloze něco pěkného nebo nebezpečného.</p></div>
-<div class="actions">{% if ai.enabled and (ai.api_key or ai.provider == 'ollama') %}<span class="badge ok">zapnuto · {{ ai.cameras|length }} {{ 'kamera' if ai.cameras|length == 1 else ('kamery' if ai.cameras|length < 5 else 'kamer') }} · dnes {{ used_today }} dotazů</span>{% else %}<span class="badge warn">vypnuto</span>{% endif %}</div></div>
+<div class="actions"><a class="btn small sec" href="/ai/guide">Jak funguje AI film?</a>{% if ai.enabled and (ai.api_key or ai.provider == 'ollama') %}<span class="badge ok">zapnuto · {{ ai.cameras|length }} {{ 'kamera' if ai.cameras|length == 1 else ('kamery' if ai.cameras|length < 5 else 'kamer') }} · dnes {{ used_today }} dotazů</span>{% else %}<span class="badge warn">vypnuto</span>{% endif %}</div></div>
 
 <div class="tabs big">
  <button type="button" :class="{on: tab==='kdo'}" @click="tab='kdo'">Poskytovatel a model</button>
@@ -3216,7 +3502,7 @@ TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block head %}{% endblock %
 <!-- ===== 1 · kdo hodnotí ===== -->
 <div x-show="tab==='kdo'">
 <div class="card" x-data="{p: '{{ ai.provider }}'}"><div class="section-head"><h2>Kdo se na oblohu dívá</h2>{% if ai.api_key or ai.provider == 'ollama' %}<span class="badge ok">{{ provider_info[ai.provider].name }} · {{ ai.model or 'auto' }}</span>{% else %}<span class="badge warn">chybí klíč</span>{% endif %}</div>
-<p class="hint">AI dostane aktuální snímek a při zapnutém filmovém pásu také starší snímky. Vrátí jevy, skóre a popis vývoje. Vyber poskytovatele a model, který umí pracovat s obrázky.</p>
+<p class="hint">AI dostane dokončený film ze snímků, nebo aktuální pohled podle zvoleného režimu. Vrátí jevy, skóre a popis vývoje. Vyber poskytovatele a model, který umí pracovat s obrázky.</p>
 <div class="prov">
 {% for pid, pi in provider_info.items() %}
 <label class="prov-card" :class="{on: p==='{{ pid }}'}"><input type="radio" name="provider" value="{{ pid }}" x-model="p">
@@ -3285,23 +3571,22 @@ TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block head %}{% endblock %
 
 <!-- ===== 3 · kdy se dívat ===== -->
 <div x-show="tab==='kdy'" x-cloak>
-<div class="card"><h2>Jak často</h2>
-<div class="row">
-<div><label>Běžně každých (minut)</label><input type="number" name="interval_min" min="1" max="1440" value="{{ ai.interval_min }}"></div>
-<div><label>Kolem východu/západu každých (minut)</label><input type="number" name="fast_interval_min" min="1" max="60" value="{{ ai.fast_interval_min }}"><div class="hint">Červánky trvají krátce – tady se dívá častěji.</div></div>
-<div><label>Nejvíc dotazů na AI za den</label><input type="number" name="daily_limit" min="0" max="100000" value="{{ ai.daily_limit }}"><div class="hint">Dnes použito <b>{{ used_today }}</b>. Hlídá bezplatný limit poskytovatele.</div></div>
-</div>
+<div class="card" x-data="filmTiming('{{ ai.strip.mode }}', {{ 'true' if ai.strip.enabled else 'false' }}, {{ ai.interval_min }}, {{ ai.strip.span_min }})">
+<h2>Sběr snímků a vyhodnocení AI filmu</h2>
+<p class="hint">Snímky se sbírají průběžně. V režimu dokončených filmů se AI ptáme až na konci zvoleného časového úseku.</p>
+<label class="check"><input type="checkbox" name="strip_enabled" x-model="active"> Používat AI film z více snímků</label>
+<div class="row"><div><label>Způsob vyhodnocení</label><select name="strip_mode" x-model="mode"><option value="batch">Až po dokončení filmu · doporučeno</option><option value="rolling">Při každém snímku s pohledem dozadu · původní režim</option></select></div>
+<div><label>Snímek každých (minut)</label><input type="number" name="interval_min" x-model.number="sample" min="1" max="1440" value="{{ ai.interval_min }}"><div class="hint">V dokončeném filmu jde pouze o sběr, ne o dotaz na AI. Interval delší než film se zkrátí na délku filmu.</div></div>
+<div><label>Délka AI filmu (minut)</label><input type="number" name="strip_span_min" x-model.number="span" min="10" max="180" value="{{ ai.strip.span_min }}"><div class="hint">Např. 60 minut + snímek každých 5 minut = přibližně 13 snímků a jedno vyhodnocení za hodinu na kameru.</div></div></div>
+<div class="guide-inline" x-show="active && mode==='batch'" aria-live="polite"><span class="eyebrow">Co znamenají právě zadané hodnoty?</span><div class="guide-mini"><div><b x-text="'1 snímek / ' + interval + ' min'"></b><span>Fotografie se ukládají</span></div><span aria-hidden="true">→</span><div><b x-text="count + ' snímků / film'"></b><span x-text="'Přibližně za ' + filmLength + ' minut'"></span></div><span aria-hidden="true">→</span><div><b>1 vyhodnocení AI</b><span>Až po dokončení filmu</span></div></div><p class="hint" x-text="frequency"></p><p class="hint" x-show="count>36">AI dostane rovnoměrný výběr 36 snímků; všechny fotografie zůstanou k prohlédnutí.</p><p class="hint">Tato ukázka reaguje na formulář. Skutečné nastavení se změní až po uložení.</p><a href="/ai/guide">Grafický průvodce: od fotografie až k videu →</a></div>
+<div class="field-note" x-show="active && mode==='batch'">Upozornění přijde až po dokončení filmu. Snímky se ukládají i při tmě a malých změnách, aby se neztratil vývoj. Rozpracované filmy najdeš v <a href="/history">AI detekci</a>. Změna časování platí od následujícího filmu; ruční test hodnotí aktuální pohled a nerozděluje film.</div>
+<p class="hint" x-show="active && mode==='batch'">AI obdrží nejvýše 36 rovnoměrně vybraných snímků včetně prvního a posledního. Při hustším sběru zůstanou všechny snímky k prohlédnutí a uvidíš, které dostala AI. V noci se při zapnutém denním režimu vyhodnotí i kratší závěrečný film. Snímky nasbírané při vyčerpaném limitu čekají nejdéle po nastavenou dobu uchovávání historie.</p>
+<details><summary>Průběžný režim a úsporné předfiltry</summary><p class="hint">Tyto volby platí pro původní průběžné hodnocení a hodnocení jednotlivých snímků. Dokončené filmy mají pevný interval sběru.</p>
+<div class="row"><div><label>Rychlý interval (minut)</label><input type="number" name="fast_interval_min" min="1" max="60" value="{{ ai.fast_interval_min }}"></div>
+<div><label>Starší snímky v průběžném pásu</label><input type="number" name="strip_frames" min="2" max="12" value="{{ ai.strip.frames }}"></div></div>
 <label class="check"><input type="checkbox" name="fast_mode" {% if ai.fast_mode %}checked{% endif %}> Kolem východu/západu a po zajímavém snímku se dívat častěji</label>
-<label class="check"><input type="checkbox" name="prefilter" {% if ai.prefilter %}checked{% endif %}> Neptat se AI, když se obraz skoro nezměnil (šetří limit)</label>
-<div class="hint">Odhad: asi <b>{{ estimate }}</b> dotazů denně (méně, když se obraz nemění nebo je tma).</div>
-</div>
-<div class="card"><h2>Filmový pás – AI vidí i vývoj</h2>
-<label class="check"><input type="checkbox" name="strip_enabled" {% if ai.strip.enabled %}checked{% endif %}> K aktuálnímu snímku přidat pás starších snímků</label>
-<div class="row">
-<div><label>Kolik starších snímků</label><input type="number" name="strip_frames" min="2" max="12" value="{{ ai.strip.frames }}"></div>
-<div><label>Jak daleko dozadu (minut)</label><input type="number" name="strip_span_min" min="10" max="180" value="{{ ai.strip.span_min }}"></div>
-</div>
-<div class="hint">AI pak nehodnotí jen jeden okamžik, ale vidí, jak se obloha za poslední hodinu měnila – pozná, jestli jev nastupuje, vrcholí nebo odeznívá, a ohodnotí, jak působivý by byl časosběr. Pořád je to jeden dotaz na AI (jeden obrázek), limit se nemění. Snímky do pásu si Atmovio sbírá z každé kontroly, takže po startu chvíli trvá, než se pás naplní.</div>
+<label class="check"><input type="checkbox" name="prefilter" {% if ai.prefilter %}checked{% endif %}> Přeskakovat téměř nezměněné jednotlivé snímky</label></details>
+<label>Nejvíc dotazů na AI za den</label><input type="number" name="daily_limit" min="0" max="100000" value="{{ ai.daily_limit }}"><p class="hint">Dnes {{ used_today }}. Odhad podle uloženého nastavení: přibližně {{ estimate }} vyhodnocení denně. 0 = bez limitu. Sběr filmů pokračuje i při vyčerpání limitu.</p>
 </div>
 <div class="card"><h2>Kdy je světlo</h2>
 <label class="check"><input type="checkbox" name="day_only" {% if ai.day_only %}checked{% endif %}> Dívat se jen od svítání do soumraku (v noci nemá smysl)</label>
@@ -3311,7 +3596,7 @@ TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block head %}{% endblock %
 <option value="nautical" {% if ai.twilight == 'nautical' %}selected{% endif %}>nautický soumrak – cca 75 min (doporučeno, červánky)</option>
 <option value="astronomical" {% if ai.twilight == 'astronomical' %}selected{% endif %}>astronomický soumrak – cca 2 h (v létě skoro celá noc)</option>
 <option value="minutes" {% if ai.twilight == 'minutes' %}selected{% endif %}>pevně: východ/západ ± rezerva v minutách (níže)</option></select></div>
-<div><label class="check" style="margin:1.9rem 0 .3rem"><input type="checkbox" name="dark_skip" {% if ai.dark_skip %}checked{% endif %}> Tmavý snímek AI neposílat</label><div class="hint">V noci nebo v infra režimu kamery se snímek jen změří a přeskočí.</div></div>
+<div><label class="check" style="margin:1.9rem 0 .3rem"><input type="checkbox" name="dark_skip" {% if ai.dark_skip %}checked{% endif %}> Tmavý jednotlivý snímek AI neposílat</label><div class="hint">Platí pro jednotlivé snímky a průběžný režim. V dokončeném filmu se tmavé snímky zachovají jako součást vývoje.</div></div>
 </div>
 <div class="hint">Dnes: svítání {{ sun.dawn }} · východ {{ sun.sunrise }} · západ {{ sun.sunset }} · soumrak {{ sun.dusk }} → hlídá se {{ sun.dawn }}–{{ sun.dusk }}.</div>
 <details><summary>Pokročilé (poloha, prahy, odstupy, pokyny pro AI)</summary>
@@ -3519,7 +3804,7 @@ TEMPLATES["logs.html"] = """{% extends "base.html" %}{% block actions %}<div cla
 
 TEMPLATES["detection.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small sec" href="/history">← Historie</a></div>{% endblock %}{% block content %}
 <div class="grid-2" style="grid-template-columns:minmax(0,3fr) minmax(300px,2fr)">
-<div>
+<div x-data="clipRange({{ from_time|tojson|forceescape }}, {{ to_time|tojson|forceescape }}, {{ clip_tz|tojson|forceescape }})">
 <div class="card" style="padding:0;overflow:hidden">
 {% if use_export %}
 <video id="clip" controls preload="metadata" playsinline style="width:100%;display:block;background:#000;aspect-ratio:16/9" poster="{% if e.image %}/snapshot/{{ e.image }}{% endif %}" src="/videos/{{ use_export.id }}/play.mp4"></video>
@@ -3527,32 +3812,31 @@ TEMPLATES["detection.html"] = """{% extends "base.html" %}{% block actions %}<di
 <video id="clip" controls preload="metadata" playsinline style="width:100%;display:block;background:#000;aspect-ratio:16/9" poster="{% if e.image %}/snapshot/{{ e.image }}{% endif %}" src="/clip/{{ e.camera }}.mp4?start={{ '%.0f'|format(clip_start) }}&end={{ '%.0f'|format(clip_end) }}"></video>
 {% elif e.image %}<a href="/snapshot/{{ e.image }}" data-lightbox="detail" data-caption="{{ cam(e.camera) }} · {{ e.ts[8:10] }}. {{ e.ts[5:7]|int }}. {{ e.ts[0:4] }} {{ e.ts[11:16] }}"><img src="/snapshot/{{ e.image }}" alt="" style="width:100%;display:block"></a>{% else %}<div class="hint" style="padding:18px">Snímek už není k dispozici.</div>{% endif %}
 <div style="padding:.6rem .9rem;display:flex;gap:.8rem;align-items:center;flex-wrap:wrap">
-<form method="get" action="/detection/{{ e.id }}" class="row" style="align-items:end;gap:.5rem;flex:1">
-<div style="min-width:110px"><label>Minut před</label><input type="number" name="before" min="0" max="60" value="{{ before }}"></div>
-<div style="min-width:110px"><label>Minut po</label><input type="number" name="after" min="0" max="60" value="{{ after }}"></div>
-<div style="flex:0"><button class="btn small sec">Přehrát úsek</button></div></form>
+<form method="get" action="/detection/{{ e.id }}" class="clip-range-form">
+<div class="clip-range-fields"><div><label>OD · datum a čas</label><input type="datetime-local" step="1" name="from_time" x-model="from" value="{{ from_time }}" @change="measure()" required></div><div><label>DO · datum a čas</label><input type="datetime-local" step="1" name="to_time" x-model="to" value="{{ to_time }}" @change="measure()" required></div><div><label>Celková délka (minut)</label><input type="number" min="0.02" max="120" step="any" x-model="minutes" @input="resize()" value="{{ clip_minutes }}" required></div></div><p class="hint">Časové pásmo {{ clip_tz }} · nejvýše 120 minut. Změna délky upraví čas DO; oba časy můžeš zadat také ručně. Jde o délku zdrojového záznamu.</p><button class="btn small sec">Přehrát tento rozsah</button></form>
 {% if e.image %}<a class="btn small sec" href="/snapshot/{{ e.image }}" data-lightbox="detail" data-caption="{{ cam(e.camera) }} · {{ e.ts[11:16] }}">🖼 Snímek AI</a>{% endif %}
 </div>
-{% if use_export %}<div class="hint" style="padding:0 .9rem .7rem">🎬 Přehrává se <b>vystřižené video</b> „{{ use_export.name }}“ ({{ use_export.range_h }}, {{ use_export.duration_h }}) – plynule, s posuvníkem. Jiný rozsah přímo ze záznamu zobrazíš tlačítkem <b>Přehrát úsek</b>.</div>
-{% elif clip_state == 'ok' %}<div class="hint" style="padding:0 .9rem .7rem">Přehrává se surový záznam {{ before }} min před a {{ after }} min po snímku, který Frigate skládá z 10s úseků – čas v přehrávači proto může skákat a posuvník je nepřesný. Pro plynulé přehrání si video níže vystřihni; pak se tady přehraje samo.</div>
+{% if use_export %}<div class="hint" style="padding:0 .9rem .7rem">🎬 Přehrává se <b>vystřižené video</b> „{{ use_export.name }}“ ({{ use_export.range_h }}, {{ use_export.duration_h }}) – plynule, s posuvníkem. Jiný rozsah přímo ze záznamu zobrazíš tlačítkem <b>Přehrát tento rozsah</b>.</div>
+{% elif clip_state == 'ok' %}<div class="hint" style="padding:0 .9rem .7rem">Přehrává se zvolený záznam o délce {{ clip_minutes }} minut, který Frigate skládá z 10s úseků – čas v přehrávači proto může skákat a posuvník je nepřesný. Pro plynulé přehrání si video níže vystřihni; pak se tady přehraje samo.</div>
+{% elif clip_state == 'future' %}<p class="hint" style="padding:0 1rem">Konec úseku je v budoucnosti. Klip můžeš naplánovat níže; vznikne až po dokončení záznamu.</p>
 {% elif clip_state == 'none' %}<div class="flash warn" style="margin:0 .9rem .7rem"><span>🎞</span><div>Pro tento čas <b>není záznam</b> – kamera v tu dobu nenahrávala (výpadek, živý režim bez disku) nebo už byl smazán po {{ retain }} dnech. Video tedy nelze přehrát ani vystřihnout; snímek AI zůstává.</div></div>
 {% elif clip_state == 'offline' %}<div class="flash warn" style="margin:0 .9rem .7rem"><span>⏳</span><div>Frigate právě neodpovídá (startuje nebo se restartuje) – zkus to za minutu.</div></div>
 {% else %}<div class="hint" style="padding:0 .9rem .7rem">Záznam není k dispozici – disk pro záznamy není připojený.</div>{% endif %}
 </div>
 
-<div class="card"><div class="section-head"><h2>Vystřihnout video ke stažení</h2>{% if my_exports %}<a class="btn small sec" href="/videos">Moje videa ({{ my_exports|length }})</a>{% endif %}</div>
-{% if clip_state == 'ok' %}
+<div class="card"><div class="section-head"><h2>Uložit zvolený rozsah videa</h2>{% if my_exports %}<a class="btn small sec" href="/videos">Moje videa ({{ my_exports|length }})</a>{% endif %}</div>
+{% if clip_state in ('ok', 'future') %}
 <form method="post" action="/detection/{{ e.id }}/export">
+<input type="hidden" name="from_time" x-model="from" value="{{ from_time }}"><input type="hidden" name="to_time" x-model="to" value="{{ to_time }}">
+<p class="hint">Použije rozsah OD–DO zadaný u přehrávače výše.</p>
 <div class="row" style="align-items:end">
 <div style="flex:3"><label>Název videa</label><input type="text" name="name" value="{{ default_name }}" maxlength="80"></div>
-<div><label>Minut před snímkem</label><input type="number" name="before" min="0" max="60" value="{{ before }}"></div>
-<div><label>Minut po snímku</label><input type="number" name="after" min="0" max="60" value="{{ after }}"></div>
 <div><label>Rychlost videa</label><select name="playback"><option value="realtime">normální (bez překódování, hotové hned)</option><option value="timelapse_25x">zrychlené 25× – timelapse (překóduje se, pár minut)</option></select></div>
 </div>
-<button class="btn" data-busy="Zadávám vystřižení videa">🎬 Vytvořit video</button>
-<span class="hint">Video (MP4) se uloží na disk pro záznamy a objeví se ve <a href="/videos">Videa</a> s náhledem, přehrávačem a odkazem ke stažení. Normální video jde v přehrávači zrychlit až 120×; zrychlené 25× je malý soubor vhodný ke sdílení. Samo se smaže po nastavené době.</span></form>
+<button class="btn" data-busy="Zadávám vystřižení videa">{{ "Naplánovat video" if clip_state == "future" else "Vytvořit video z tohoto rozsahu" }}</button>
+<span class="hint">Vznikne nový klip; dříve uložené video se nepřepisuje. Video (MP4) se uloží na disk pro záznamy a objeví se ve <a href="/videos">Videa</a> s náhledem, přehrávačem a odkazem ke stažení. Normální video jde v přehrávači zrychlit až 120×; zrychlené 25× je malý soubor vhodný ke sdílení. Samo se smaže po nastavené době.</span></form>
 {% elif clip_state == 'none' %}<p class="hint">Pro tento čas není záznam, video nelze vystřihnout.</p>{% elif clip_state == 'offline' %}<p class="hint">Frigate právě neodpovídá – zkus to za minutu.</p>{% else %}<p class="hint">Bez připojeného disku pro záznamy nelze video vystřihnout.</p>{% endif %}
-{% for j in pending_auto %}<div class="flash" style="margin-top:.6rem"><span>🎬</span><div>Video −{{ ((j.start_ts and (e_center - j.start_ts) / 60) or 0)|round|int }}/+{{ ((j.end_ts - e_center) / 60)|round|int }} min se vytvoří <b>automaticky v {{ j.due_h }}</b> (až doběhne záznam po snímku).</div></div>{% endfor %}
+{% for j in pending_auto %}<div class="flash" style="margin-top:.6rem"><div>{% if j.film_open %}Jev pokračuje. Klip čeká na další AI film, nejdéle do {{ j.due_h }}; potom uloží dostupný rozsah.{% else %}Video je naplánované k vytvoření v {{ j.due_h }}.{% endif %}</div></div>{% endfor %}
 {% if my_exports %}<div style="margin-top:.6rem;display:flex;gap:.4rem;flex-wrap:wrap;align-items:center"><span class="hint">Z této detekce už existuje:</span>{% for x in my_exports %}<a class="btn small sec" href="/videos/{{ x.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ x.name }}">▶ {{ x.name }}</a>{% endfor %}</div>{% endif %}
 </div>
 </div>
@@ -3562,9 +3846,10 @@ TEMPLATES["detection.html"] = """{% extends "base.html" %}{% block actions %}<di
 <div class="hint" style="margin-bottom:.6rem">📷 <a href="/camera/{{ e.camera }}">{{ cam(e.camera) }}</a> · {{ info.ip or '' }} {{ info.via }}</div>
 <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.5rem"><span class="badge info" style="font-size:.95rem;padding:.2rem .7rem">{{ e.score }}/10</span>{% for l in phen %}<span class="badge warn">{{ l }}</span>{% endfor %}{% if e.notified %}<span class="badge ok">upozornění odesláno</span>{% endif %}{% if my_exports %}<a class="badge info" href="/videos#v{{ my_exports[0].id }}">🎬 video exportováno</a>{% endif %}</div>
 <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.5rem">{% if e.trend %}<span class="badge {{ 'ok' if e.trend in ('nastupuje', 'vrcholí') else 'mut' }}" title="Vývoj podle filmového pásu">{{ {'nastupuje': '↗', 'vrcholí': '★', 'odeznívá': '↘', 'beze změny': '→'}.get(e.trend, '') }} {{ e.trend }}</span>{% endif %}{% if e.timelapse is not none %}<span class="badge info" title="Jak působivý by byl časosběr posledních minut (podle AI)">🎞 časosběr {{ e.timelapse }}/10</span>{% endif %}</div>
-<p style="font-size:1.02rem;line-height:1.55">{{ e.description }}</p>
+<p style="font-size:1.02rem;line-height:1.55">{{ e.description or e.error }}</p>
 {% if film.evolution %}<h3>Vývoj v AI filmu</h3><p>{{ film.evolution }}</p><p class="hint">{{ film.frames }} snímků · {{ film.range_h }}. Tento rozsah se může lišit od uloženého videa.</p>{% endif %}
-{% if strip %}<details><summary class="hint">Co AI viděla (aktuální snímek + filmový pás)</summary><a href="/snapshot/{{ strip }}" data-lightbox="strip"><img src="/snapshot/{{ strip }}" alt="" style="width:100%;border-radius:.5rem;margin-top:.4rem"></a></details>{% endif %}
+{% if film.film_id %}<a class="btn" href="/ai/films/{{ film.film_id }}">Přehrát AI film · {{ film.collected }} snímků</a>{% endif %}
+{% if strip %}<details open><summary class="hint">Přesný obrázek odeslaný AI{% if film.mode == 'batch' %} · celý film{% else %} · aktuální pohled a starší snímky{% endif %}</summary><a href="/snapshot/{{ strip }}" data-lightbox="strip"><img src="/snapshot/{{ strip }}" alt="" style="width:100%;border-radius:.5rem;margin-top:.4rem"></a></details>{% endif %}
 {% if e.note %}<div class="hint">{{ e.note }}</div>{% endif %}
 <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.6rem"><a class="btn small sec" href="{{ frigate_ui }}/review" target="_blank" rel="noopener">Frigate ↗</a>
 <form method="post" action="/detection/{{ e.id }}/delete" onsubmit="return confirm('Smazat tuto detekci i se snímkem?')"><button class="btn small danger">Smazat detekci</button></form></div>
@@ -3636,9 +3921,9 @@ TEMPLATES["camera.html"] = """{% extends "base.html" %}{% block actions %}<div c
  <div class="item"><div class="k">Upozornit od</div><div class="v">{{ rl.threshold }}/10</div><div class="d">{% if rl.custom %}vlastní nastavení kamery{% else %}výchozí nastavení{% endif %}</div></div>
  <div class="item"><div class="k">Jevy</div><div class="v">{{ rl.phenomena|length }}</div><div class="d">{% if rl.any %}+ cokoli fotogenického{% else %}jen vybrané jevy{% endif %}</div></div>
  <div class="item"><div class="k">Automatické video</div><div class="v" style="font-size:.95rem">{% if auto_on %}zapnuto{% else %}vypnuto{% endif %}</div><div class="d">{% if auto_on %}−{{ ax.before_min }}/+{{ ax.after_min }} min{% if ax.playback == 'timelapse_25x' %}, 25×{% endif %}{% else %}po upozornění nic{% endif %}</div></div>
- <div class="item"><div class="k">Dotazů za 7 dní</div><div class="v">{{ week.calls }}</div><div class="d">{{ week.notified }} upozornění · kontrola každých {{ cfg.ai.interval_min }} min</div></div>
+ <div class="item"><div class="k">Dotazů za 7 dní</div><div class="v">{{ week.calls }}</div><div class="d">{{ week.notified }} upozornění · {{ "AI film každých" if cfg.ai.strip.enabled and cfg.ai.strip.mode == "batch" else "kontrola každých" }} {{ cfg.ai.strip.span_min if cfg.ai.strip.enabled and cfg.ai.strip.mode == "batch" else cfg.ai.interval_min }} min</div></div>
 </div>
-{% if pending_auto %}<div class="hint" style="margin-top:.5rem">🎬 Čeká na vytvoření: {% for j in pending_auto %}{{ j.name }} (v {{ j.due_h }}){% if not loop.last %} · {% endif %}{% endfor %}</div>{% endif %}
+{% if pending_auto %}<div class="hint" style="margin-top:.5rem">🎬 Čeká na vytvoření: {% for j in pending_auto %}{{ j.name }} ({% if j.film_open %}čeká na další AI film{% else %}v {{ j.due_h }}{% endif %}){% if not loop.last %} · {% endif %}{% endfor %}</div>{% endif %}
 <div style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;margin-top:.7rem"><a class="btn small" href="/ai#kamery">Nastavení AI pro tuto kameru</a>
 <form method="post" action="/ai/test" data-nobusy style="margin:0"><input type="hidden" name="camera" value="{{ camera }}"><input type="hidden" name="back" value="/camera/{{ camera }}"><button class="btn small sec" {% if not cfg.ai.api_key %}disabled{% endif %}>Vyzkoušet AI na aktuálním snímku</button></form><span class="hint">Výsledek se ukáže v Nastavení → AI → Vyzkoušet (bez upozornění).</span></div>
 </div>
@@ -3682,7 +3967,7 @@ TEMPLATES["youtube.html"] = """{% extends "base.html" %}{% block actions %}<a cl
 
 TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block actions %}<a class="btn small sec" href="/videos/settings">Nastavení AI videí</a>{% endblock %}{% block content %}
 <div class="workflow"><a href="/history">1 · AI detekce</a><span>→</span><b>2 · AI videa</b><span>→</span><a href="/youtube">3 · YouTube videa</a></div>
-{% if pending_auto %}<div class="card"><h2>Čeká na dokončení záznamu</h2>{% for j in pending_auto %}<p>{{ j.name }} <span class="hint">· plánováno {{ j.due_h }}</span></p>{% endfor %}</div>{% endif %}
+{% if pending_auto %}<div class="card"><h2>Čeká na dokončení záznamu</h2>{% for j in pending_auto %}<p>{{ j.name }} <span class="hint">· {% if j.film_open %}jev pokračuje · čeká na další AI film, nejdéle do {{ j.due_h }}{% else %}plánováno {{ j.due_h }}{% endif %}</span></p>{% endfor %}</div>{% endif %}
 {% if failed_auto %}<details class="card" open><summary>Automatická videa, která se nepodařilo vytvořit</summary>{% for j in failed_auto %}<p><a href="/detection/{{ j.detection_id }}">{{ j.name }}</a> · {{ j.message }}</p>{% endfor %}<p class="hint">V detailu detekce lze ověřit dostupnost záznamu a zadat nový klip.</p></details>{% endif %}
 <div class="section-head" style="margin-top:1.2rem"><h2>AI videa</h2><span class="hint">zdrojové klipy z detekcí a ručních exportů</span></div>
 {% if not videos %}<div class="card"><p>Zatím žádné video. Otevři detekci v <a href="/history">Historii</a> a klikni na <b>Vytvořit video</b> – vybereš, kolik minut před a po snímku se má vystřihnout.</p></div>{% endif %}
@@ -3706,19 +3991,42 @@ TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block actions %}<a cla
 {% if pending_auto or videos|selectattr('in_progress')|list %}<div x-data="autorefresh(20)"></div>{% endif %}
 {% endblock %}"""
 
-TEMPLATES["export_settings.html"] = """{% extends "base.html" %}{% block actions %}<a class="btn sec small" href="/videos">Otevřít AI videa {{ icons.ext|safe }}</a>{% endblock %}{% block content %}
+TEMPLATES["export_settings.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn sec small" href="/ai/guide#hranice">Jak vzniká video z AI filmu?</a><a class="btn sec small" href="/videos">Otevřít AI videa {{ icons.ext|safe }}</a></div>{% endblock %}{% block content %}
 <form method="post" action="/videos/settings" class="settings-form editor-form">
-<section class="form-section"><div class="section-copy"><span class="eyebrow">01 / Automatizace</span><h2>Ukládání po detekci</h2><p>Po upozornění AI se vytvoří klip z vybraných kamer. Jevy, skóre a odstupy upravíš v <a href="/ai#kamery">nastavení detekce</a>.</p></div>
+<section class="form-section"><div class="section-copy"><span class="eyebrow">01 / Automatizace</span><h2>Ukládání po detekci</h2><p>Po zajímavém AI filmu se vytvoří klip z vybraných kamer, nezávisle na doručení upozornění. V původním průběžném režimu vzniká klip po odeslání upozornění. Jevy, skóre a odstupy upravíš v <a href="/ai#kamery">nastavení detekce</a>.</p></div>
 <div class="section-fields"><label class="check setting-switch"><input type="checkbox" name="ax_enabled" {% if ai.auto_export.enabled %}checked{% endif %}><span><strong>Automaticky ukládat videa</strong><small>Klip se uloží, jakmile je celý úsek zaznamenaný.</small></span></label>
 <fieldset class="camera-selection"><legend>Zapojené kamery</legend>{% for c in cameras %}<label class="check camera-option"><input type="checkbox" name="ax_cam_{{ c }}" {% if c in ai.auto_export.cameras %}checked{% endif %}><span>{{ cam(c) }}{% if c not in ai.cameras %}<small class="status-warning">AI detekce není pro tuto kameru zapnutá.</small>{% endif %}</span></label>{% else %}<div class="empty-form">Nejdříve <a href="/cameras">přidej kameru</a>.</div>{% endfor %}</fieldset></div></section>
-<section class="form-section"><div class="section-copy"><span class="eyebrow">02 / Obsah klipu</span><h2>Rozsah a rychlost</h2><p>Ulož i dění před detekcí a po ní. Průběžný záznam musí být dostupný na disku.</p></div>
-<div class="section-fields"><div class="field-grid"><div><label for="clip-before">Před detekcí</label><div class="input-unit"><input id="clip-before" type="number" name="ax_before" min="0" max="60" value="{{ ai.auto_export.before_min }}"><span>minut</span></div></div><div><label for="clip-after">Po detekci</label><div class="input-unit"><input id="clip-after" type="number" name="ax_after" min="0" max="60" value="{{ ai.auto_export.after_min }}"><span>minut</span></div></div></div>
-<label for="clip-playback">Rychlost zdrojového klipu</label><select id="clip-playback" name="ax_playback"><option value="realtime" {% if ai.auto_export.playback != 'timelapse_25x' %}selected{% endif %}>Původní rychlost · doporučeno</option><option value="timelapse_25x" {% if ai.auto_export.playback == 'timelapse_25x' %}selected{% endif %}>Časosběr 25×</option></select><p class="field-help">Pro další úpravy ve studiu ponech původní rychlost. Studio může video zrychlit později.</p></div></section>
+<section class="form-section"><div class="section-copy"><span class="eyebrow">02 / Obsah klipu</span><h2>Rozsah a rychlost</h2><p>Zvol pevnou celkovou délku, nebo nech délku řídit podle průběhu události. Rozsah jednotlivého klipu můžeš upřesnit časem OD–DO na detailu detekce. Kamerový záznam musí zůstat dostupný na disku.</p></div>
+<div class="section-fields" x-data="{lengthMode:'{{ ai.auto_export.length_mode }}'}">
+<label for="clip-length-mode">Délka ukládaného videa</label><select id="clip-length-mode" name="ax_length_mode" x-model="lengthMode"><option value="event">Podle délky události · s návazností AI filmů</option><option value="fixed">Pevná celková délka</option></select>
+<div x-show="lengthMode==='fixed'"><label for="clip-duration">Celková délka (minut)</label><div class="input-unit short"><input id="clip-duration" type="number" name="ax_duration" min="1" max="120" step="1" value="{{ ai.auto_export.duration_min }}"><span>minut</span></div><p class="field-help">1–120 minut zdrojového záznamu, včetně rezervy před jevem. Začátek = začátek jevu minus „Před detekcí“, konec = začátek plus tato délka. Rezerva „Po detekci“ se v tomto režimu nepřičítá. Při pokračování vznikne další navazující část.</p></div>
+<div class="field-grid"><div><label for="clip-before">Před detekcí</label><div class="input-unit"><input id="clip-before" type="number" name="ax_before" min="0" max="60" value="{{ ai.auto_export.before_min }}"><span>minut</span></div></div><div><label for="clip-after">Po detekci</label><div class="input-unit"><input id="clip-after" :disabled="lengthMode==='fixed'" type="number" name="ax_after" min="0" max="60" value="{{ ai.auto_export.after_min }}"><span>minut</span></div></div></div>
+<label for="clip-playback">Rychlost zdrojového klipu</label><select id="clip-playback" name="ax_playback"><option value="realtime" {% if ai.auto_export.playback != 'timelapse_25x' %}selected{% endif %}>Původní rychlost · doporučeno</option><option value="timelapse_25x" {% if ai.auto_export.playback == 'timelapse_25x' %}selected{% endif %}>Časosběr 25×</option></select><p class="field-help">Délka výše označuje čas zaznamenané události. Při původní rychlosti mají 2 hodiny záznamu délku 2 hodiny; časosběr 25× je zkrátí na 4 minuty 48 sekund. Pro další úpravy ponech původní rychlost.</p></div></section>
 <section class="form-section"><div class="section-copy"><span class="eyebrow">03 / Úložiště</span><h2>Doba uchovávání</h2><p>Společná pro zdrojové klipy i zpracovaná YouTube videa na tomto zařízení.</p></div>
 <div class="section-fields"><label for="clip-days">Automaticky odstranit po</label><div class="input-unit short"><input id="clip-days" type="number" name="days" min="1" max="365" value="{{ keep_days }}"><span>dnech</span></div><div class="field-note">Videa publikovaná na YouTube a stažené kopie zůstávají. Snímky AI a průběžný záznam mají vlastní nastavení.</div></div></section>
 <div class="savebar"><span class="save-context">Změny se projeví po uložení.</span><button class="btn">Uložit nastavení AI videí</button></div></form>{% endblock %}"""
 
+TEMPLATES["film.html"] = """{% extends "base.html" %}{% block actions %}<a class="btn small sec" href="/history">Zpět na AI detekci</a>{% endblock %}{% block content %}
+<div class="card"><div class="section-head"><h2>{{ {'collecting':'Film se právě sbírá','ready':'Film čeká na AI','done':'Dokončený AI film','failed':'Vyhodnocení selhalo','incomplete':'Neúplný film'}.get(film.status, film.status) }}</h2><span class="badge info">{{ frames|length }} snímků · interval {{ film.sample_min }} min</span></div>
+<p class="hint">Konec sběru: {{ end_h }}. {% if film.status=='collecting' %}Obnov stránku pro nové snímky. Výběr podkladů se při sběru ještě mění.{% endif %} {% if frames|length > 36 %}Pro AI vybráno {{ count_ai }} z {{ frames|length }} snímků. Všechny můžeš prohlédnout níže.{% endif %}</p>
+{% if film.error %}<p class="status-warning" role="status">{{ film.error }}</p>{% endif %}
+{% if film.status=='incomplete' %}<p class="hint">Sběr přerušila noc nebo delší výpadek. Jeden snímek nestačí k posouzení vývoje; AI se nevolala.</p>{% endif %}
+{% if frames %}<div class="film-player" x-data="filmPlayer({{ frames|tojson|forceescape }})"><img class="film-screen" :src="'/snapshot/' + frames[index].image" :alt="'Snímek ' + (index + 1) + ' · ' + frames[index].time">
+<div class="film-controls"><button class="btn small sec" type="button" @click="step(-1)" aria-label="Předchozí snímek">←</button><button class="btn small" type="button" @click="toggle()" x-text="playing ? 'Pozastavit' : 'Přehrát snímky'"></button><button class="btn small sec" type="button" @click="step(1)" aria-label="Další snímek">→</button><span x-text="(index + 1) + ' / ' + frames.length + ' · ' + frames[index].time"></span><span class="badge info" x-show="frames[index].selected">Podklad AI</span></div>
+<input type="range" min="0" :max="frames.length - 1" x-model.number="index" @input="pause()" aria-label="Pozice v AI filmu">
+<p class="hint">Přehrávání fotografií v pořadí pořízení, nikoli video z kamery. Časový odstup mezi snímky ukazují skutečné časy.</p>
+<div class="film-thumbs"><template x-for="(frame, i) in frames" :key="frame.image"><button type="button" :class="{on: index===i}" @click="pause(); index=i" :aria-label="'Snímek ' + (i + 1) + ' · ' + frame.time"><img :src="'/snapshot/' + frame.image" alt="" loading="lazy"><small x-text="frame.time"></small><small x-text="frame.selected ? 'Podklad AI' : 'Pouze archiv'"></small></button></template></div></div>{% endif %}
+</div>
+{% if evaluation %}<div class="card"><h2>Závěr AI{% if evaluation.score is not none %} · {{ evaluation.score }}/10{% endif %}</h2><p>{{ evaluation.description or evaluation.error }}</p><a class="btn" href="/detection/{{ evaluation.id }}">Závěr, událost a video</a></div>{% endif %}
+{% if strip %}<details class="card"><summary>Přesný obrázek odeslaný AI</summary><a href="/snapshot/{{ strip }}" data-lightbox="film"><img src="/snapshot/{{ strip }}" alt="Časově seřazený podklad AI" style="width:100%;height:auto"></a></details>{% endif %}
+<div class="actions">{% if film.status=='failed' %}<form method="post" action="/ai/films/{{ film.id }}/retry"><button class="btn">Zkusit vyhodnocení znovu</button></form>{% endif %}<form method="post" action="/ai/films/{{ film.id }}/delete" onsubmit="return confirm('Smazat tento AI film a jeho snímky? Uložená videa zůstanou.')"><button class="btn danger sec">Smazat AI film</button></form></div>
+{% endblock %}"""
+
 TEMPLATES["history.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small" href="/ai#kamery">⚙ Nastavení AI</a><form method="post" action="/history/delete" data-nobusy style="display:flex;gap:.4rem"><input type="hidden" name="camera" value="{{ f_cam }}"><button class="btn small sec" name="what" value="errors">Smazat chybná</button><button class="btn small danger" name="what" value="all" onclick="return confirm('Smazat celou historii{% if f_cam %} kamery {{ cam(f_cam) }}{% endif %} včetně snímků?')">Smazat vše{% if f_cam %} ({{ cam(f_cam) }}){% endif %}</button></form></div>{% endblock %}{% block content %}
+{% if batch or films %}<section class="card film-overview"><div class="section-head"><div><span class="eyebrow">Sběr → AI závěr → zajímavé video</span><h2>AI filmy z kamer</h2></div><a class="btn small sec" href="/ai#kdy">Časování filmů</a></div>
+<p class="hint">{% if not cfg.ai.enabled %}<strong>AI je vypnutá; sběr a vyhodnocení jsou pozastavené.</strong> {% endif %}{% if batch %}Snímek každých {{ cfg.ai.interval_min }} min · film {{ cfg.ai.strip.span_min }} min. AI hodnotí až dokončený film. Při pokračujícím jevu se plánovaný klip prodlouží podle dalšího filmu.{% else %}Aktivní je průběžné vyhodnocení; dříve rozpracované filmy jsou pozastavené.{% endif %} Obnov stránku pro aktuální stav.</p>
+<div class="film-cards">{% for f in films %}<a class="film-card" href="/ai/films/{{ f.id }}">{% if f.thumb %}<img src="/snapshot/{{ f.thumb }}" alt="" loading="lazy">{% endif %}<div><b>{{ cam(f.camera) }}</b><span class="badge {{ 'err' if f.status=='failed' else 'info' }}">{{ {'collecting':'Sbírám snímky','ready':'Čeká na AI','failed':'Chyba AI','incomplete':'Neúplný film'}.get(f.status, f.status) }}</span><p>{{ f.start_h }} – {{ f.end_h }} · {{ f.count }} snímků</p><progress value="{{ f.progress }}" max="100" aria-label="Průběh sběru"></progress>{% if f.error %}<small>{{ f.error }}</small>{% endif %}<small>Otevřít AI film →</small></div></a>{% else %}<p class="hint">{% if cfg.ai.enabled and cfg.ai.cameras %}První film vznikne při nejbližším sběru v aktivní denní době.{% else %}Zapni AI a vyber kamery v nastavení.{% endif %}</p>{% endfor %}</div></section>{% endif %}
+
 {% macro link(cam_, min_, show_, page_=1) %}/history?camera={{ cam_|urlencode }}&min_score={{ min_ }}&show={{ show_ }}&phenomenon={{ f_phen|urlencode }}&since={{ f_since|urlencode }}&until={{ f_until|urlencode }}{% if page_ > 1 %}&page={{ page_ }}{% endif %}{% endmacro %}
 <form method="get" action="/history" class="detection-filters card">
 <div><label>Kamera</label><select name="camera"><option value="">Všechny kamery</option>{% for c in cameras %}<option value="{{ c }}" {{ 'selected' if c==f_cam }}>{{ cam(c) }}</option>{% endfor %}</select></div>
@@ -3735,11 +4043,12 @@ TEMPLATES["history.html"] = """{% extends "base.html" %}{% block actions %}<div 
  {% if e.image %}<a class="pic" href="{% if not e.error %}/detection/{{ e.id }}{% else %}/snapshot/{{ e.image }}{% endif %}" {% if e.error %}data-lightbox="history"{% endif %}><img src="/snapshot/{{ e.image }}" alt="" loading="lazy"></a>{% endif %}
  <div class="tx">
   <div class="hd"><span class="score {{ 'err' if e.error else ('ok' if e.score >= rule(e.camera).threshold else ('mid' if e.score >= 5 else 'low')) }}">{% if e.error %}chyba{% else %}{{ e.score }}<small>/10</small>{% endif %}</span><span class="when">{{ e.ts|cztime }}</span><b>{{ cam(e.camera) }}</b>{% if e.phenomenon %}<span class="ph">{{ e.phenomenon }}</span>{% endif %}{% if e.trend %}<span class="badge {{ 'ok' if e.trend in ('nastupuje', 'vrcholí') else 'mut' }}" title="Vývoj podle filmového pásu">{{ {'nastupuje': '↗', 'vrcholí': '★', 'odeznívá': '↘', 'beze změny': '→'}.get(e.trend, '') }} {{ e.trend }}</span>{% endif %}{% if e.timelapse is not none and e.timelapse >= 7 %}<span class="badge info" title="Působivé pro časosběr (AI {{ e.timelapse }}/10)">🎞 {{ e.timelapse }}/10</span>{% endif %}
-   {% if e.notified %}<span class="badge ok">upozorněno</span>{% elif not e.error and e.score >= rule(e.camera).threshold %}<span class="badge info">v epizodě</span>{% endif %}{% if e.exported %}<a class="badge info" href="/videos" title="Z této detekce je vystřižené video">🎬 video</a>{% endif %}</div>
+   {% if e.notified %}<span class="badge ok">upozorněno</span>{% elif not e.error and e.score >= rule(e.camera).threshold %}<span class="badge info">{{ "zajímavý film" if e.film and e.film.mode == "batch" else "v epizodě" }}</span>{% endif %}{% if e.exported %}<a class="badge info" href="/videos" title="Z této detekce je vystřižené video">🎬 video</a>{% endif %}</div>
+  {% if e.film %}<div class="hint">{{ 'Dokončený AI film' if e.film.mode == 'batch' else 'Průběžný pohled' }} · {{ e.film.frames }} snímků · {{ e.film.range_h }}{% if e.film.film_id %} · <a href="/ai/films/{{ e.film.film_id }}">Přehrát podklady AI</a>{% endif %}</div>{% endif %}
   <p class="desc">{{ e.description or e.error or '–' }}</p>
   {% if e.note %}<div class="hint">{{ e.note }}</div>{% endif %}
  </div>
- <div class="ac">{% if not e.error %}<a class="btn small sec" href="/detection/{{ e.id }}">Detail a video</a>{% else %}<form method="post" action="/detection/{{ e.id }}/delete" data-nobusy><button class="btn small sec">Smazat</button></form>{% endif %}</div>
+ <div class="ac">{% if not e.error %}<a class="btn small sec" href="/detection/{{ e.id }}">AI film a video</a>{% else %}<a class="btn small sec" href="/detection/{{ e.id }}">Podklady a chyba</a><form method="post" action="/detection/{{ e.id }}/delete" data-nobusy><button class="btn small sec">Smazat</button></form>{% endif %}</div>
 </article>
 {% endfor %}
 {% if not rows %}<div class="card"><p class="hint" style="margin:0">Nic k zobrazení{% if f_show == 'notified' %} – zkus <a href="{{ link(f_cam, f_min, 'all') }}">všechna hodnocení</a>{% endif %}.</p></div>{% endif %}
@@ -4031,6 +4340,10 @@ def render(request: Request, tpl: str, title: str, **ctx) -> HTMLResponse:
         active = "/history"
     if path.startswith("/system/"):
         active = "/system"
+    if path == "/ai/guide":
+        active = "/ai"
+    if path.startswith("/ai/films/"):
+        active = "/history"
     cfg = load_config()
     labels = camera_labels(cfg)
     st = storage_status()
@@ -5342,11 +5655,22 @@ def ai_estimate(cfg, cameras: int) -> int:
     tz = ZoneInfo(cfg["tz"])
     dawn, dusk = watch_window(cfg, dt.datetime.now(tz).date())
     day_min = (dusk - dawn).total_seconds() / 60
+    if not ai.get("day_only", True):
+        day_min = 1440
+    if batch_mode(ai):
+        return int(cameras * day_min / max(10, int(ai["strip"].get("span_min", 60))))
     fast_min = 4 * int(ai.get("golden_min", 60)) if ai.get("fast_mode") else 0
     fast_min = min(fast_min, day_min)
     normal = max(1, int(ai["interval_min"]))
     fast = max(1, int(ai.get("fast_interval_min", 3)))
     return int(cameras * ((day_min - fast_min) / normal + fast_min / fast))
+
+
+@app.get("/ai/guide", response_class=HTMLResponse)
+def ai_guide(request: Request):
+    cfg = load_config()
+    return render(request, "ai_guide.html", "Jak funguje AI film", ai=cfg["ai"],
+                  subtitle="Od jedné fotografie přes závěr AI až po uložené video. Na příkladu jedné kamery.")
 
 
 @app.get("/ai", response_class=HTMLResponse)
@@ -5411,6 +5735,8 @@ def apply_ai_form(form, cfg, cameras):
             st["span_min"] = max(10, min(180, int(form.get("strip_span_min", st.get("span_min", 60)))))
         except ValueError:
             pass
+        if form.get("strip_mode") in ("batch", "rolling"):
+            st["mode"] = form["strip_mode"]
         ai["strip"] = st
     if form.get("twilight") in ("civil", "nautical", "astronomical", "minutes"):
         ai["twilight"] = form.get("twilight")
@@ -5460,11 +5786,23 @@ def apply_export_form(form, cfg, cameras):
     ai = cfg["ai"]
     ax = dict(ai.get("auto_export") or DEFAULT_CONFIG["ai"]["auto_export"])
     ax["enabled"] = bool(form.get("ax_enabled"))
+    if form.get("ax_length_mode") in ("event", "fixed"):
+        ax["length_mode"] = form["ax_length_mode"]
+    if "ax_duration" in form and ax.get("length_mode") == "fixed":
+        try:
+            value = int(form["ax_duration"])
+        except (TypeError, ValueError):
+            raise ValueError("Délka videa musí být celé číslo od 1 do 120 minut.")
+        if not 1 <= value <= 120:
+            raise ValueError("Délka videa musí být od 1 do 120 minut.")
+        ax["duration_min"] = value
     for k, key in (("before_min", "ax_before"), ("after_min", "ax_after")):
         try:
             ax[k] = max(0, min(60, int(form.get(key, ax.get(k, 2)))))
         except (TypeError, ValueError):
             pass
+    if ax.get("length_mode") == "fixed" and int(ax.get("before_min", 0)) >= int(ax.get("duration_min", 60)):
+        raise ValueError("Celková délka musí být větší než rezerva před detekcí, aby video zachytilo i samotný jev.")
     ax["playback"] = "timelapse_25x" if form.get("ax_playback") == "timelapse_25x" else "realtime"
     ax["cameras"] = [c for c in cameras if form.get(f"ax_cam_{c}")]
     ai["auto_export"] = ax
@@ -5481,13 +5819,16 @@ def export_settings(request: Request):
 async def export_settings_post(request: Request):
     form = await request.form()
     cameras = frigate_cameras(load_config())
-    with edit_config() as cfg:
-        apply_export_form(form, cfg, cameras)
-        try:
-            cfg["export_keep_days"] = max(1, min(365, int(form.get("days", 30))))
-        except (ValueError, TypeError):
-            pass
-    flash(request, "Nastavení AI videí uloženo.")
+    try:
+        with edit_config() as cfg:
+            apply_export_form(form, cfg, cameras)
+            try:
+                cfg["export_keep_days"] = max(1, min(365, int(form.get("days", 30))))
+            except (ValueError, TypeError):
+                pass
+        flash(request, "Nastavení AI videí uloženo.")
+    except ValueError as ex:
+        flash(request, str(ex), "err")
     return RedirectResponse("/videos/settings", status_code=303)
 
 
@@ -5546,6 +5887,68 @@ def ai_test(request: Request, camera: str = Form(...), back: str = Form("")):
     return RedirectResponse(back, status_code=303)
 
 
+@app.get("/ai/films/{fid}", response_class=HTMLResponse)
+def film_page(request: Request, fid: int):
+    cfg = load_config()
+    with db() as con:
+        row = con.execute("SELECT * FROM ai_films WHERE id=?", (fid,)).fetchone()
+        if not row:
+            flash(request, "AI film už není k dispozici (mohl být smazán s historií).", "err")
+            return RedirectResponse("/history", status_code=303)
+        film = dict(row)
+        ev = con.execute("SELECT * FROM evaluations WHERE id=?", (film["evaluation_id"],)).fetchone() if film["evaluation_id"] else None
+    frames = film_frames(film)
+    chosen = {f["image"] for f in selected_film_frames(frames)}
+    for item in frames:
+        item["time"] = dt.datetime.fromtimestamp(item["ts"], ZoneInfo(cfg["tz"])).strftime("%d.%m. %H:%M:%S")
+        item["selected"] = item["image"] in chosen
+    strip = ""
+    if ev and ev["image"]:
+        sp = Path(ev["image"]).with_name(Path(ev["image"]).stem + "_strip.jpg")
+        if (Path(cfg["snapshot_dir"]) / sp).is_file():
+            strip = str(sp)
+    return render(request, "film.html", "AI film · " + cam_label(cfg, film["camera"]), film=film, frames=frames,
+                  evaluation=dict(ev) if ev else None, strip=strip, count_ai=len(chosen),
+                  end_h=dt.datetime.fromtimestamp(film["end_ts"], ZoneInfo(cfg["tz"])).strftime("%d.%m. %H:%M"),
+                  subtitle="Skutečné snímky kamery, jejich časová posloupnost a podklady pro závěr AI.")
+
+
+@app.post("/ai/films/{fid}/retry")
+def film_retry(request: Request, fid: int):
+    with db() as con:
+        con.execute("UPDATE ai_films SET status='ready',attempts=0,retry_ts=0,error='' WHERE id=? AND status='failed'", (fid,))
+    flash(request, "Film je ve frontě. Vyhodnotí se při zapnutém režimu AI filmů a dostupném denním limitu.")
+    return RedirectResponse(f"/ai/films/{fid}", status_code=303)
+
+
+@app.post("/ai/films/{fid}/delete")
+def film_delete(request: Request, fid: int):
+    if not watcher.check_lock.acquire(blocking=False):
+        flash(request, "Právě probíhá sběr nebo vyhodnocení. Zkus smazání po jeho dokončení.", "err")
+        return RedirectResponse(f"/ai/films/{fid}", status_code=303)
+    try:
+        watcher.film_sample_lock.acquire()
+        cfg = load_config()
+        with db() as con:
+            row = con.execute("SELECT * FROM ai_films WHERE id=?", (fid,)).fetchone()
+        if row:
+            row = dict(row)
+            if row["evaluation_id"]:
+                _delete_evaluations(cfg, "id=?", (row["evaluation_id"],))
+            base = Path(cfg["snapshot_dir"]).resolve()
+            for item in film_frames(row):
+                f = (base / item["image"]).resolve()
+                if base in f.parents:
+                    f.unlink(missing_ok=True)
+            with db() as con:
+                con.execute("DELETE FROM ai_films WHERE id=?", (fid,))
+        flash(request, "AI film smazán. Uložená videa zůstávají zachována.")
+    finally:
+        watcher.film_sample_lock.release()
+        watcher.check_lock.release()
+    return RedirectResponse("/history", status_code=303)
+
+
 @app.get("/history", response_class=HTMLResponse)
 def history(request: Request, camera: str = "", min_score: int = 0, show: str = "all", page: int = 1, phenomenon: str = "", since: str = "", until: str = ""):
     cfg = load_config()
@@ -5584,10 +5987,77 @@ def history(request: Request, camera: str = "", min_score: int = 0, show: str = 
         pages = max(1, (total + per_page - 1) // per_page)
         page = min(page, pages)
         rows = [dict(r) for r in con.execute(q, args + [per_page, (page - 1) * per_page])]
-    return render(request, "history.html", "AI detekce", rows=rows, cameras=frigate_cameras(cfg),
+    for row in rows:
+        try:
+            row["film"] = json.loads(row.get("film_context") or "{}")
+            if not isinstance(row["film"], dict):
+                row["film"] = {}
+            if row["film"].get("start") and row["film"].get("end"):
+                row["film"]["range_h"] = " – ".join(dt.datetime.fromtimestamp(float(row["film"][k]), ZoneInfo(cfg["tz"])).strftime("%H:%M") for k in ("start", "end"))
+        except (ValueError, TypeError):
+            row["film"] = {}
+    return render(request, "history.html", "AI detekce", cfg=cfg, films=films_overview(cfg), batch=batch_mode(cfg["ai"]), rows=rows, cameras=frigate_cameras(cfg),
                   total=total, pages=pages, page=page, per_page=per_page,
                   f_cam=camera, f_min=min_score, f_show=show, f_phen=phenomenon, f_since=since, f_until=until, phenomena=phenomena_catalog(cfg["ai"]), keep_days=cfg["ai"].get("keep_days", 14), threshold=int(cfg["ai"].get("threshold", 7)),
                   subtitle="Co AI na obloze viděla – s upozorněním, nebo úplně vše.")
+
+
+def configured_clip_before(ax, before):
+    if ax.get("length_mode") == "fixed":
+        return min(before, max(0, (max(1, min(120, int(ax.get("duration_min", 60)))) - 1) * 60))
+    return before
+
+
+def configured_clip_end(ax, start, end):
+    if ax.get("length_mode") == "fixed":
+        return start + max(1, min(120, int(ax.get("duration_min", 60)))) * 60
+    return end
+
+
+def clip_time(cfg, value):
+    try:
+        t = dt.datetime.fromisoformat(value)
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=ZoneInfo(cfg["tz"]))
+            if t.utcoffset() != t.replace(fold=1).utcoffset():
+                raise ValueError("Dvojznačný nebo neexistující místní čas při změně času.")
+            if dt.datetime.fromtimestamp(t.timestamp(), t.tzinfo).replace(tzinfo=None) != t.replace(tzinfo=None):
+                raise ValueError("Čas neexistuje při změně letního času.")
+        return t.timestamp()
+    except (ValueError, TypeError, OverflowError):
+        raise ValueError("Zadej platné datum a čas OD i DO v časovém pásmu zařízení; při změně času se vyhni neexistující nebo opakované hodině.")
+
+
+def exact_clip_bounds(cfg, from_time, to_time):
+    if not from_time or not to_time:
+        raise ValueError("Vyplň oba časy OD a DO.")
+    start, end = clip_time(cfg, from_time), clip_time(cfg, to_time)
+    if end <= start:
+        raise ValueError("Čas DO musí být pozdější než OD.")
+    if end - start > 120 * 60:
+        raise ValueError("Ručně zadaný úsek může mít nejvýše 120 minut.")
+    if start > time.time():
+        raise ValueError("Čas OD nesmí být v budoucnosti.")
+    return start, end
+
+
+def clip_local(cfg, ts):
+    return dt.datetime.fromtimestamp(ts, ZoneInfo(cfg["tz"])).strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def evaluation_clip_bounds(cfg, e, before, after):
+    center = eval_epoch(cfg, e["ts"])
+    first = last = center
+    try:
+        film = json.loads(e.get("film_context") or "{}")
+        if film.get("mode") == "batch":
+            first, last = float(film["event_start"]), float(film["event_end"])
+            if not (0 < first <= last <= center):
+                first = last = center
+    except (ValueError, TypeError, KeyError):
+        pass
+    start = first - configured_clip_before(cfg["ai"].get("auto_export") or {}, before * 60)
+    return start, configured_clip_end(cfg["ai"].get("auto_export") or {}, start, last + after * 60)
 
 
 @app.get("/detection/{rid}", response_class=HTMLResponse)
@@ -5621,13 +6091,23 @@ def detection_page(request: Request, rid: int):
             (rid,))]
         my_exports = [dict(r) for r in con.execute("SELECT * FROM exports WHERE detection_id=? ORDER BY id DESC", (rid,))]
     neighbours = list(reversed(earlier)) + later
-    clip_state = recording_state(cfg, e["camera"], center - before * 60, center + after * 60) if storage_ready() else "nodisk"
+    clip_start, clip_end = evaluation_clip_bounds(cfg, e, before, after)
+    exact = "from_time" in request.query_params or "to_time" in request.query_params
+    if exact:
+        try:
+            clip_start, clip_end = exact_clip_bounds(cfg, request.query_params.get("from_time"), request.query_params.get("to_time"))
+        except ValueError as ex:
+            flash(request, str(ex), "err")
+            return RedirectResponse(f"/detection/{rid}", status_code=303)
     # Hotové vystřižené video z této detekce se přehrává přednostně (plynule, se správným posuvníkem);
     # surový úsek z Frigate jen když si uživatel zadá vlastní rozsah.
     use_export = None
-    if my_exports and "before" not in request.query_params and "after" not in request.query_params:
+    if my_exports and not exact and "before" not in request.query_params and "after" not in request.query_params:
         ready = [v for v in list_videos(cfg) if v.get("detection_id") == rid and v.get("ready")]
         use_export = ready[0] if ready else None
+        if use_export:
+            clip_start, clip_end = use_export["start_ts"], use_export["end_ts"]
+    clip_state = ("future" if clip_end > time.time() else recording_state(cfg, e["camera"], clip_start, clip_end)) if storage_ready() else "nodisk"
     default_name = f"{cam_label(cfg, e['camera'])} {e['ts'][8:10]}.{e['ts'][5:7]}.{e['ts'][0:4]} {e['ts'][11:16]}" + (f" – {e['phenomenon']}" if e.get("phenomenon") else "")
     strip = ""
     if e.get("image"):
@@ -5644,10 +6124,11 @@ def detection_page(request: Request, rid: int):
     except (ValueError, TypeError, OverflowError, OSError):
         film = {}
     return render(request, "detection.html", f"Detekce · {cam_label(cfg, e['camera'])}", e=e, phen=phen, info=camera_info(cfg, e["camera"]), strip=strip, film=film,
-                  before=before, after=after, clip_start=center - before * 60, clip_end=center + after * 60,
+                  before=before, after=after, clip_start=clip_start, clip_end=clip_end,
+                  from_time=clip_local(cfg, clip_start), to_time=clip_local(cfg, clip_end), clip_minutes=round((clip_end - clip_start) / 60, 2), clip_tz=cfg["tz"],
                   neighbours=neighbours, my_exports=my_exports, default_name=default_name, ready=storage_ready(), clip_state=clip_state, retain=retain_days(cfg),
                   pending_auto=pending_auto_exports(cfg, rid), e_center=center, use_export=use_export,
-                  subtitle="Snímek a záznam kolem něj. Video si přehraješ rovnou tady, nebo si ho nech vystřihnout ke stažení.")
+                  subtitle="Podklady AI a záznam události. U dokončeného filmu se rezervy videa počítají od zachyceného začátku a konce jevu.")
 
 
 # --------------------------------------------------------------------------- video: přehrávání a exporty
@@ -5826,6 +6307,84 @@ def record_export(cfg, frigate_id: str, detection_id, camera: str, name: str, st
         return eid
 
 
+def schedule_film_export(cfg, result, hits):
+    with _export_schedule_lock:
+        return _schedule_film_export(cfg, result, hits)
+
+
+def _schedule_film_export(cfg, result, hits):
+    """Join adjacent observed episodes before exporting. Independent of notification cooldown/delivery."""
+    ax = cfg["ai"].get("auto_export") or {}
+    cam = result["camera"]
+    if not ax.get("enabled") or cam not in ax.get("cameras", []):
+        return
+    film = json.loads(result["film_context"])
+    before = max(0, min(60, int(ax.get("before_min", 2)))) * 60
+    after = max(0, min(60, int(ax.get("after_min", 3)))) * 60
+    start = film["event_start"] - configured_clip_before(ax, before)
+    fixed = ax.get("length_mode") == "fixed"
+    end = configured_clip_end(ax, start, film["event_end"] + after)
+    # Wait for the next window plus grace for provider retries. Never wait indefinitely on a failed camera/provider.
+    next_due = film["end"] + film["duration_min"] * 60 + 900
+    with db() as con:
+        for handled in con.execute("SELECT detection_id,ai_context FROM auto_exports WHERE camera=? AND ai_context IS NOT NULL", (cam,)):
+            try:
+                if handled["detection_id"] == result["id"] or json.loads(handled["ai_context"]).get("id") == result["id"]:
+                    return
+            except (ValueError, TypeError):
+                pass
+        if fixed and hits:
+            # A configured fixed clip already covers this point of the same event: no overlapping duplicate.
+            for previous in con.execute("SELECT * FROM auto_exports WHERE camera=? AND status IN ('pending','done') AND start_ts<=? AND end_ts>=? ORDER BY end_ts DESC", (cam, film["event_start"], film["event_start"])):
+                if set(hits) & set((previous["film_hits"] or "").split(",")):
+                    if previous["end_ts"] >= film["event_end"]:
+                        return
+                    start = max(start, previous["end_ts"])
+                    end = configured_clip_end(ax, start, end)
+                    break
+        jobs = [dict(r) for r in con.execute("SELECT * FROM auto_exports WHERE camera=? AND status='pending' AND film_open=1 ORDER BY id", (cam,))]
+        matching = None
+        for job in jobs:
+            continuation = bool(not fixed and hits and set(hits) & set(job["film_hits"].split(","))
+                                and start <= job["end_ts"] + film["sample_min"] * 60
+                                and film["start"] <= job["film_last"] + film["sample_min"] * 120)
+            if continuation and matching is None:
+                matching = job
+            else:
+                # No continuing event in the next film: the previous bounded clip can be exported.
+                con.execute("UPDATE auto_exports SET film_open=0,due_ts=? WHERE id=?", (max(time.time(), job["end_ts"] + 45), job["id"]))
+        if not hits:
+            return
+        evidence = dict(result)
+        ongoing = bool(film["ongoing"]) and not fixed
+        if matching:
+            start = min(start, matching["start_ts"])
+            end = max(end, matching["end_ts"])
+            try:
+                previous = json.loads(matching["ai_context"] or "{}")
+                old_film = json.loads(previous.get("film_context") or "{}")
+                old_film.update(end=film["end"], event_end=film["event_end"], ongoing=ongoing,
+                                frames=int(old_film.get("frames", 0)) + film["frames"],
+                                evolution=(old_film.get("evolution", "") + "\n" + film.get("evolution", ""))[-6000:])
+                evidence["film_context"] = json.dumps(old_film, ensure_ascii=False)
+                evidence["description"] = (previous.get("description", "") + "\n" + result.get("description", ""))[-6000:]
+            except (ValueError, TypeError):
+                pass
+        # Long-running weather is saved in bounded parts, avoiding an unbounded render or a lost whole day.
+        ongoing = ongoing and end - start < 6 * 3600
+        due = max(end + 45, next_due) if ongoing else max(end + 45, time.time())
+        context = json.dumps(evidence, ensure_ascii=False)
+        if matching:
+            con.execute("UPDATE auto_exports SET start_ts=?,end_ts=?,due_ts=?,film_open=?,film_last=?,ai_context=?,message=? WHERE id=?",
+                        (start, end, due, int(ongoing), film["end"], context, "Čekám na pokračování jevu v dalším AI filmu" if ongoing else "Jev dokončen", matching["id"]))
+        else:
+            labels = ", ".join(phen_labels(cfg["ai"]).get(p, p) for p in hits)
+            name = f"{cam_label(cfg, cam)} {dt.datetime.fromtimestamp(start, ZoneInfo(cfg['tz'])).strftime('%d.%m. %H:%M')} – {labels}"[:90]
+            con.execute("INSERT INTO auto_exports(detection_id,camera,name,start_ts,end_ts,due_ts,playback,created,film_open,film_hits,film_last,ai_context,message) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (result["id"], cam, name, start, end, due, ax.get("playback", "realtime"), dt.datetime.now().isoformat(timespec="seconds"),
+                         int(ongoing), ",".join(hits), film["end"], context, "Čekám na pokračování jevu v dalším AI filmu" if ongoing else "Jev dokončen"))
+
+
 def schedule_auto_export(cfg, rid: int, camera: str, now, labels: str):
     """Po odeslaném upozornění naplánuje automatické video ±X minut kolem snímku (vytvoří se, až záznam „po“ doběhne)."""
     ax = cfg["ai"].get("auto_export") or {}
@@ -5834,7 +6393,8 @@ def schedule_auto_export(cfg, rid: int, camera: str, now, labels: str):
     if before + after == 0:
         after = 1
     center = now.timestamp()
-    start, end = center - before * 60, center + after * 60
+    start = center - configured_clip_before(ax, before * 60)
+    end = configured_clip_end(ax, start, center + after * 60)
     name = f"{cam_label(cfg, camera)} {now.strftime('%d.%m.%Y %H:%M')} – {labels}"[:80]
     playback = "timelapse_25x" if ax.get("playback") == "timelapse_25x" else "realtime"
     if playback == "timelapse_25x":
@@ -5842,7 +6402,7 @@ def schedule_auto_export(cfg, rid: int, camera: str, now, labels: str):
     with db() as con:
         con.execute("INSERT INTO auto_exports (detection_id, camera, name, start_ts, end_ts, due_ts, playback, created) VALUES (?,?,?,?,?,?,?,?)",
                     (rid, camera, name, start, end, end + 45, playback, dt.datetime.now().isoformat(timespec="seconds")))
-    log(f"[{camera}] Automatické video „{name}“ naplánováno (−{before}/+{after} min), vytvoří se v {dt.datetime.fromtimestamp(end + 45, ZoneInfo(cfg['tz'])).strftime('%H:%M')}")
+    log(f"[{camera}] Automatické video „{name}“ naplánováno ({(end - start) / 60:g} min), vytvoří se v {dt.datetime.fromtimestamp(end + 45, ZoneInfo(cfg['tz'])).strftime('%H:%M')}")
 
 
 def pending_auto_exports(cfg, detection_id=None) -> list:
@@ -5861,6 +6421,11 @@ def failed_auto_exports() -> list:
 
 
 def process_auto_exports(cfg):
+    with _export_schedule_lock:
+        return _process_auto_exports(cfg)
+
+
+def _process_auto_exports(cfg):
     """Vytvoří naplánovaná automatická videa, jejichž čas nastal (volá smyčka každých 20 s)."""
     now = time.time()
     with db() as con:
@@ -5880,7 +6445,10 @@ def process_auto_exports(cfg):
         except Exception as e:
             _auto_export_finish(job, "failed", str(e))
             continue
-        record_export(cfg, fid, job["detection_id"], job["camera"], job["name"], job["start_ts"], job["end_ts"], auto=1)
+        eid = record_export(cfg, fid, job["detection_id"], job["camera"], job["name"], job["start_ts"], job["end_ts"], auto=1)
+        if job.get("ai_context"):
+            with db() as con:
+                con.execute("UPDATE exports SET ai_context=? WHERE id=?", (job["ai_context"], eid))
         _auto_export_finish(job, "done", fid)
         log(f"[{job['camera']}] Automatické video „{job['name']}“ zadáno k vytvoření ({fid})")
 
@@ -5936,7 +6504,7 @@ def _auto_export_finish(job: dict, status: str, message: str):
 
 
 @app.post("/detection/{rid}/export")
-def detection_export(request: Request, rid: int, name: str = Form(""), before: int = Form(2), after: int = Form(1), playback: str = Form("realtime")):
+def detection_export(request: Request, rid: int, name: str = Form(""), before: int = Form(2), after: int = Form(1), playback: str = Form("realtime"), from_time: str = Form(""), to_time: str = Form("")):
     cfg = load_config()
     if not storage_ready():
         flash(request, "Video nelze vytvořit – disk pro záznamy není připojený.", "err")
@@ -5951,22 +6519,34 @@ def detection_export(request: Request, rid: int, name: str = Form(""), before: i
     if before + after == 0:
         after = 1
     center = eval_epoch(cfg, e["ts"])
-    start, end = center - before * 60, center + after * 60
+    try:
+        start, end = exact_clip_bounds(cfg, from_time, to_time) if from_time or to_time else evaluation_clip_bounds(cfg, e, before, after)
+    except ValueError as ex:
+        flash(request, str(ex), "err")
+        return RedirectResponse(f"/detection/{rid}", status_code=303)
+    duration_min = max(1, round((end - start) / 60))
     label = " ".join(name.split())[:80] or f"{cam_label(cfg, e['camera'])} {e['ts'][8:10]}.{e['ts'][5:7]}.{e['ts'][0:4]} {e['ts'][11:16]}" + (f" – {e['phenomenon']}" if e.get("phenomenon") else "")
     timelapse = playback == "timelapse_25x"
     if timelapse and "25×" not in label:
         label = (label + " (25×)")[:90]
+    if end > time.time():
+        with db() as con:
+            con.execute("INSERT INTO auto_exports(detection_id,camera,name,start_ts,end_ts,due_ts,playback,created,ai_context,message) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                        (rid, e["camera"], label, start, end, end + 45, "timelapse_25x" if timelapse else "realtime",
+                         dt.datetime.now().isoformat(timespec="seconds"), json.dumps(e, ensure_ascii=False), "Ručně zadaný rozsah · čeká na dokončení záznamu"))
+        flash(request, "Klip je naplánovaný. Vytvoří se, až bude zaznamenaný celý zvolený úsek.")
+        return RedirectResponse("/videos", status_code=303)
     try:
         export_id = frigate_start_export(cfg, e["camera"], start, end, label, "timelapse_25x" if timelapse else "realtime")
     except Exception as ex:
         flash(request, f"Video se nepodařilo vytvořit: {ex}. Pro tento čas možná chybí záznam (kamera nenahrávala).", "err")
         return RedirectResponse(f"/detection/{rid}", status_code=303)
     record_export(cfg, export_id, rid, e["camera"], label, start, end)
-    log(f"Video „{label}“ ({before + after} min{', timelapse 25×' if timelapse else ''}) zadáno k vytvoření ({export_id})")
+    log(f"Video „{label}“ ({duration_min} min{', timelapse 25×' if timelapse else ''}) zadáno k vytvoření ({export_id})")
     if timelapse:
-        flash(request, f"Zrychlené video „{label}“ se vytváří – Raspberry Pi překóduje {before + after} min záznamu, počítej s několika minutami. Objeví se tady v seznamu.")
+        flash(request, f"Zrychlené video „{label}“ se vytváří – Raspberry Pi překóduje {duration_min} min záznamu, počítej s několika minutami. Objeví se tady v seznamu.")
     else:
-        flash(request, f"Video „{label}“ se vytváří ({before + after} min záznamu). Za chvíli bude ke stažení – tady v seznamu.")
+        flash(request, f"Video „{label}“ se vytváří ({duration_min} min záznamu). Za chvíli bude ke stažení – tady v seznamu.")
     return RedirectResponse("/videos", status_code=303)
 
 
@@ -7564,7 +8144,16 @@ def _delete_evaluations(cfg, where: str, args: tuple) -> int:
     base = Path(cfg["snapshot_dir"]).resolve()
     with db() as con:
         rows = [dict(r) for r in con.execute(f"SELECT id, image FROM evaluations WHERE {where}", args)]
+        film_rows = []
+        for row in rows:
+            film_rows += [dict(f) for f in con.execute("SELECT * FROM ai_films WHERE evaluation_id=?", (row["id"],))]
+            con.execute("DELETE FROM ai_films WHERE evaluation_id=?", (row["id"],))
         con.execute(f"DELETE FROM evaluations WHERE {where}", args)
+    for film in film_rows:
+        for item in film_frames(film):
+            f = (base / item["image"]).resolve()
+            if base in f.parents:
+                f.unlink(missing_ok=True)
     for row in rows:
         if row.get("image"):
             try:
@@ -9694,6 +10283,73 @@ main.page.settings-page { max-width: 1264px; }
 .page .prov-card { min-height: 86px; display: flex; align-items: center; }
 .prov-card .ph { margin-bottom: 0; width: 100%; }
 @media(max-width:700px) { .ai-connection { display: block; padding-top: 24px; margin-top: 24px; } .page .prov-card { min-height: 64px; } }
+
+/* AI films: actual samples, progression and evidence. */
+.film-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr)); gap:16px; }
+.film-card { display:flex; gap:16px; border:1px solid var(--at-line); border-radius:10px; padding:16px; color:inherit; text-decoration:none; min-width:0; }
+.film-card > img { width:112px; height:76px; object-fit:cover; border-radius:6px; }
+.film-card > div { min-width:0; flex:1; }
+.film-card b,.film-card small { display:block; }
+.film-card p,.film-card small { font-size:12px; margin:8px 0; overflow-wrap:anywhere; }
+.film-card progress { width:100%; height:5px; display:block; }
+.film-screen { display:block; width:100%; max-height:65vh; object-fit:contain; background:#080d16; border-radius:10px; }
+.film-controls { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:16px 0; }
+.film-controls span { font-size:13px; }
+.film-thumbs { display:flex; gap:10px; overflow-x:auto; padding:10px 0; }
+.film-thumbs button { flex:0 0 150px; padding:4px; border:2px solid transparent; background:transparent; color:inherit; border-radius:7px; }
+.film-thumbs button.on { border-color:var(--pico-primary); }
+.film-thumbs img { width:138px; aspect-ratio:16/9; object-fit:cover; border-radius:3px; }
+.film-thumbs small { display:block; font-size:11px; }
+@media(max-width:600px) { .film-card { flex-direction:column; } .film-card > img { width:100%; height:130px; } }
+
+.film-cards { max-height:420px; overflow-y:auto; }
+
+.clip-range-form { width:100%; min-width:0; }
+.clip-range-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+.clip-range-fields > div:last-child { grid-column:1 / -1; max-width:240px; }
+.clip-range-fields input { min-width:0; width:100%; }
+@media(max-width:700px) { .clip-range-fields { grid-template-columns:minmax(0,1fr); } }
+
+/* Plain-language AI guide; diagrams share the application's theme and reflow on phones. */
+.guide-page { max-width:1200px; margin:auto; }
+.guide-page p { max-width:100ch; line-height:1.65; }
+.guide-page .card { margin-bottom:24px; }
+.guide-flow { list-style:none; padding:0; display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:16px; margin:28px 0; }
+.guide-flow li { padding:16px 0; border-top:3px solid var(--pico-primary); position:relative; }
+.guide-flow span,.guide-definitions .eyebrow { display:block; margin-top:8px; font-size:13px; color:var(--pico-muted-color); }
+.guide-definitions { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr)); gap:28px; margin:24px 0; }
+.guide-definitions h3 { font-size:17px; margin:10px 0; }
+.guide-axis { display:flex; justify-content:space-between; gap:12px; font-size:13px; margin-bottom:12px; }
+.guide-timeline,.guide-event-axis { margin:28px 0; }
+.guide-recording { background:var(--pico-secondary-background); color:var(--pico-secondary-inverse); padding:14px; text-align:center; border-radius:6px; margin-bottom:10px; font-size:14px; }
+.guide-windows { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.guide-windows > div { background:var(--at-accent-soft, var(--pico-card-sectioning-background-color)); padding:18px; border-radius:6px; }
+.guide-windows > div:last-child { border-left:3px solid var(--pico-primary); }
+.guide-windows span,.guide-decisions span { display:block; font-size:13px; margin-top:8px; }
+.guide-decisions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; text-align:right; padding:14px 0; }
+.guide-summary,.guide-inline { padding:20px; background:var(--pico-card-sectioning-background-color); border-radius:8px; margin:20px 0; }
+.guide-frames { display:grid; grid-template-columns:repeat(auto-fit,minmax(70px,1fr)); gap:10px; margin:20px 0; }
+.guide-frames > div { border:1px solid var(--at-line); padding:10px; border-radius:6px; text-align:center; }
+.guide-frames span { display:block; font-size:12px; margin-top:8px; }
+.guide-event-track { height:18px; margin-top:14px; background:var(--pico-card-sectioning-background-color); }
+.guide-event-track > div { height:100%; background:var(--pico-primary); }
+.guide-story { padding-left:24px; }
+.guide-story li { padding:10px 0 10px 8px; }
+.guide-story li::marker { color:var(--pico-primary); font-weight:600; }
+.guide-story p { margin:8px 0; }
+.guide-mini { display:flex; align-items:center; gap:12px; margin:18px 0; }
+.guide-mini > div { flex:1; min-width:0; }
+.guide-mini span { display:block; font-size:12px; margin-top:6px; }
+.guide-inline > a { font-size:14px; }
+@media(max-width:700px) {
+ .guide-flow { grid-template-columns:minmax(0,1fr); gap:0; }
+ .guide-flow li { border-top:0; border-left:3px solid var(--pico-primary); padding:12px 18px; }
+ .guide-mini { display:block; }
+ .guide-mini > div { padding:8px 0; }
+ .guide-mini > span { transform:rotate(90deg); width:16px; margin:4px 0; }
+ .guide-windows > div { padding:12px; }
+ .guide-axis { font-size:12px; }
+}
 ATMOVIO_CSS_EOF
   cat > "$1/atmovio.js" <<'ATMOVIO_JS_EOF'
 /* Atmovio – interakce (Alpine.js komponenty + pomocné funkce). */
@@ -9713,6 +10369,71 @@ ATMOVIO_CSS_EOF
 
   // ---------- Alpine komponenty ----------
   document.addEventListener('alpine:init', function () {
+    Alpine.data('filmTiming', function (mode, active, sample, span) {
+      return {
+        mode: mode, active: active, sample: sample, span: span,
+        get filmLength() { return Math.max(10, Math.min(180, Math.floor(Number(this.span) || 60))); },
+        get interval() { return Math.min(this.filmLength, Math.max(1, Math.floor(Number(this.sample) || 5))); },
+        get count() { return Math.ceil(this.filmLength / this.interval) + 1; },
+        get summary() { return `Za ${this.filmLength} minut přibližně ${this.count} fotografií → jeden závěr AI.`; },
+        get frequency() { return `Při nepřetržitém 24hodinovém sběru přibližně ${Math.round(1440 / this.filmLength)} vyhodnocení za den na jednu kameru, bez výpadků, opakovaných pokusů a limitů. V denním režimu méně.`; },
+        clock: function (minute) {
+          const total = 18 * 60 + Math.round(minute), hour = Math.floor(total / 60) % 24, min = total % 60;
+          return String(hour).padStart(2, '0') + ':' + String(min).padStart(2, '0') + (total >= 1440 ? ' (+1 den)' : '');
+        },
+        get previewFrames() {
+          const n = Math.min(13, this.count);
+          return Array.from({length:n}, (_, i) => {
+            const index = Math.round(i * (this.count - 1) / (n - 1));
+            return {index:index, minute:Math.min(this.filmLength,index*this.interval)};
+          });
+        }
+      };
+    });
+    Alpine.data('clipRange', function (from, to, zone) {
+      return {
+        from: from, to: to, minutes: 0,
+        local: function (stamp) {
+          const parts = new Intl.DateTimeFormat('sv-SE', {timeZone: zone, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hourCycle:'h23'}).formatToParts(new Date(stamp));
+          const p = Object.fromEntries(parts.map(x => [x.type, x.value]));
+          return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}`;
+        },
+        stamp: function (value) {
+          if (!value) return NaN;
+          const text = value.length === 16 ? value + ':00' : value;
+          const wall = Date.parse(text + 'Z');
+          if (!Number.isFinite(wall)) return NaN;
+          let guess = wall;
+          for (let i=0; i<3; i++) guess += wall - Date.parse(this.local(guess) + 'Z');
+          // Match the server's first occurrence during the autumn clock change.
+          const candidates = [-7200000,-3600000,-1800000,0,1800000,3600000,7200000].map(d => guess+d).filter(t => this.local(t)===text);
+          return candidates.length ? Math.min(...candidates) : NaN;
+        },
+        init: function () { this.measure(); },
+        measure: function () {
+          const delta = (this.stamp(this.to) - this.stamp(this.from)) / 60000;
+          this.minutes = Number.isFinite(delta) ? Math.round(delta * 100) / 100 : '';
+        },
+        resize: function () {
+          const start = this.stamp(this.from), minutes = Number(this.minutes);
+          if (Number.isFinite(start) && minutes > 0 && minutes <= 120)
+            this.to = this.local(start + minutes * 60000);
+        }
+      };
+    });
+    Alpine.data('filmPlayer', function (frames) {
+      return {
+        frames: frames, index: 0, playing: false, timer: null,
+        pause: function () { clearInterval(this.timer); this.timer = null; this.playing = false; },
+        toggle: function () {
+          if (this.playing) { this.pause(); return; }
+          this.playing = true;
+          this.timer = setInterval(() => { this.index = (this.index + 1) % this.frames.length; }, 900);
+        },
+        step: function (delta) { this.pause(); this.index = (this.index + delta + this.frames.length) % this.frames.length; },
+        destroy: function () { this.pause(); }
+      };
+    });
     // Kostra stránky: mobilní menu, rozbalovací nabídky v hlavičce (dd), přepínač vzhledu, toasty, lightbox.
     Alpine.data('shell', function (opts) {
       opts = opts || {};

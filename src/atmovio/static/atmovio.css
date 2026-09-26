@@ -964,3 +964,70 @@ main.page.settings-page { max-width: 1264px; }
 .page .prov-card { min-height: 86px; display: flex; align-items: center; }
 .prov-card .ph { margin-bottom: 0; width: 100%; }
 @media(max-width:700px) { .ai-connection { display: block; padding-top: 24px; margin-top: 24px; } .page .prov-card { min-height: 64px; } }
+
+/* AI films: actual samples, progression and evidence. */
+.film-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr)); gap:16px; }
+.film-card { display:flex; gap:16px; border:1px solid var(--at-line); border-radius:10px; padding:16px; color:inherit; text-decoration:none; min-width:0; }
+.film-card > img { width:112px; height:76px; object-fit:cover; border-radius:6px; }
+.film-card > div { min-width:0; flex:1; }
+.film-card b,.film-card small { display:block; }
+.film-card p,.film-card small { font-size:12px; margin:8px 0; overflow-wrap:anywhere; }
+.film-card progress { width:100%; height:5px; display:block; }
+.film-screen { display:block; width:100%; max-height:65vh; object-fit:contain; background:#080d16; border-radius:10px; }
+.film-controls { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:16px 0; }
+.film-controls span { font-size:13px; }
+.film-thumbs { display:flex; gap:10px; overflow-x:auto; padding:10px 0; }
+.film-thumbs button { flex:0 0 150px; padding:4px; border:2px solid transparent; background:transparent; color:inherit; border-radius:7px; }
+.film-thumbs button.on { border-color:var(--pico-primary); }
+.film-thumbs img { width:138px; aspect-ratio:16/9; object-fit:cover; border-radius:3px; }
+.film-thumbs small { display:block; font-size:11px; }
+@media(max-width:600px) { .film-card { flex-direction:column; } .film-card > img { width:100%; height:130px; } }
+
+.film-cards { max-height:420px; overflow-y:auto; }
+
+.clip-range-form { width:100%; min-width:0; }
+.clip-range-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+.clip-range-fields > div:last-child { grid-column:1 / -1; max-width:240px; }
+.clip-range-fields input { min-width:0; width:100%; }
+@media(max-width:700px) { .clip-range-fields { grid-template-columns:minmax(0,1fr); } }
+
+/* Plain-language AI guide; diagrams share the application's theme and reflow on phones. */
+.guide-page { max-width:1200px; margin:auto; }
+.guide-page p { max-width:100ch; line-height:1.65; }
+.guide-page .card { margin-bottom:24px; }
+.guide-flow { list-style:none; padding:0; display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:16px; margin:28px 0; }
+.guide-flow li { padding:16px 0; border-top:3px solid var(--pico-primary); position:relative; }
+.guide-flow span,.guide-definitions .eyebrow { display:block; margin-top:8px; font-size:13px; color:var(--pico-muted-color); }
+.guide-definitions { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr)); gap:28px; margin:24px 0; }
+.guide-definitions h3 { font-size:17px; margin:10px 0; }
+.guide-axis { display:flex; justify-content:space-between; gap:12px; font-size:13px; margin-bottom:12px; }
+.guide-timeline,.guide-event-axis { margin:28px 0; }
+.guide-recording { background:var(--pico-secondary-background); color:var(--pico-secondary-inverse); padding:14px; text-align:center; border-radius:6px; margin-bottom:10px; font-size:14px; }
+.guide-windows { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.guide-windows > div { background:var(--at-accent-soft, var(--pico-card-sectioning-background-color)); padding:18px; border-radius:6px; }
+.guide-windows > div:last-child { border-left:3px solid var(--pico-primary); }
+.guide-windows span,.guide-decisions span { display:block; font-size:13px; margin-top:8px; }
+.guide-decisions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; text-align:right; padding:14px 0; }
+.guide-summary,.guide-inline { padding:20px; background:var(--pico-card-sectioning-background-color); border-radius:8px; margin:20px 0; }
+.guide-frames { display:grid; grid-template-columns:repeat(auto-fit,minmax(70px,1fr)); gap:10px; margin:20px 0; }
+.guide-frames > div { border:1px solid var(--at-line); padding:10px; border-radius:6px; text-align:center; }
+.guide-frames span { display:block; font-size:12px; margin-top:8px; }
+.guide-event-track { height:18px; margin-top:14px; background:var(--pico-card-sectioning-background-color); }
+.guide-event-track > div { height:100%; background:var(--pico-primary); }
+.guide-story { padding-left:24px; }
+.guide-story li { padding:10px 0 10px 8px; }
+.guide-story li::marker { color:var(--pico-primary); font-weight:600; }
+.guide-story p { margin:8px 0; }
+.guide-mini { display:flex; align-items:center; gap:12px; margin:18px 0; }
+.guide-mini > div { flex:1; min-width:0; }
+.guide-mini span { display:block; font-size:12px; margin-top:6px; }
+.guide-inline > a { font-size:14px; }
+@media(max-width:700px) {
+ .guide-flow { grid-template-columns:minmax(0,1fr); gap:0; }
+ .guide-flow li { border-top:0; border-left:3px solid var(--pico-primary); padding:12px 18px; }
+ .guide-mini { display:block; }
+ .guide-mini > div { padding:8px 0; }
+ .guide-mini > span { transform:rotate(90deg); width:16px; margin:4px 0; }
+ .guide-windows > div { padding:12px; }
+ .guide-axis { font-size:12px; }
+}

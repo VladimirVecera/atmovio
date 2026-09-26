@@ -64,7 +64,7 @@ with contextlib.ExitStack() as stack:
  assert client.post('/login',data={'password':os.environ['ATMOVIO_ADMIN_PASSWORD'],'csrf_token':token},follow_redirects=False).status_code==303
  ok('Session login with CSRF')
  token=re.search(r'name="csrf_token" value="([^"]+)"',client.get('/ai').text)[1]
- pages=['/youtube','/videos/settings','/','/live','/live/all','/live/test_cam','/camera/test_cam','/cameras','/cameras/edit/test_cam','/discover','/storage','/ai','/history','/history?show=all','/detection/1','/videos','/studio/new/1','/studio/v/1','/studio/settings','/email','/vpn','/logs','/system','/system/update']
+ pages=['/ai/guide','/youtube','/videos/settings','/','/live','/live/all','/live/test_cam','/camera/test_cam','/cameras','/cameras/edit/test_cam','/discover','/storage','/ai','/history','/history?show=all','/detection/1','/videos','/studio/new/1','/studio/v/1','/studio/settings','/email','/vpn','/logs','/system','/system/update']
  failed=[];form_count=0
  for page in pages:
   r=client.get(page)
@@ -100,7 +100,7 @@ with contextlib.ExitStack() as stack:
  form.update(provider='ollama',cam_test_cam='1',ax_enabled='1',ax_cam_test_cam='1',ax_before='2',ax_after='3',ax_playback='realtime',strip_enabled='1',strip_frames='6',strip_span_min='60',mode_test_cam='custom',thr_test_cam='8',cph_test_cam_cervanky='1',csrf_token=token)
  for p in saved['ai']['phenomena']:form['ph_'+p]='1'
  r=client.post('/ai',data=form,follow_redirects=False);assert r.status_code==303,(r.status_code,r.text[:200])
- after=a.load_config();assert after['ai']['enabled'] and after['ai']['cameras']==['test_cam'] and after['ai']['strip']=={'enabled':True,'frames':6,'span_min':60}
+ after=a.load_config();assert after['ai']['enabled'] and after['ai']['cameras']==['test_cam'] and after['ai']['strip']=={'enabled':True,'frames':6,'span_min':60,'mode':'batch'}
  ok('Full AI form saves cameras, enable flags and filmstrip 4.7')
  # Each settings form writes only its own configuration.
  ai_before=copy.deepcopy(after['ai'])
@@ -108,7 +108,7 @@ with contextlib.ExitStack() as stack:
  assert r.status_code==303
  video_cfg=a.load_config(); expected=copy.deepcopy(ai_before); expected['auto_export']=video_cfg['ai']['auto_export']
  assert video_cfg['ai']==expected and video_cfg['export_keep_days']==45
- assert video_cfg['ai']['auto_export']=={'enabled':True,'cameras':['test_cam'],'before_min':5,'after_min':10,'playback':'timelapse_25x'}
+ assert video_cfg['ai']['auto_export']=={'enabled':True,'cameras':['test_cam'],'before_min':5,'after_min':10,'playback':'timelapse_25x','length_mode':'event','duration_min':60}
  form['scope']='ai';form['ax_enabled']='';form['ax_cam_test_cam']=''
  r=client.post('/ai',data=form,follow_redirects=False);assert r.status_code==303
  assert a.load_config()['ai']['auto_export']==video_cfg['ai']['auto_export']
