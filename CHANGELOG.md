@@ -2,6 +2,11 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 5.3.13 – 2026-09-26 – descriptive timelapse titles
+
+- Preserve the observed phenomenon in timelapse-only exports and Studio evidence instead of replacing it with a generic label.
+- Ask AI metadata generation for a concrete title based on observed clouds and development.
+
 ## 5.3.12 – 2026-09-26 – notify after the complete AI video
 
 - Detection notifications with automatic video enabled wait for the playable final main export.

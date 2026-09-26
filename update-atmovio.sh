@@ -117,7 +117,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "5.3.12"
+APP_VERSION = "5.3.13"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -6481,7 +6481,7 @@ def _schedule_film_export(cfg, result, hits):
         if not hits:
             # Motion-only evidence covers the whole observed film, not an invented event timestamp.
             film = dict(film, event_start=film["start"], event_end=film["end"])
-            result = dict(result, phenomenon="Zajímavý časosběr", film_context=json.dumps(film, ensure_ascii=False))
+            result = dict(result, film_context=json.dumps(film, ensure_ascii=False))
         hits = list(hits) + ["timelapse"]
     before = max(0, min(60, int(ax.get("before_min", 2)))) * 60
     after = max(0, min(60, int(ax.get("after_min", 3)))) * 60
@@ -6547,7 +6547,8 @@ def _schedule_film_export(cfg, result, hits):
             con.execute("UPDATE auto_exports SET start_ts=?,end_ts=?,due_ts=?,film_open=?,film_last=?,ai_context=?,message=? WHERE id=?",
                         (start, end, due, int(ongoing), film["end"], context, "Čekám na pokračování jevu v dalším AI filmu" if ongoing else "Jev dokončen", matching["id"]))
         else:
-            labels = ", ".join("Zajímavý časosběr" if p == "timelapse" else phen_labels(cfg["ai"]).get(p, p) for p in hits)
+            labels = (result.get("phenomenon") or "").strip() if hits == ["timelapse"] else ""
+            labels = labels or ", ".join("Zajímavý časosběr" if p == "timelapse" else phen_labels(cfg["ai"]).get(p, p) for p in hits)
             name = f"{cam_label(cfg, cam)} {dt.datetime.fromtimestamp(start, ZoneInfo(cfg['tz'])).strftime('%d.%m. %H:%M')} – {labels}"[:90]
             con.execute("INSERT INTO auto_exports(detection_id,camera,name,start_ts,end_ts,due_ts,playback,created,film_open,film_hits,film_last,ai_context,message) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (result["id"], cam, name, start, end, due, ax.get("playback", "realtime"), dt.datetime.now().isoformat(timespec="seconds"),
@@ -7286,6 +7287,7 @@ def studio_metadata(cfg, v: dict) -> dict:
         v["vyvoj"], v["trend"] = "", ""
     prompt = (
         "Vytvoř český nadpis a popis videa oblohy. Vrať pouze JSON objekt {\"title\":\"...\",\"description\":\"...\"}. "
+        "Nadpis musí pojmenovat konkrétní pozorovanou oblačnost nebo děj z popisu a vývoje; nepoužívej samotné obecné označení Zajímavý časosběr. "
         "Nadpis do 90 znaků, popis 2–4 věty. Žádný clickbait, domněnky, neověřená místa, směry, rychlosti větru ani předpovědi. "
         "Název kamery není nutně obec. Podklady jsou vyhodnocení fotografie nebo filmového pásu, nikoli analýza celého MP4. "
         "Rozliš čas zdrojového klipu clip_start/clip_end a čas AI pásu film_start/film_end (Unix sekundy). "

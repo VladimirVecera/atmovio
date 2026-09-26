@@ -183,7 +183,7 @@ try:
     ok('Missing continuation exports only known bounds; quiet film closes the clip; six-hour event parts are bounded')
     # Motion alone can trigger a film clip only when explicitly enabled.
     quiet=event_result(20, ongoing=False)
-    quiet.update(score=3, phenomena=[], phenomenon='Běžná obloha', timelapse=8)
+    quiet.update(score=3, phenomena=[], phenomenon='Kupovitá oblačnost a kondenzační stopy', timelapse=8)
     count=len(rows('auto_exports'))
     a.schedule_film_export(episode_cfg,quiet,[])
     assert len(rows('auto_exports'))==count
@@ -195,7 +195,8 @@ try:
     job=rows('auto_exports')[-1];context=json.loads(quiet['film_context'])
     assert len(rows('auto_exports'))==count+1 and job['film_hits']=='timelapse'
     assert job['start_ts']==context['start']-120 and job['end_ts']==context['end']+180
-    assert 'Zajímavý časosběr' in job['name']
+    assert quiet['phenomenon'] in job['name']
+    assert json.loads(job['ai_context'])['phenomenon'] == quiet['phenomenon']
     a.schedule_film_export(episode_cfg,quiet,[])
     assert len(rows('auto_exports'))==count+1
     single=event_result(21);single.update(timelapse=9)
