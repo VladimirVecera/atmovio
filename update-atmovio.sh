@@ -116,7 +116,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "5.3"
+APP_VERSION = "5.3.1"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -2750,6 +2750,10 @@ BOTTOM_NAV = ["/", "/live", "/history", "/videos"]
 
 # Ikony (inline SVG, stroke = currentColor) pro dlaždice a hlavičku.
 ICONS = {
+    "user": '<svg class="i" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></svg>',
+    "link": '<svg class="i" viewBox="0 0 24 24"><path d="m10 13 4-4M8 15l-1 1a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0m0 14a4 4 0 0 0 6 0l5-5a4 4 0 0 0-6-6l-1 1"/></svg>',
+    "refresh": '<svg class="i" viewBox="0 0 24 24"><path d="M20 8a8 8 0 0 0-14-3L3 8m0-5v5h5M4 16a8 8 0 0 0 14 3l3-3m0 5v-5h-5"/></svg>',
+
     "camera": '<svg class="i" viewBox="0 0 24 24"><path d="M4 7h3l2-2h6l2 2h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
     "disk": '<svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><circle cx="7" cy="7.5" r="1"/><circle cx="7" cy="16.5" r="1"/></svg>',
     "brain": '<svg class="i" viewBox="0 0 24 24"><path d="M9 4a3 3 0 0 0-3 3v1a3 3 0 0 0-2 3 3 3 0 0 0 2 3v1a3 3 0 0 0 3 3h1V4zM15 4a3 3 0 0 1 3 3v1a3 3 0 0 1 2 3 3 3 0 0 1-2 3v1a3 3 0 0 1-3 3h-1V4z"/><path d="M10 9h4M10 15h4"/></svg>',
@@ -2974,7 +2978,7 @@ TEMPLATES["cameras.html"] = """{% extends "base.html" %}{% block actions %}{% if
 <td style="white-space:nowrap"><a class="btn small" href="/cameras/edit/{{ name }}">Upravit</a> <a class="btn small sec" href="/camera/{{ name }}">Detail</a>
 <form method="post" action="/cameras/delete" style="display:inline" onsubmit="return confirm('Odebrat kameru {{ cam(name) }} z konfigurace? Záznamy zůstanou na disku.')"><input type="hidden" name="name" value="{{ name }}"><button class="btn small danger">Odebrat</button></form></td></tr>{% endfor %}
 {% if not cams %}<tr><td colspan="5" class="hint">Žádné kamery. Přidej první níže – nebo ji nech <a href="/discover">vyhledat v síti</a>.</td></tr>{% endif %}</table></div>
-<p class="hint">Video se ukládá tak, jak ho kamera kóduje (H.264/H.265, bez překódování – CPU se nezatěžuje). Substream v nízkém rozlišení slouží jen pro náhled ve Frigate. Po každé změně se Frigate restartuje (cca 20–40 s). Masky, zóny a detekci objektů nastavíš ve <a href="{{ frigate_ui }}" target="_blank">Frigate ↗</a>.</p></div>
+<p class="hint">Po změně se nahrávání restartuje (20–40 s).</p><details class="inline-help"><summary>Záznam a kvalita obrazu</summary><p class="hint">Video se ukládá tak, jak ho kamera kóduje (H.264/H.265, bez překódování – CPU se nezatěžuje). Substream v nízkém rozlišení slouží jen pro náhled ve Frigate. Po každé změně se Frigate restartuje (cca 20–40 s). Masky, zóny a detekci objektů nastavíš ve <a href="{{ frigate_ui }}" target="_blank">Frigate ↗</a>.</p></details></div>
 
 {% endif %}
 <details class="camera-editor" id="pridat" {% if pre.main %}open{% endif %}><summary>{% if pre.replace %}Upravit kameru · {{ pre.name }}{% else %}Přidat kameru pomocí adresy RTSP{% endif %}<span class="hint">Název, přihlášení a zdroje videa</span></summary>
@@ -3003,8 +3007,8 @@ TEMPLATES["discover.html"] = """{% extends "base.html" %}{% block content %}
 <div><label>Kde hledat (síť; přes VPN přidej i vzdálenou, oddělené čárkou)</label><input type="text" name="subnets" value="{{ subnets }}" placeholder="192.168.1.0/24, 10.10.10.0/24"></div>
 </div>
 <button class="btn">🔍 Hledat (cca 10–30 s)</button> <a class="btn sec" href="/cameras">Zpět na kamery</a></form>
-<p class="hint"><b>Uživatel a heslo kamery zadej i tady</b> – bez nich kamera stream nevydá (chyba 401). Hledá se přes ONVIF (multicast – jen v lokální síti RPi) a skenem portů 554/80/8000/8080/8554 v zadaných sítích (funguje i přes VPN, např. 10.10.10.0/24).
-Se zadaným přihlášením se z ONVIF vytáhnou RTSP adresy streamů a každá se ověří tak, jak ji uvidí nahrávání (adresy bez videa se vynechají, špatný port se opraví); bez přihlášení se nabídnou typické adresy podle výrobce. Ověření trvá i minutu.</p></div>
+<p class="hint">Zadej přihlašovací údaje kamery.</p><details class="inline-help"><summary>Jak hledání kamer funguje</summary><p class="hint"><b>Uživatel a heslo kamery zadej i tady</b> – bez nich kamera stream nevydá (chyba 401). Hledá se přes ONVIF (multicast – jen v lokální síti RPi) a skenem portů 554/80/8000/8080/8554 v zadaných sítích (funguje i přes VPN, např. 10.10.10.0/24).
+Se zadaným přihlášením se z ONVIF vytáhnou RTSP adresy streamů a každá se ověří tak, jak ji uvidí nahrávání (adresy bez videa se vynechají, špatný port se opraví); bez přihlášení se nabídnou typické adresy podle výrobce. Ověření trvá i minutu.</p></details></div>
 {% if results is not none %}
 <div class="card"><h2>Nalezená zařízení ({{ results|length }})</h2>
 {% if not results %}<p class="hint">Nic nenalezeno. Zkontroluj, že kamery jsou ve stejné síti, mají zapnuté RTSP/ONVIF, případně zadej správný rozsah sítě.</p>{% endif %}
@@ -3069,7 +3073,7 @@ TEMPLATES["storage.html"] = """{% extends "base.html" %}{% block content %}
 {% endif %}
 </div>
 {% endfor %}
-<p class="hint">Po připojení disku se nahrávání zapne samo do minuty (hlídač disku ho ověří třemi zápisy). Disk se nikdy neuspává. Když ho odpojíš, Atmovio přejde na živý náhled bez záznamu a po připojení zpět nahrávání obnoví.</p></div>
+<p class="hint">Nahrávání se po ověření disku zapne automaticky.</p><details class="inline-help"><summary>Připojení a odpojení disku</summary><p class="hint">Po připojení disku se nahrávání zapne samo do minuty (hlídač disku ho ověří třemi zápisy). Disk se nikdy neuspává. Když ho odpojíš, Atmovio přejde na živý náhled bez záznamu a po připojení zpět nahrávání obnoví.</p></details></div>
 <div class="grid">
 {% if ready %}<div class="card"><h2>Záznamy na disku</h2>
 <div class="big">{{ disk.used_h }} <span class="hint">z {{ disk.total_h }}</span></div>
@@ -3138,7 +3142,7 @@ TEMPLATES["ai_guide.html"] = """{% extends "base.html" %}{% block actions %}<div
 TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block head %}{% endblock %}{% block actions %}<a class="btn small sec" href="/ai/guide">Jak funguje AI film?</a>{% endblock %}{% block content %}
 {% set thr_opts = [(4, '4 – i docela obyčejná obloha (hodně upozornění)'), (5, '5 – hezká obloha'), (6, '6 – hezká, spíš výraznější'), (7, '7 – výrazný jev (doporučeno)'), (8, '8 – opravdu výrazný'), (9, '9 – jen výjimečná podívaná')] %}
 <div x-data="{tab: (['kdo','kamery','kdy','test'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'kdo')}" x-init="$watch('tab', t => history.replaceState(null, '', '#' + t))">
-<div class="page-head"><div><h1>Nastavení AI detekce</h1><p class="sub">Umělá inteligence se dívá do kamer a dá vědět, když je na obloze něco pěkného nebo nebezpečného.</p></div>
+<div class="page-head"><div><h1>Nastavení AI detekce</h1><p class="sub">Kamery, jevy a časování.</p></div>
 <div class="actions"><a class="btn small sec" href="/ai/guide">Jak funguje AI film?</a>{% if ai.enabled and (ai.api_key or ai.provider == 'ollama') %}<span class="badge ok">zapnuto · {{ ai.cameras|length }} {{ 'kamera' if ai.cameras|length == 1 else ('kamery' if ai.cameras|length < 5 else 'kamer') }} · dnes {{ used_today }} dotazů</span>{% else %}<span class="badge warn">vypnuto</span>{% endif %}</div></div>
 
 <div class="tabs big">
@@ -3153,7 +3157,7 @@ TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block head %}{% endblock %
 <!-- ===== 1 · kdo hodnotí ===== -->
 <div x-show="tab==='kdo'">
 <div class="card" x-data="{p: '{{ ai.provider }}'}"><div class="section-head"><h2>Kdo se na oblohu dívá</h2>{% if ai.api_key or ai.provider == 'ollama' %}<span class="badge ok">{{ provider_info[ai.provider].name }} · {{ ai.model or 'auto' }}</span>{% else %}<span class="badge warn">chybí klíč</span>{% endif %}</div>
-<p class="hint">AI dostane dokončený film ze snímků, nebo aktuální pohled podle zvoleného režimu. Vrátí jevy, skóre a popis vývoje. Vyber poskytovatele a model, který umí pracovat s obrázky.</p>
+<p class="hint">Vyber model, který podporuje obrázky.</p>
 <div class="prov">
 {% for pid, pi in provider_info.items() %}
 <label class="prov-card" :class="{on: p==='{{ pid }}'}"><input type="radio" name="provider" value="{{ pid }}" x-model="p">
@@ -3190,7 +3194,7 @@ TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block head %}{% endblock %
 <!-- ===== 2 · kamery a jevy ===== -->
 <div x-show="tab==='kamery'" x-cloak>
 <div class="card"><label class="check" style="margin:0;font-size:1.05rem"><input type="checkbox" name="enabled" {% if ai.enabled %}checked{% endif %}> <b>Hlídání oblohy zapnuto</b></label>
-<p class="hint" style="margin:.4rem 0 0">U každé kamery zapneš hlídání a řekneš, <b>od jakého skóre</b> a <b>na které jevy</b> chceš upozornit. AI hodnotí oblohu 0–10 (0–3 nudná, 4–6 hezká, 7–8 výrazný jev, 9–10 výjimečná). Kamera s hezkým výhledem si vystačí s prahem 7, horší kamera nebo kamera na sever klidně 5.</p></div>
+<p class="hint">Vyber kamery, jevy a minimální skóre.</p><details class="inline-help"><summary>Jak nastavit skóre</summary><p class="hint" style="margin:.4rem 0 0">U každé kamery zapneš hlídání a řekneš, <b>od jakého skóre</b> a <b>na které jevy</b> chceš upozornit. AI hodnotí oblohu 0–10 (0–3 nudná, 4–6 hezká, 7–8 výrazný jev, 9–10 výjimečná). Kamera s hezkým výhledem si vystačí s prahem 7, horší kamera nebo kamera na sever klidně 5.</p></details></div>
 
 <div class="card"><div class="section-head"><h2>Výchozí nastavení</h2><span class="hint">platí pro každou kameru, která nemá vlastní</span></div>
 <label>Upozornit, když je obloha aspoň…</label><select name="threshold">{% for v, t in thr_opts %}<option value="{{ v }}" {% if ai.threshold == v %}selected{% endif %}>{{ t }}</option>{% endfor %}</select>
@@ -3223,19 +3227,31 @@ TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block head %}{% endblock %
 <!-- ===== 3 · kdy se dívat ===== -->
 <div x-show="tab==='kdy'" x-cloak>
 <div class="card" x-data="filmTiming('{{ ai.strip.mode }}', {{ 'true' if ai.strip.enabled else 'false' }}, {{ ai.interval_min }}, {{ ai.strip.span_min }}, {{ ai.strip.max_frames }})">
-<h2>Sběr snímků a vyhodnocení AI filmu</h2>
-<p class="hint">Snímky se sbírají průběžně. V režimu dokončených filmů se AI ptáme až na konci zvoleného časového úseku.</p>
+<div class="film-builder-heading"><div><h2>Jak má AI sledovat oblohu?</h2></div><button type="button" class="btn small" @click="recommend()">Předvyplnit doporučené</button></div>
 <label class="check"><input type="checkbox" name="strip_enabled" x-model="active"> Používat AI film z více snímků</label>
-<div class="row"><div><label>Způsob vyhodnocení</label><select name="strip_mode" x-model="mode"><option value="batch">Až po dokončení filmu · doporučeno</option><option value="rolling">Při každém snímku s pohledem dozadu · původní režim</option></select></div>
-<div><label>Snímek každých (minut)</label><input type="number" name="interval_min" x-model.number="sample" min="1" max="1440" value="{{ ai.interval_min }}"><div class="hint">V dokončeném filmu jde pouze o sběr, ne o dotaz na AI. Interval delší než film se zkrátí na délku filmu.</div></div>
-<div><label>Maximální délka AI filmu (minut)</label><input type="number" name="strip_span_min" x-model.number="span" min="10" max="180" value="{{ ai.strip.span_min }}"><div class="hint">Např. 60 minut + snímek každých 5 minut = přibližně 13 snímků a jedno vyhodnocení za hodinu na kameru.</div></div></div>
-<div x-show="active && mode==='batch'" class="film-quality"><label for="strip-limit">Nejvýše snímků v jednom AI filmu</label><select id="strip-limit" name="strip_max_frames" x-model.number="limit">{% for n in [3,6,9,13,20,36] %}<option value="{{ n }}" {{ 'selected' if ai.strip.max_frames==n }}>{{ n }} snímků{{ ' · doporučeno pro větší detaily' if n==9 else '' }}</option>{% endfor %}</select>
-<p class="hint">Film skončí při dosažení délky nebo limitu snímků, podle toho, co nastane dříve. Při 5 minutách a limitu 9 snímků pokryje nejvýše 40 minut, včetně první a poslední fotografie. Další film naváže okamžitě. Rozpracovaný film doběhne podle původního nastavení.</p>
-<button type="button" class="btn small sec" @click="sample=5;span=40;limit=9">Použít 5 min / 40 min / 9 snímků</button><p class="hint">Při nejvýše 9 snímcích má každá fotografie v podkladu až 720 × 405 bodů; u větších sad 480 × 270. Poskytovatel AI může podklad dále zpracovat. Rozpoznání jemných jevů není zaručené.</p></div>
-<div class="guide-inline" x-show="active && mode==='batch'" aria-live="polite"><span class="eyebrow">Co znamenají právě zadané hodnoty?</span><div class="guide-mini"><div><b x-text="'1 snímek / ' + interval + ' min'"></b><span>Fotografie se ukládají</span></div><span aria-hidden="true">→</span><div><b x-text="count + ' snímků / film'"></b><span x-text="'Přibližně za ' + filmLength + ' minut'"></span></div><span aria-hidden="true">→</span><div><b>1 vyhodnocení AI</b><span>Až po dokončení filmu</span></div></div><p class="hint" x-text="frequency"></p><p class="hint" x-show="count>36">AI dostane rovnoměrný výběr 36 snímků; všechny fotografie zůstanou k prohlédnutí.</p><p class="hint">Tato ukázka reaguje na formulář. Skutečné nastavení se změní až po uložení.</p><a href="/ai/guide">Grafický průvodce: od fotografie až k videu →</a></div>
-<div class="field-note" x-show="active && mode==='batch'">Upozornění přijde až po dokončení filmu. Snímky se ukládají i při tmě a malých změnách, aby se neztratil vývoj. Rozpracované filmy najdeš v <a href="/history">AI detekci</a>. Změna časování platí od následujícího filmu; ruční test hodnotí aktuální pohled a nerozděluje film.</div>
-<p class="hint" x-show="active && mode==='batch'">AI obdrží nejvýše 36 rovnoměrně vybraných snímků včetně prvního a posledního. Při hustším sběru zůstanou všechny snímky k prohlédnutí a uvidíš, které dostala AI. V noci se při zapnutém denním režimu vyhodnotí i kratší závěrečný film. Snímky nasbírané při vyčerpaném limitu čekají nejdéle po nastavenou dobu uchovávání historie.</p>
-<details><summary>Průběžný režim a úsporné předfiltry</summary><p class="hint">Tyto volby platí pro původní průběžné hodnocení a hodnocení jednotlivých snímků. Dokončené filmy mají pevný interval sběru.</p>
+<p class="hint" x-show="!active || mode!=='batch'">Pro náhled filmu použij „Předvyplnit doporučené“.</p>
+<div class="film-builder">
+<div class="film-builder-fields">
+<div class="film-field"><label for="film-interval">Snímek každých</label><div class="input-unit"><input id="film-interval" type="number" name="interval_min" x-model.number="sample" @input="$nextTick(() => syncDuration())" min="1" max="1440" step="1" required value="{{ ai.interval_min }}"><span>minut</span></div></div>
+<div class="film-field" x-show="active && mode==='batch'"><label for="film-capacity">Snímků v obrázku</label><div class="input-unit"><input id="film-capacity" type="number" name="strip_max_frames" x-model.number="limit" @input="$nextTick(() => syncDuration())" min="3" max="36" step="1" required value="{{ ai.strip.max_frames }}"><span>snímků</span></div></div>
+<div class="film-field"><label for="film-duration">Délka sběru</label><div class="input-unit"><input id="film-duration" type="number" name="strip_span_min" x-model.number="span" @input="automatic=false" min="10" max="180" step="1" required value="{{ ai.strip.span_min }}"><span>minut</span></div>
+<label class="check film-auto" x-show="active && mode==='batch'"><input type="checkbox" x-model="automatic" @change="syncDuration()"> Dopočítat automaticky</label></div>
+</div>
+<div class="film-builder-preview" x-show="active && mode==='batch'">
+<div class="film-preview-title"><span>Obrázek pro AI</span><b x-text="count + ' / ' + capacity + ' snímků'"></b></div>
+<div class="film-sheet" :style="'grid-template-columns:repeat(' + columns + ',minmax(0,1fr))'" role="img" :aria-label="'Schéma: ' + count + ' fotografií, ' + columns + ' sloupce. Jeden snímek až ' + photoSize + ' bodů.'">
+<template x-for="tile in sheetTiles" :key="tile.index"><div class="film-sheet-tile" :class="{'film-sheet-empty':tile.empty}"><span x-text="tile.empty ? 'Volné' : 'Snímek ' + (tile.index+1)"></span><b x-show="!tile.empty" x-text="'+' + tile.minute + ' min'"></b></div></template>
+</div>
+<p class="hint film-sheet-caption">Schéma · první snímek v čase 0.</p>
+<div class="film-preview-result" aria-live="polite"><strong x-text="'Jeden závěr AI přibližně každých ' + filmLength + ' minut'"></strong><span x-text="count + ' fotografií · jeden snímek až ' + photoSize + ' bodů'"></span><span x-text="'Celý obrázek: ' + sheetSize + ' bodů včetně časových popisků'"></span></div>
+<p class="hint" x-show="filmLength < requestedLength">Kapacita ukončí film dříve: <b x-text="filmLength + ' minut místo ' + requestedLength"></b>. Další film ihned naváže.</p>
+<p class="hint" x-show="Number(sample)>interval">Interval je delší než film; při sběru se použije <b x-text="interval + ' minut'"></b>.</p>
+<p class="hint" x-show="count>9">Více než 9 snímků znamená menší jednotlivé fotografie. Jemné jevy se mohou hůře rozpoznávat.</p>
+</div>
+</div>
+<p class="film-save-note">Použije se po uložení, od dalšího filmu.</p>
+<details class="film-help"><summary>Jak výpočet funguje a co AI uvidí?</summary><p>Film skončí dosažením délky nebo kapacity, podle toho, co nastane dříve. Sady do 9 fotografií mají obrázky až 720 × 405 bodů, větší sady 480 × 270. AI může obraz dále zpracovat; rozpoznání není zaručené.</p><p x-text="frequency"></p><p>Skutečné podklady otevřeš v AI detekci. Upozornění přijde až po dokončení filmu a jeho vyhodnocení.</p><a href="/ai/guide">Podrobný grafický průvodce →</a></details>
+<details><summary>Pokročilé: způsob vyhodnocení a úsporné předfiltry</summary><label>Způsob vyhodnocení</label><select name="strip_mode" x-model="mode"><option value="batch">Až po dokončení filmu · doporučeno</option><option value="rolling">Při každém snímku s pohledem dozadu · původní režim</option></select><p class="hint">Tyto volby platí pro původní průběžné hodnocení a hodnocení jednotlivých snímků. Dokončené filmy mají pevný interval sběru.</p>
 <div class="row"><div><label>Rychlý interval (minut)</label><input type="number" name="fast_interval_min" min="1" max="60" value="{{ ai.fast_interval_min }}"></div>
 <div><label>Starší snímky v průběžném pásu</label><input type="number" name="strip_frames" min="2" max="12" value="{{ ai.strip.frames }}"></div></div>
 <label class="check"><input type="checkbox" name="fast_mode" {% if ai.fast_mode %}checked{% endif %}> Kolem východu/západu a po zajímavém snímku se dívat častěji</label>
@@ -3298,7 +3314,7 @@ TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block head %}{% endblock %
 {% for d in stats7 %}<tr{% if loop.first %} class="today"{% endif %}><td>{{ d.label }} <span class="hint">{{ d.dow }}</span></td><td><b>{{ d.calls }}</b></td><td>{{ d.interesting }}</td><td>{% if d.notified %}<span class="badge ok">{{ d.notified }}</span>{% else %}0{% endif %}</td><td class="hint">{{ d.skipped }}</td><td>{% if d.errors %}<span class="badge err">{{ d.errors }}</span>{% else %}0{% endif %}</td></tr>{% endfor %}
 <tr class="sum"><td>celkem</td><td><b>{{ stats7|sum(attribute='calls') }}</b></td><td>{{ stats7|sum(attribute='interesting') }}</td><td>{{ stats7|sum(attribute='notified') }}</td><td class="hint">{{ stats7|sum(attribute='skipped') }}</td><td>{{ stats7|sum(attribute='errors') }}</td></tr>
 </tbody></table></div>
-<div class="hint">„Dotazů“ = kolikrát se AI opravdu ptalo (počítá se do denního limitu{% if ai.daily_limit %} {{ ai.daily_limit }}{% endif %}). „Zajímavá obloha“ = skóre dosáhlo prahu. „Přeskočeno“ = obraz se od minula nezměnil, snímek se AI neposlal.</div></div>
+<details class="inline-help"><summary>Co znamenají statistiky</summary><div class="hint">„Dotazů“ = kolikrát se AI opravdu ptalo (počítá se do denního limitu{% if ai.daily_limit %} {{ ai.daily_limit }}{% endif %}). „Zajímavá obloha“ = skóre dosáhlo prahu. „Přeskočeno“ = obraz se od minula nezměnil, snímek se AI neposlal.</div></details></div>
 </div>
 </div>
 {% endblock %}"""
@@ -3370,9 +3386,18 @@ PersistentKeepalive = 25">{{ conf }}</textarea>
 <button class="btn">Uložit a aktivovat</button></form></div></div></details>
 {% endblock %}"""
 
-TEMPLATES["system.html"] = """{% extends "base.html" %}{% block content %}
-<nav class="tabs system-tabs" aria-label="Systém"><a href="/system" class="{{ 'on' if section=='overview' }}">Přehled</a><a href="/system/access" class="{{ 'on' if section=='access' }}">Hesla a přístupy</a><a href="/system/integrations" class="{{ 'on' if section=='integrations' }}">API a propojení</a><a href="/system/maintenance" class="{{ 'on' if section=='maintenance' }}">Údržba a restart</a><a href="/system/update">Aktualizace</a></nav>
-<div class="system-content">
+TEMPLATES["system_layout.html"] = """{% extends "base.html" %}{% block head %}{% endblock %}{% block content %}
+{% set pages = [('/system','Přehled zařízení','Stav Raspberry Pi a disků','cpu'),('/system/access','Hesla a přístupy','Přihlášení do Atmovio a Frigate','user'),('/system/integrations','API a propojení','Přístup pro další aplikace','link'),('/system/maintenance','Údržba a restart','Nahrávání a systémové služby','cog'),('/system/update','Aktualizace','Nové verze Atmovio','refresh')] %}
+<div class="system-workspace">
+<aside class="system-sidebar"><div class="system-sidebar-title">Systém<span>Správa zařízení</span></div>
+<nav aria-label="Nastavení systému">{% for href,label,description,icon in pages %}<a href="{{ href }}" {% if req_path==href %}aria-current="page"{% endif %}><span class="system-nav-icon" aria-hidden="true">{{ icons.get(icon,icons['cog'])|safe }}</span><span>{{ label }}</span><span class="system-nav-arrow" aria-hidden="true">›</span></a>{% endfor %}</nav>
+<a class="system-diagnostics" href="/logs">Otevřít diagnostiku <span aria-hidden="true">↗</span></a></aside>
+<section class="system-content">{% for href,label,description,icon in pages %}{% if req_path==href %}<header class="system-page-heading"><span class="eyebrow">Nastavení / Systém</span><h1>{{ label }}</h1><p>{{ description }}.</p></header>{% endif %}{% endfor %}
+{% block system_body %}{% endblock %}
+</section></div>
+{% endblock %}"""
+
+TEMPLATES["system.html"] = """{% extends "system_layout.html" %}{% block system_body %}
 {% if section=='overview' %}
 <div class="card"><h2>Raspberry Pi</h2>
 <div class="tw"><table class="kv"><tr><td>Název v síti</td><td>{{ s.hostname }}</td></tr><tr><td>IP adresa</td><td>{{ s.ip }}</td></tr><tr><td>Teplota</td><td>{{ s.temp }}</td></tr><tr><td>Zátěž</td><td>{{ s.load }}</td></tr><tr><td>Paměť</td><td>{{ s.mem }}</td></tr><tr><td>Běží od restartu</td><td>{{ s.uptime }}</td></tr><tr><td>Systémový disk</td><td>{{ s.rootfs }}</td></tr><tr><td>Atmovio</td><td>verze {{ version }}</td></tr></table></div>
@@ -3382,14 +3407,16 @@ TEMPLATES["system.html"] = """{% extends "base.html" %}{% block content %}
 {% for d in disks_health %}<div style="display:flex;gap:.6rem;align-items:flex-start;margin-bottom:.7rem"><span class="dot {{ d.level }}" style="margin-top:.45rem;width:10px;height:10px;border-radius:50%;flex:none"></span>
 <div><b>{{ d.role }}</b> · {{ d.model or d.dev }}{% if d.temp %} · {{ d.temp }} °C{% endif %}
 <div class="hint">{% if d.level == 'ok' %}bez vadných sektorů, stav {{ 'OK' if d.healthy else '?' }}{% else %}nečitelné {{ d.pending or 0 }} · přemapované {{ d.reallocated or 0 }} · neopravitelné {{ d.uncorrectable or 0 }}<br>{{ d.trend }}{% endif %} <span class="mut">· měřeno {{ d.ts[8:10] }}. {{ d.ts[5:7]|int }}. {{ d.ts[11:16] }}</span></div></div></div>{% endfor %}
-<p class="hint">Měří se každou hodinu. Nečitelné (pending) sektory jsou místa, která disk nedokázal přečíst – když jejich počet zůstane stejný, jde o jednorázovou chybu (typicky tvrdé vypnutí); když roste, disk končí a je čas ho vyměnit. Atmovio to sleduje a lišta nahoře zčervená jen při růstu nebo selhání.</p></div>
-{% endif %}{% if section=='access' %}<div class="card"><h2>Heslo do přehrávače záznamů (Frigate)</h2>
-<p class="hint">Přehrávač má vlastní přihlášení: uživatel <b>admin</b>, heslo stejné jako do Atmovio (nastaví se při instalaci i při každé změně hesla níže). Když se rozejdou, nech si vygenerovat nové – zobrazí se tady.</p>
+<p class="hint">Kontrola disku probíhá každou hodinu.</p><details class="inline-help"><summary>Jak číst stav disku</summary><p class="hint">Měří se každou hodinu. Nečitelné (pending) sektory jsou místa, která disk nedokázal přečíst – když jejich počet zůstane stejný, jde o jednorázovou chybu (typicky tvrdé vypnutí); když roste, disk končí a je čas ho vyměnit. Atmovio to sleduje a lišta nahoře zčervená jen při růstu nebo selhání.</p></details></div>
+{% endif %}{% if section=='access' %}<div class="card"><h2>Heslo do Atmovio</h2>
+<form method="post" action="/system/password"><label>Nové heslo (min. 12 znaků)</label><input type="password" name="pw1" required minlength="12" autocomplete="new-password"><label>Znovu</label><input type="password" name="pw2" required minlength="12" autocomplete="new-password"><button class="btn">Změnit heslo</button></form></div>
+<div class="card"><h2>Heslo do přehrávače záznamů (Frigate)</h2>
+<p class="hint">Frigate: uživatel <b>admin</b>, heslo stejné jako do Atmovio.</p><details class="inline-help"><summary>Když se hesla liší</summary><p class="hint">Přehrávač má vlastní přihlášení: uživatel <b>admin</b>, heslo stejné jako do Atmovio (nastaví se při instalaci i při každé změně hesla do Atmovio). Když se rozejdou, nech si vygenerovat nové – zobrazí se tady.</p></details>
 <form method="post" action="/system/ctl"><button class="btn small sec" name="action" value="frigate_pw" onclick="return confirm('Vygenerovat nové heslo pro přehrávač? Trvá cca 30 s, nahrávání se krátce restartuje.')">Vygenerovat nové heslo</button></form>
 {% if frigate_pw %}<pre>Uživatel: admin
 Heslo:    {{ frigate_pw }}</pre>{% endif %}</div>
 {% endif %}{% if section=='integrations' %}<div class="card" id="api"><h2>API pro jiné systémy</h2>
-<p class="hint">Jen čtení: stav, kamery, snímky, detekce, videa (<code>/api/v1/…</code>, popis v <code>docs/api.md</code>). Hodí se pro Home Assistant, vlastní web nebo skripty. Klíč pošli v hlavičce <code>Authorization: Bearer &lt;klíč&gt;</code>.</p>
+<p class="hint">API poskytuje přístup pouze pro čtení.</p><details class="inline-help"><summary>Použití API</summary><p class="hint">Jen čtení: stav, kamery, snímky, detekce, videa (<code>/api/v1/…</code>, popis v <code>docs/api.md</code>). Hodí se pro Home Assistant, vlastní web nebo skripty. Klíč pošli v hlavičce <code>Authorization: Bearer &lt;klíč&gt;</code>.</p></details>
 <div class="flash" style="font-weight:400"><span>📤</span><div><b>Odesílání na tvůj web</b> (každou minutu stav + stejná data jako API, plus upozornění se snímkem) se nastavuje v <a href="/email">Upozornění → vlastní web (webhook)</a>{% if web_ok %} – <span class="badge ok">propojeno</span>{% else %} – <span class="badge warn">nenastaveno</span>{% endif %}. Tam se zadává adresa a token; API klíč níže slouží jen pro čtení <i>z</i> RPi.</div></div>
 {% if new_api_key %}<div class="flash"><span>🔑</span><div><b>Nový klíč (zobrazí se jen teď):</b><pre id="apikey" style="margin:.3rem 0 0;user-select:all">{{ new_api_key }}</pre><button type="button" class="btn small sec" onclick="swCopy('apikey', this)">Kopírovat</button></div></div>{% endif %}
 {% if api_keys %}<div class="tw"><table><tr><th>Název</th><th>Klíč</th><th>Vytvořen</th><th></th></tr>{% for k in api_keys %}<tr><td>{{ k.name }}</td><td><code>{{ k.hint }}</code></td><td class="hint">{{ k.created|czdt }}</td><td><form method="post" action="/system/api_key/delete" onsubmit="return confirm('Zrušit klíč {{ k.name }}? Co ho používá, přestane fungovat.')"><input type="hidden" name="hint" value="{{ k.hint }}"><button class="btn small sec">Zrušit</button></form></td></tr>{% endfor %}</table></div>{% endif %}
@@ -3400,18 +3427,16 @@ Heslo:    {{ frigate_pw }}</pre>{% endif %}</div>
 {% if update_info.available %}<div class="flash"><span>🆕</span><div><b>K dispozici je verze {{ update_info.latest }}.</b></div></div>{% elif update_info.error %}<div class="flash warn"><span>⚠️</span><div>Kontrola se nepovedla: {{ update_info.error }}</div></div>{% endif %}
 <a class="btn small{% if not update_info.available %} sec{% endif %}" href="/system/update">{% if update_info.available %}Co je nového a aktualizovat{% else %}Kontrola a novinky{% endif %}</a>
 <p class="hint" style="margin-top:10px">Nové verze se berou z GitHubu ({{ github_repo }}). Instaluje se jen na kliknutí, původní verze se zálohuje a při chybě se sama vrátí.</p></div>
-{% endif %}{% if section=='access' %}<div class="card"><h2>Heslo do Atmovio</h2>
-<form method="post" action="/system/password"><label>Nové heslo (min. 12 znaků)</label><input type="password" name="pw1" required minlength="12" autocomplete="new-password"><label>Znovu</label><input type="password" name="pw2" required minlength="12" autocomplete="new-password"><button class="btn">Změnit heslo</button></form></div>
 {% endif %}
 {% if section=='maintenance' %}<div class="card"><h2>Nahrávání a Raspberry Pi</h2><form method="post" action="/system/ctl" class="action-row"><button class="btn small" name="action" value="restart_frigate">Restartovat nahrávání</button> <button class="btn small sec" name="action" value="fix_frigate">Opravit konfiguraci nahrávání</button> <button class="btn small danger" name="action" value="reboot" onclick="return confirm('Restartovat celé Raspberry Pi? Nahrávání se na minutu přeruší.')">Restartovat Raspberry Pi</button></form>
 <p class="hint" style="margin-top:10px">Když něco nefunguje, zkus nejdřív restart nahrávání; restart celého RPi až potom.</p></div><div class="card"><h2>Služby a kontejnery</h2>
 <pre>{{ docker }}</pre>
 <form method="post" action="/system/ctl" style="display:inline"><button class="btn small sec" name="action" value="restart_portainer">Restart Portainer</button> <button class="btn small sec" name="action" value="update" onclick="return confirm('Stáhnout verze z docker-compose.yml a restartovat kontejnery?')">Aktualizovat kontejnery</button></form>
-<p class="hint">Aktualizace systému, síť, uživatelé a disky: <a href="{{ cockpit_ui }}" target="_blank" rel="noopener">Cockpit ↗</a>. Kontejnery: <a href="{{ portainer_ui }}" target="_blank" rel="noopener">Portainer ↗</a>. Aktualizace Atmovio: záložka Aktualizace, nebo ručně přes SSH <code>sudo bash update-atmovio.sh</code>.</p>
-<p class="hint">Logy všech částí (Atmovio, disk, VPN, nahrávání, systém) najdeš v sekci <a href="/logs">Logy</a>.</p></div>{% endif %}</div>
+<details class="inline-help"><summary>Další nástroje pro správu</summary><p class="hint">Aktualizace systému, síť, uživatelé a disky: <a href="{{ cockpit_ui }}" target="_blank" rel="noopener">Cockpit ↗</a>. Kontejnery: <a href="{{ portainer_ui }}" target="_blank" rel="noopener">Portainer ↗</a>. Aktualizace Atmovio: záložka Aktualizace, nebo ručně přes SSH <code>sudo bash update-atmovio.sh</code>.</p></details>
+<p class="hint">Logy všech částí (Atmovio, disk, VPN, nahrávání, systém) najdeš v sekci <a href="/logs">Logy</a>.</p></div>{% endif %}
 {% endblock %}"""
 
-TEMPLATES["update.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small sec" href="/system">← Systém</a></div>{% endblock %}{% block content %}
+TEMPLATES["update.html"] = """{% extends "system_layout.html" %}{% block system_body %}
 <div x-data="updater({{ 'true' if running else 'false' }}, {{ version|tojson|forceescape }}, {{ log_text|tojson|forceescape }})">
 <div class="grid">
 <div class="card"><h2>Verze</h2>
@@ -3455,9 +3480,9 @@ TEMPLATES["logs.html"] = """{% extends "base.html" %}{% block actions %}<div cla
 {% if summary %}<div class="row" style="gap:8px;margin:8px 0;align-items:center">{% for label, cls in summary %}<span class="badge {{ cls }}">{{ label }}</span>{% endfor %}{% if src == 'atmovio' %}<a class="hint" style="margin-left:auto" href="/logs?src={{ src }}&n={{ n }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if not raw %}&raw=1{% endif %}">{% if raw %}přehledně{% else %}surový text{% endif %}</a>{% endif %}</div>{% endif %}
 {% if rows %}<div class="loglist">{% for r in rows|reverse %}<div class="lrow {{ r.level }}"><span class="lt">{{ r.ts[5:16] if r.ts else '' }}</span><span class="li">{% if r.level == 'err' %}✖{% elif r.level == 'warn' %}⚠{% elif r.level == 'note' %}◌{% else %}·{% endif %}</span><span class="lx">{{ r.text }}{% if r.why %}<small>{{ r.why }}</small>{% endif %}</span></div>{% endfor %}{% if not rows %}<div class="hint">Log je prázdný.</div>{% endif %}</div>
 <pre class="logbox" id="logtext" hidden>{{ text }}</pre>
-<p class="hint">Nejnovější nahoře. ✖ chyba = něco je potřeba udělat · ⚠ stojí za pozornost · ◌ přechodné (hosting nebo AI chvíli neodpověděly, vyřešilo se samo) · · běžný provoz.</p>
+<p class="hint">✖ Chyba · ⚠ Upozornění · ◌ Přechodný problém</p>
 {% else %}<pre class="logbox" id="logtext">{{ text or 'Log je prázdný.' }}</pre>{% endif %}
-<p class="hint">Nejnovější záznamy jsou nahoře; časy jsou v místním čase RPi. Systémové logy (Disk, VPN, Systém) ukazují i starší události od posledního startu – „Vymazat“ jen posune, odkdy se zobrazují. Tlačítko Kopírovat zkopíruje celý log do schránky.</p>
+<p class="hint">Nejnovější nahoře · místní čas RPi.</p><details class="inline-help"><summary>Mazání a kopírování logů</summary><p class="hint">Nejnovější záznamy jsou nahoře; časy jsou v místním čase RPi. Systémové logy (Disk, VPN, Systém) ukazují i starší události od posledního startu – „Vymazat“ jen posune, odkdy se zobrazují. Tlačítko Kopírovat zkopíruje celý log do schránky.</p></details>
 </div>
 {% endblock %}"""
 
@@ -3475,8 +3500,8 @@ TEMPLATES["detection.html"] = """{% extends "base.html" %}{% block actions %}<di
 <div class="clip-range-fields"><div><label>OD · datum a čas</label><input type="datetime-local" step="1" name="from_time" x-model="from" value="{{ from_time }}" @change="measure()" required></div><div><label>DO · datum a čas</label><input type="datetime-local" step="1" name="to_time" x-model="to" value="{{ to_time }}" @change="measure()" required></div><div><label>Celková délka (minut)</label><input type="number" min="0.02" max="120" step="any" x-model="minutes" @input="resize()" value="{{ clip_minutes }}" required></div></div><p class="hint">Časové pásmo {{ clip_tz }} · nejvýše 120 minut. Změna délky upraví čas DO; oba časy můžeš zadat také ručně. Jde o délku zdrojového záznamu.</p><button class="btn small sec">Přehrát tento rozsah</button></form>
 {% if e.image %}<a class="btn small sec" href="/snapshot/{{ e.image }}" data-lightbox="detail" data-caption="{{ cam(e.camera) }} · {{ e.ts[11:16] }}">🖼 Snímek AI</a>{% endif %}
 </div>
-{% if use_export %}<div class="hint" style="padding:0 .9rem .7rem">🎬 Přehrává se <b>vystřižené video</b> „{{ use_export.name }}“ ({{ use_export.range_h }}, {{ use_export.duration_h }}) – plynule, s posuvníkem. Jiný rozsah přímo ze záznamu zobrazíš tlačítkem <b>Přehrát tento rozsah</b>.</div>
-{% elif clip_state == 'ok' %}<div class="hint" style="padding:0 .9rem .7rem">Přehrává se zvolený záznam o délce {{ clip_minutes }} minut, který Frigate skládá z 10s úseků – čas v přehrávači proto může skákat a posuvník je nepřesný. Pro plynulé přehrání si video níže vystřihni; pak se tady přehraje samo.</div>
+{% if use_export %}<p class="hint">Přehráváš uložený klip. Jiný rozsah vyber níže.</p>
+{% elif clip_state == 'ok' %}<p class="hint">Přehráváš zdrojový záznam; posuvník může být nepřesný.</p><details class="inline-help"><summary>Plynulé přehrávání</summary><div class="hint" style="padding:0 .9rem .7rem">Přehrává se zvolený záznam o délce {{ clip_minutes }} minut, který Frigate skládá z 10s úseků – čas v přehrávači proto může skákat a posuvník je nepřesný. Pro plynulé přehrání si video níže vystřihni; pak se tady přehraje samo.</div></details>
 {% elif clip_state == 'future' %}<p class="hint" style="padding:0 1rem">Konec úseku je v budoucnosti. Klip můžeš naplánovat níže; vznikne až po dokončení záznamu.</p>
 {% elif clip_state == 'none' %}<div class="flash warn" style="margin:0 .9rem .7rem"><span>🎞</span><div>Pro tento čas <b>není záznam</b> – kamera v tu dobu nenahrávala (výpadek, živý režim bez disku) nebo už byl smazán po {{ retain }} dnech. Video tedy nelze přehrát ani vystřihnout; snímek AI zůstává.</div></div>
 {% elif clip_state == 'offline' %}<div class="flash warn" style="margin:0 .9rem .7rem"><span>⏳</span><div>Frigate právě neodpovídá (startuje nebo se restartuje) – zkus to za minutu.</div></div>
@@ -3537,7 +3562,7 @@ TEMPLATES["live.html"] = """{% extends "base.html" %}{% block actions %}<div cla
 <div class="body"><div class="name"><span>{{ cam(c) }}</span>{{ state(c) }}</div><div class="meta"><span>{{ caminfo[c].ip or 'IP ?' }}</span><span>·</span><span>{{ caminfo[c].via }}</span><a href="/camera/{{ c }}" style="margin-left:auto">otevřít kameru ▶</a></div></div></div>
 {% endfor %}
 </div>
-<p class="hint" style="margin-top:.8rem">Živý přenos ze všech kamer najednou (do 5 snímků/s z menšího streamu). Když stránku zavřeš, přenos se ukončí. Plynulé video v plném rozlišení a přehrávání záznamů: <a href="{{ frigate_ui }}" target="_blank" rel="noopener">Frigate ↗</a>.</p>
+<p class="hint">Živě ze všech kamer · až 5 snímků/s.</p><details class="inline-help"><summary>Kvalita živého přenosu</summary><p class="hint" style="margin-top:.8rem">Živý přenos ze všech kamer najednou (do 5 snímků/s z menšího streamu). Když stránku zavřeš, přenos se ukončí. Plynulé video v plném rozlišení a přehrávání záznamů: <a href="{{ frigate_ui }}" target="_blank" rel="noopener">Frigate ↗</a>.</p></details>
 
 {% else %}
 <div class="cams big">
@@ -3548,7 +3573,7 @@ TEMPLATES["live.html"] = """{% extends "base.html" %}{% block actions %}<div cla
 <div class="acts"><a class="btn" href="/camera/{{ c }}">{{ icons.play|safe }} Otevřít kameru</a><a class="btn sec" href="/camera/{{ c }}#nastaveni">{{ icons.cog|safe }} Nastavení</a></div></div></div>
 {% endfor %}
 </div>
-{% if cameras %}<p class="hint" style="margin-top:.8rem">Snímky se samy obnovují každých 10 s. Kliknutím na kameru otevřeš její stránku – velký obraz, živý přenos, stav, nastavení, AI, detekce i videa. <a href="/live/all">Živě všechny kamery najednou</a>.</p>{% endif %}
+{% if cameras %}<p class="hint">Snímky se obnovují každých 10 sekund.</p><details class="inline-help"><summary>Možnosti náhledu</summary><p class="hint" style="margin-top:.8rem">Snímky se samy obnovují každých 10 s. Kliknutím na kameru otevřeš její stránku – velký obraz, živý přenos, stav, nastavení, AI, detekce i videa. <a href="/live/all">Živě všechny kamery najednou</a>.</p></details>{% endif %}
 {% endif %}
 {% endblock %}"""
 
@@ -3611,7 +3636,7 @@ TEMPLATES["youtube.html"] = """{% extends "base.html" %}{% block actions %}<a cl
 <div class="workflow"><a href="/history">1 · AI detekce</a><span>→</span><a href="/videos">2 · AI videa</a><span>→</span><b>3 · YouTube videa</b></div>
 <p class="hint">Zrychlená videa s intrem, hudbou, nadpisem a popisem. Stav YouTube u každého videa ukazuje, zda již bylo publikováno.</p>
 <div class="section-head" id="studio"><h2>YouTube videa</h2><span class="hint">s intrem, textem a hudbou · připravená ke stažení{% if studio_auto %} · automatika zapnutá{% endif %}</span></div>
-{% if not studio %}<div class="card"><p class="hint" style="margin:0">Zatím žádné. V sekci AI videa u hotového klipu klikni na <b>🎞 Studio</b> – vybereš rychlost (10–240×), intro, text a hudbu, a než se cokoli nahraje, uvidíš výsledek.</p></div>{% endif %}
+{% if not studio %}<div class="card"><p class="hint">Začni výběrem klipu v <a href="/videos">AI videích</a>.</p></div>{% endif %}
 <div class="gallery videos">
 {% for s in studio %}<div class="shot video">
 {% if s.ready %}<a class="thumb" href="/studio/v/{{ s.id }}"><img src="{% if s.thumb %}/studio/v/{{ s.id }}/thumb.jpg{% endif %}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"><span class="play">▶</span><span class="dur">{{ s.duration_h }} · {{ s.speed }}×</span></a>
@@ -3659,9 +3684,9 @@ TEMPLATES["export_settings.html"] = """{% extends "base.html" %}{% block actions
 <section class="form-section"><div class="section-copy"><span class="eyebrow">02 / Obsah klipu</span><h2>Rozsah a rychlost</h2><p>Zvol pevnou celkovou délku, nebo nech délku řídit podle průběhu události. Rozsah jednotlivého klipu můžeš upřesnit časem OD–DO na detailu detekce. Kamerový záznam musí zůstat dostupný na disku.</p></div>
 <div class="section-fields" x-data="{lengthMode:'{{ ai.auto_export.length_mode }}'}">
 <label for="clip-length-mode">Délka ukládaného videa</label><select id="clip-length-mode" name="ax_length_mode" x-model="lengthMode"><option value="event">Podle délky události · s návazností AI filmů</option><option value="fixed">Pevná celková délka</option></select>
-<div x-show="lengthMode==='fixed'"><label for="clip-duration">Celková délka (minut)</label><div class="input-unit short"><input id="clip-duration" type="number" name="ax_duration" min="1" max="120" step="1" value="{{ ai.auto_export.duration_min }}"><span>minut</span></div><p class="field-help">1–120 minut zdrojového záznamu, včetně rezervy před jevem. Začátek = začátek jevu minus „Před detekcí“, konec = začátek plus tato délka. Rezerva „Po detekci“ se v tomto režimu nepřičítá. Při pokračování vznikne další navazující část.</p></div>
+<div x-show="lengthMode==='fixed'"><label for="clip-duration">Celková délka (minut)</label><div class="input-unit short"><input id="clip-duration" type="number" name="ax_duration" min="1" max="120" step="1" value="{{ ai.auto_export.duration_min }}"><span>minut</span></div><p class="hint">1–120 minut, včetně rezervy před jevem.</p><details class="inline-help"><summary>Výpočet začátku a konce</summary><p class="field-help">1–120 minut zdrojového záznamu, včetně rezervy před jevem. Začátek = začátek jevu minus „Před detekcí“, konec = začátek plus tato délka. Rezerva „Po detekci“ se v tomto režimu nepřičítá. Při pokračování vznikne další navazující část.</p></details></div>
 <div class="field-grid"><div><label for="clip-before">Před detekcí</label><div class="input-unit"><input id="clip-before" type="number" name="ax_before" min="0" max="60" value="{{ ai.auto_export.before_min }}"><span>minut</span></div></div><div><label for="clip-after">Po detekci</label><div class="input-unit"><input id="clip-after" :disabled="lengthMode==='fixed'" type="number" name="ax_after" min="0" max="60" value="{{ ai.auto_export.after_min }}"><span>minut</span></div></div></div>
-<label for="clip-playback">Rychlost zdrojového klipu</label><select id="clip-playback" name="ax_playback"><option value="realtime" {% if ai.auto_export.playback != 'timelapse_25x' %}selected{% endif %}>Původní rychlost · doporučeno</option><option value="timelapse_25x" {% if ai.auto_export.playback == 'timelapse_25x' %}selected{% endif %}>Časosběr 25×</option></select><p class="field-help">Délka výše označuje čas zaznamenané události. Při původní rychlosti mají 2 hodiny záznamu délku 2 hodiny; časosběr 25× je zkrátí na 4 minuty 48 sekund. Pro další úpravy ponech původní rychlost.</p></div></section>
+<label for="clip-playback">Rychlost zdrojového klipu</label><select id="clip-playback" name="ax_playback"><option value="realtime" {% if ai.auto_export.playback != 'timelapse_25x' %}selected{% endif %}>Původní rychlost · doporučeno</option><option value="timelapse_25x" {% if ai.auto_export.playback == 'timelapse_25x' %}selected{% endif %}>Časosběr 25×</option></select><p class="hint">Délka označuje zdrojový záznam, nikoli zrychlené video.</p><details class="inline-help"><summary>Délka a rychlost videa</summary><p class="field-help">Délka výše označuje čas zaznamenané události. Při původní rychlosti mají 2 hodiny záznamu délku 2 hodiny; časosběr 25× je zkrátí na 4 minuty 48 sekund. Pro další úpravy ponech původní rychlost.</p></details></div></section>
 <section class="form-section"><div class="section-copy"><span class="eyebrow">03 / Úložiště</span><h2>Doba uchovávání</h2><p>Společná pro zdrojové klipy i zpracovaná YouTube videa na tomto zařízení.</p></div>
 <div class="section-fields"><label for="clip-days">Automaticky odstranit po</label><div class="input-unit short"><input id="clip-days" type="number" name="days" min="1" max="365" value="{{ keep_days }}"><span>dnech</span></div><div class="field-note">Videa publikovaná na YouTube a stažené kopie zůstávají. Snímky AI a průběžný záznam mají vlastní nastavení.</div></div></section>
 <div class="savebar"><span class="save-context">Změny se projeví po uložení.</span><button class="btn">Uložit nastavení AI videí</button></div></form>{% endblock %}"""
@@ -3750,7 +3775,7 @@ TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<d
 
  <div class="card" x-data="musicFinder({{ values.music|tojson|forceescape }})"><h2>4. Hudba</h2>
   <select name="music" x-model="music" x-ref="sel"><option value="">bez hudby</option>{% for m in music %}<option value="{{ m.name }}">{{ m.name }}{% if m.duration %} ({{ (m.duration // 60)|int }}:{{ '%02d'|format(m.duration % 60) }}){% endif %}</option>{% endfor %}</select>
-  <p class="hint" style="margin:.4rem 0 .6rem">Hudba začne až po intru, plynule zesílí a na konci ztichne ({{ sc.fade_in }} s / {{ sc.fade_out }} s); kratší skladba se opakuje. Do popisu videa se automaticky přidá autor skladby.</p>
+  <p class="hint">Hudba začne po intru. Autor se doplní do popisu.</p><details class="inline-help"><summary>Průběh hudby</summary><p class="hint" style="margin:.4rem 0 .6rem">Hudba začne až po intru, plynule zesílí a na konci ztichne ({{ sc.fade_in }} s / {{ sc.fade_out }} s); kratší skladba se opakuje. Do popisu videa se automaticky přidá autor skladby.</p></details>
   <details class="finder" :open="open" @toggle="open = $el.open"><summary>🔎 Najít hudbu k tomuto videu (Openverse – volně použitelná, CC0 / CC BY)</summary>
    <div class="row" style="margin-top:.5rem;align-items:end"><div><input type="text" x-model="q" @keydown.enter.prevent="search()" placeholder="např. calm piano, sunset, ambient…"></div>
     <div style="flex:0 0 auto;min-width:0"><select x-model="len" style="width:auto"><option value="">libovolná délka</option><option value="short">do 2 min</option><option value="medium">2–10 min</option><option value="long">nad 10 min</option></select></div>
@@ -3770,9 +3795,9 @@ TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<d
  <div class="card" x-data="titleIdeas({vid: {{ export.id }}})"><h2>Nadpis a popis</h2>
   <div><label>Titulek <span class="hint">(název souboru a titulek na YouTube)</span></label><input type="text" name="title" value="{{ values.title }}" maxlength="100" x-ref="title">
 </div>
-  <label>Popis</label><textarea name="description" rows="8" x-ref="description">{{ values.description }}</textarea><div class="metadata-proposal"><button type="button" class="btn small sec" @click="askMetadata()" :disabled="busy" x-text="busy ? 'AI připravuje návrh…' : 'Navrhnout nadpis i popis z AI filmu'"></button><p class="hint">Vychází z uloženého vyhodnocení AI a časového rozsahu klipu. Návrh nejprve zkontroluj.</p><p class="hint" x-text="metaMsg" role="status"></p>
+  <label>Popis</label><textarea name="description" rows="8" x-ref="description">{{ values.description }}</textarea><div class="metadata-proposal"><button type="button" class="btn small sec" @click="askMetadata()" :disabled="busy" x-text="busy ? 'AI připravuje návrh…' : 'Navrhnout nadpis i popis z AI filmu'"></button><p class="hint">Návrh z AI filmu; před použitím zkontroluj.</p><p class="hint" x-text="metaMsg" role="status"></p>
 <div x-show="proposal" x-cloak class="guide"><strong x-text="proposal?.title"></strong><p x-text="proposal?.description" style="white-space:pre-wrap"></p><button type="button" class="btn small" @click="applyMetadata()">Použít návrh</button></div></div>
-  <div class="hint">Předvyplněno z textu AI a šablon v nastavení – klidně přepiš. Upravit půjde i u hotového videa.</div></div>
+  <div class="hint">Předvyplněno z AI. Můžeš upravit.</div></div>
  <div class="savebar"><button class="btn" data-busy="Zařazuji do fronty">🎬 Vytvořit video</button><span class="hint">Nikam se nic nenahrává – nejdřív uvidíš výsledek.</span></div>
 </div></div>
 </form>
@@ -3804,7 +3829,7 @@ TEMPLATES["studio_video.html"] = """{% extends "base.html" %}{% block actions %}
  <form method="post" action="/studio/v/{{ v.id }}/meta" class="card" x-data="titleIdeas({sid: {{ v.id }}})"><h2>Titulek a popis</h2>
   <label>Titulek</label><input type="text" name="title" value="{{ v.title }}" maxlength="100" x-ref="title">
 
-  <label>Popis</label><textarea name="description" rows="9" x-ref="description">{{ v.description }}</textarea><div class="metadata-proposal"><button type="button" class="btn small sec" @click="askMetadata()" :disabled="busy" x-text="busy ? 'AI připravuje návrh…' : 'Navrhnout nadpis i popis z AI filmu'"></button><p class="hint">Vychází z uloženého vyhodnocení AI a časového rozsahu klipu. Návrh nejprve zkontroluj.</p><p class="hint" x-text="metaMsg" role="status"></p>
+  <label>Popis</label><textarea name="description" rows="9" x-ref="description">{{ v.description }}</textarea><div class="metadata-proposal"><button type="button" class="btn small sec" @click="askMetadata()" :disabled="busy" x-text="busy ? 'AI připravuje návrh…' : 'Navrhnout nadpis i popis z AI filmu'"></button><p class="hint">Návrh z AI filmu; před použitím zkontroluj.</p><p class="hint" x-text="metaMsg" role="status"></p>
 <div x-show="proposal" x-cloak class="guide"><strong x-text="proposal?.title"></strong><p x-text="proposal?.description" style="white-space:pre-wrap"></p><button type="button" class="btn small" @click="applyMetadata()">Použít návrh</button></div></div>
   <div class="row" style="margin-top:.6rem"><button class="btn small">Uložit</button></div></form>
  <div class="card"><h2>Co dál</h2>
@@ -3879,7 +3904,7 @@ TEMPLATES["studio_settings.html"] = """{% extends "base.html" %}{% block actions
  {% if intro %}<div class="studio-intro">{% if intro_is_image %}<img src="/studio/asset/intro" alt="">{% else %}<video src="/studio/asset/intro" controls muted playsinline preload="metadata"></video>{% endif %}
   <div><b>{{ intro.name }}</b><div class="hint">{% if intro_is_image %}obrázek – ve videu {{ sc.intro_seconds|int }} s{% if sc.intro_title %} s názvem kamery a datem{% endif %}{% else %}video{% if intro_info.duration %} · {{ '%.0f'|format(intro_info.duration) }} s{% endif %}{% if intro_info.width %} · {{ intro_info.width }}×{{ intro_info.height }}{% endif %}{% endif %}</div>
   <form method="post" action="/studio/upload/intro/delete" onsubmit="return confirm('Odstranit intro?')" data-nobusy style="margin-top:.4rem"><button class="btn small sec">Odstranit</button></form></div></div>
- {% else %}<p class="hint">Zatím žádné intro. Může to být krátké video (MP4, do 15 s se použije celé) nebo jen obrázek s logem (PNG/JPG) – z něj Atmovio udělá úvod s názvem kamery a datem.</p>{% endif %}
+ {% else %}<p class="hint">Nahraj MP4 nebo obrázek PNG/JPG.</p><details class="inline-help"><summary>Jak se vytvoří intro</summary><p class="hint">Zatím žádné intro. Může to být krátké video (MP4, do 15 s se použije celé) nebo jen obrázek s logem (PNG/JPG) – z něj Atmovio udělá úvod s názvem kamery a datem.</p></details>{% endif %}
  <form method="post" action="/studio/upload/intro" enctype="multipart/form-data" class="row" style="align-items:end;margin-top:.6rem"><div><label>{{ 'Nahradit' if intro else 'Nahrát' }} intro (MP4/MOV do 100 MB, nebo PNG/JPG)</label><input type="file" name="file" accept=".mp4,.mov,.m4v,.png,.jpg,.jpeg" required></div><button class="btn small" data-busy="Nahrávám intro">Nahrát</button></form></div>
 
  <div class="card"><h2>Hudba</h2>
@@ -3887,12 +3912,12 @@ TEMPLATES["studio_settings.html"] = """{% extends "base.html" %}{% block actions
   <form method="post" action="/studio/upload/music/delete" onsubmit="return confirm('Odstranit tuto hudbu?')" data-nobusy><input type="hidden" name="name" value="{{ m.name }}"><button class="btn small sec">Odstranit</button></form></div>{% endfor %}</div>
  {% else %}<p class="hint">Zatím žádná hudba. Nahraj MP3 (nebo M4A/WAV/OGG/FLAC) – u každého videa pak vybereš, která se použije.</p>{% endif %}
  <form method="post" action="/studio/upload/music" enctype="multipart/form-data" class="row" style="align-items:end;margin-top:.6rem"><div><label>Přidat vlastní hudbu (do 40 MB)</label><input type="file" name="file" accept=".mp3,.m4a,.aac,.wav,.ogg,.flac" required></div><button class="btn small" data-busy="Nahrávám hudbu">Nahrát</button></form>
- <p class="hint" style="margin:.6rem 0 0">Vlastní hudbu nahrávej jen s právy k ní (YouTube cizí skladby ztlumí nebo zablokuje). Hudbu z Openverse hledáš přímo u každého videa v Studiu – je pod licencí CC0 / CC BY a autor se do popisu doplní sám.</p></div>
+ <p class="hint">Použij hudbu, ke které máš práva.</p><details class="inline-help"><summary>Hudba z Openverse</summary><p class="hint" style="margin:.6rem 0 0">Vlastní hudbu nahrávej jen s právy k ní (YouTube cizí skladby ztlumí nebo zablokuje). Hudbu z Openverse hledáš přímo u každého videa v Studiu – je pod licencí CC0 / CC BY a autor se do popisu doplní sám.</p></details></div>
 
  <div class="card"><h2>Hledání hudby (Openverse)</h2>
  {% if ov.client_id %}<p>Atmovio je u Openverse zaregistrované (<b>{{ ov.email }}</b>, {{ ov.registered|czdt }}). Po kliknutí na potvrzovací odkaz z e-mailu není potřeba nic dalšího – hledání hudby u videí (Videa → ⏩ Studio → 4. Hudba) používá registraci automaticky. <span x-data="{r: ''}"><button type="button" class="btn small sec" @click="r = 'zkouším…'; fetch('/studio/music/search?q=piano').then(x => x.json()).then(d => r = d.error ? '✖ ' + d.error : '✓ hledání funguje (' + d.items.length + ' skladeb pro „piano“)').catch(() => r = '✖ nepodařilo se spojit')">Vyzkoušet hledání</button> <span class="hint" x-text="r"></span></span></p>
   <form method="post" action="/studio/openverse/forget" data-nobusy><button class="btn small sec">Zrušit registraci</button></form>
- {% else %}<p class="hint">Hledání funguje hned, ale anonymně jen pár dotazů za hodinu. Zadej e-mail, Atmovio se u Openverse samo zaregistruje (zdarma) a ty jen klikneš na potvrzovací odkaz v e-mailu.</p>
+ {% else %}<p class="hint">Pro vyšší limit hledání zaregistruj e-mail.</p><details class="inline-help"><summary>Registrace Openverse</summary><p class="hint">Hledání funguje hned, ale anonymně jen pár dotazů za hodinu. Zadej e-mail, Atmovio se u Openverse samo zaregistruje (zdarma) a ty jen klikneš na potvrzovací odkaz v e-mailu.</p></details>
   <form method="post" action="/studio/openverse/register" class="row" style="align-items:end"><div><label>E-mail pro registraci</label><input type="email" name="email" required placeholder="tvuj@email.cz"></div><button class="btn small" data-busy="Registruji">Zaregistrovat</button></form>{% endif %}</div></section>
 <section x-show="tab==='youtube'" x-cloak> <div class="card" id="youtube" x-data="ytLink({{ 'true' if link_active else 'false' }})"><h2>▶ YouTube – propojení kanálu</h2>
  {% if yt.refresh_token %}
@@ -3902,7 +3927,7 @@ TEMPLATES["studio_settings.html"] = """{% extends "base.html" %}{% block actions
    <div><label>Výchozí playlist</label><select name="playlist_id"><option value="">bez playlistu</option>{% for p in yt.playlists or [] %}<option value="{{ p.id }}"{% if yt.playlist_id == p.id %} selected{% endif %}>{{ p.title }}</option>{% endfor %}</select></div></div>
    <label>Štítky (oddělené čárkou)</label><input type="text" name="tags" value="{{ yt.tags }}" maxlength="400">
    <label class="check"><input type="checkbox" name="auto" value="1"{% if yt.auto %} checked{% endif %}>Automatická videa po upozornění rovnou nahrát na YouTube (s touto viditelností a playlistem)</label>
-   <div class="hint">Automatika nahraje jen videa, která vznikla automaticky (Automatika ve studiu musí být zapnutá). Ručně vytvořená videa nahraješ tlačítkem u videa.</div>
+   <p class="hint">Platí pro automaticky vytvořená videa. Ruční nahraješ tlačítkem.</p>
    <div class="row" style="margin-top:.6rem"><button class="btn small">Uložit</button></div></form>
   <div class="row" style="margin-top:.8rem"><form method="post" action="/studio/youtube/playlists" data-nobusy><button class="btn small sec">↻ Načíst playlisty</button></form>
    <form method="post" action="/studio/youtube/link" data-nobusy><button class="btn small sec" title="Např. pro jiný kanál nebo brand účet">Propojit znovu / jiný kanál</button></form>
@@ -3968,19 +3993,19 @@ _cfg0 = load_config()
 
 SUBTITLES = {
     "/": "Stav nahrávání, kamer a hlídání oblohy na jednom místě.",
-    "/cameras": "Přidání nové kamery. Vše o jedné kameře (obraz, stav, AI, adresy, detekce, videa) najdeš kliknutím na její název.",
-    "/live": "Aktuální snímky ze všech kamer. Kliknutím na kameru otevřeš vše o ní na jednom místě.",
+    "/cameras": "Přidání a správa kamer.",
+    "/live": "Aktuální obraz kamer.",
     "/discover": "Najdi kamery v domácí síti i za VPN a načti jejich RTSP adresy.",
-    "/storage": "Kolik místa záznamy zabírají, jak dlouho se uchovávají a jak přehrát nebo stáhnout video.",
+    "/storage": "Disky, využití místa a uchovávání záznamů.",
     "/ai": "Klíč k AI, co hlídat a jak často se dívat.",
-    "/history": "Detekce AI, na které přišlo upozornění. Přepínačem zobrazíš i ostatní vyhodnocení.",
+    "/history": "Filmy, výsledky a podklady AI.",
     "/email": "Kam chodí upozornění a kdy se hlásí výpadky.",
     "/vpn": "Je vzdálená kamera dostupná? Síťové údaje RPi.",
     "/logs": "Co se v systému děje: hlídání oblohy, kamery, disk, VPN, nahrávání.",
     "/system": "Stav Raspberry Pi, restart, hesla, aktualizace.",
     "/system/update": "Nové verze Atmovio z GitHubu: kontrola, co je nového, instalace jedním tlačítkem.",
-    "/videos": "Videa vystřižená ze záznamů – ke stažení, s náhledem. Sama se mažou po nastavené době. Ve studiu je zrychlíš a doplníš intro a hudbu.",
-    "/studio/settings": "Jak se vyrábí zrychlená videa: rychlost, intro, text v obraze, hudba, titulek a popis. Ruční i automatický režim.",
+    "/videos": "Klipy z detekcí a ručních výběrů.",
+    "/studio/settings": "Rychlost, intro, hudba a publikování.",
 }
 
 
@@ -7066,7 +7091,7 @@ def studio_settings(request: Request):
                   intro=intro, intro_is_image=bool(intro and intro.suffix.lower() in (".png", ".jpg", ".jpeg")), intro_info=ii,
                   music=studio_music_files(), font=bool(studio_font()),
                   auto_export_on=bool((cfg["ai"].get("auto_export") or {}).get("enabled")),
-                  subtitle="Jak se vyrábí zrychlená videa: rychlost, intro, text v obraze, hudba, titulek a popis. Ruční i automatický režim.")
+                  subtitle="Rychlost, intro, hudba a publikování.")
 
 
 @app.post("/studio/settings")
@@ -10093,8 +10118,7 @@ main.page.settings-page { max-width: 1264px; }
 }
 
 /* Administration 5.3: smaller laptops, clear service and media states. */
-.system-content { max-width:1000px; margin:0 auto; }
-.system-tabs { margin-bottom:24px; flex-wrap:wrap; }
+
 .action-row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
 .btn { white-space:nowrap; }
 .page input[type="file"] { height:auto; min-height:56px; line-height:1.5; overflow:visible; }
@@ -10112,6 +10136,79 @@ main.page.settings-page { max-width: 1264px; }
 
 .live-big { position:relative; }
 .loglist .lx { white-space:pre-wrap; overflow-wrap:anywhere; }
+
+/* System workspace: compact local navigation and a clear content hierarchy. */
+.system-workspace { display:grid; grid-template-columns:228px minmax(0,1fr); gap:36px; align-items:start; padding-top:24px; }
+.system-sidebar { position:sticky; top:104px; padding:4px 0; }
+.system-sidebar-title { padding:0 12px 24px; font-size:18px; font-weight:650; color:var(--at-text); }
+.system-sidebar-title > span { display:block; margin-top:5px; color:var(--at-muted); font-size:12px; font-weight:400; }
+.system-sidebar nav { display:flex; flex-direction:column; gap:6px; margin:0; padding:0; }
+.system-sidebar nav > a { display:flex; align-items:center; gap:12px; min-height:46px; padding:11px 12px; border-radius:8px; color:var(--at-muted); text-decoration:none; font-size:13px; font-weight:550; line-height:1.4; }
+.system-sidebar nav > a:hover { background:var(--at-surface-2); color:var(--at-text); }
+.system-sidebar nav > a[aria-current="page"] { background:var(--sw-info-bg); color:var(--pico-primary); box-shadow:inset 3px 0 var(--pico-primary); }
+.system-nav-icon { display:flex; flex:none; }
+.system-nav-icon svg.i { width:18px; height:18px; }
+.system-nav-arrow { margin-left:auto; opacity:0; font-size:18px; }
+.system-sidebar a[aria-current] .system-nav-arrow { opacity:1; }
+.system-diagnostics { display:flex; justify-content:space-between; margin:24px 12px 0; border-top:1px solid var(--at-line); padding-top:20px; font-size:12px; color:var(--at-muted); text-decoration:none; }
+.system-content { min-width:0; max-width:900px; margin:0; }
+.system-page-heading { margin:0 0 26px; }
+.system-page-heading .eyebrow { display:block; margin-bottom:10px; }
+.system-page-heading h1 { font-size:26px; margin-bottom:8px; }
+.system-page-heading p { font-size:13px; color:var(--at-muted); margin:0; }
+.system-content .card { padding:24px 28px; }
+.system-content form[action="/system/password"] { max-width:520px; }
+.system-content form[action="/system/password"] .btn { margin-top:12px; }
+.system-content .grid { grid-template-columns:minmax(0,1fr); gap:0; }
+@media(max-width:1000px) { .system-workspace { grid-template-columns:204px minmax(0,1fr); gap:24px; } .system-content .card { padding:22px; } }
+@media(max-width:760px) {
+ .system-workspace { grid-template-columns:minmax(0,1fr); gap:24px; padding-top:12px; }
+ .system-sidebar { position:static; }
+ .system-sidebar-title { padding:0 0 12px; }
+ .system-sidebar-title > span,.system-diagnostics { display:none; }
+ .system-sidebar nav { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
+ .system-sidebar nav > a { padding:10px; min-height:48px; font-size:12px; }
+ .system-nav-arrow { display:none; }
+ .system-page-heading { margin-bottom:20px; }
+ .system-content .card { padding:20px; }
+}
+
+/* AI film planner: input values and their visual result share one compact card. */
+.film-builder-heading { display:flex; justify-content:space-between; align-items:start; gap:20px; }
+.film-builder-heading h2 { margin-bottom:6px; }
+.film-builder { display:grid; grid-template-columns:minmax(260px,.9fr) minmax(0,1.1fr); gap:32px; margin:20px 0; }
+.film-builder-fields { min-width:0; }
+.film-field { margin-bottom:20px; }
+.page .film-field > label { margin-top:0; }
+.film-field .hint { margin:7px 0 0; }
+.page .film-auto { margin:12px 0 0; align-items:center; font-size:12px; }
+.film-builder-preview { background:var(--at-surface-2); padding:22px; border-radius:10px; align-self:start; min-width:0; }
+.film-preview-title { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; font-size:13px; }
+.film-preview-title b { color:var(--pico-primary); }
+.film-sheet { display:grid; gap:6px; max-width:420px; margin:0 auto; }
+.film-sheet-tile { aspect-ratio:16/10; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:6px; border-radius:5px; background:var(--pico-card-background-color); color:var(--at-text); font-size:12px; }
+.film-sheet-tile span { color:var(--at-muted); }
+.film-sheet-empty { opacity:.45; border:1px dashed var(--at-line); background:transparent; }
+.film-sheet-caption { margin:12px 0 18px; }
+.film-preview-result { display:flex; flex-direction:column; gap:6px; border-top:1px solid var(--at-line); padding-top:16px; font-size:13px; }
+.film-preview-result span { color:var(--at-muted); font-size:12px; }
+.film-save-note { font-size:12px; color:var(--at-muted); margin:18px 0; }
+.film-help { margin-top:12px; }
+@media(max-width:850px) { .film-builder { grid-template-columns:minmax(0,1fr); gap:8px; } }
+@media(max-width:500px) { .film-builder-heading { flex-direction:column; gap:10px; } .film-builder-preview { padding:14px; } .film-sheet-tile { font-size:11px; } }
+
+/* Compact copy: optional explanations use explicit native disclosure controls. */
+.page details.inline-help { padding:0; margin:8px 0 14px; background:transparent; border:0; border-radius:0; box-shadow:none; }
+.page details.inline-help > summary { display:flex; align-items:center; gap:8px; width:fit-content; padding:0; color:var(--at-muted); font-size:12px; font-weight:400; line-height:1.5; }
+.page details.inline-help > summary::before { content:""; width:5px; height:5px; flex:none; border-right:1.5px solid currentColor; border-bottom:1.5px solid currentColor; transform:rotate(-45deg); }
+.page details.inline-help[open] > summary::before { transform:rotate(45deg); }
+.page details.inline-help > summary::after { display:none; }
+.page details.inline-help[open] > summary { margin-bottom:10px; color:var(--pico-primary); }
+.page details.inline-help > .hint { margin:0; max-width:85ch; }
+.page details.inline-help a { text-decoration:underline; }
+.film-field { margin-bottom:16px; }
+.film-sheet-caption { margin:10px 0; }
+.film-save-note { margin:12px 0; }
 ATMOVIO_CSS_EOF
   cat > "$1/atmovio.js" <<'ATMOVIO_JS_EOF'
 /* Atmovio – interakce (Alpine.js komponenty + pomocné funkce). */
@@ -10164,10 +10261,23 @@ ATMOVIO_CSS_EOF
     });
     Alpine.data('filmTiming', function (mode, active, sample, span, limit) {
       return {
-        mode: mode, active: active, sample: sample, span: span, limit: limit || 36,
+        mode: mode, active: active, sample: sample, span: span, limit: limit || 36, automatic: Number(span) === Math.max(10,Math.min(180,(Number(limit || 36)-1)*Number(sample))),
+        recommend: function () { this.active=true; this.mode='batch'; this.sample=5; this.limit=9; this.automatic=true; this.syncDuration(); },
+        syncDuration: function () {
+          if (!this.automatic || this.mode!=='batch' || !this.active) return;
+          if (!Number.isInteger(Number(this.sample)) || Number(this.sample)<1 || !Number.isInteger(Number(this.limit)) || Number(this.limit)<3) return;
+          this.span=Math.max(10,Math.min(180,(this.capacity-1)*Math.min(1440,Number(this.sample))));
+        },
+        get capacity() { return Math.max(3,Math.min(36,Math.floor(Number(this.limit)||36))); },
+        get columns() { return Math.min(this.count<=9 ? 3 : 4,this.count); },
+        get photoSize() { return this.count<=9 ? '720 × 405' : '480 × 270'; },
+        get sheetSize() { return (this.columns*(this.count<=9 ? 720 : 480))+' × '+(Math.ceil(this.count/this.columns)*(this.count<=9 ? 435 : 300)); },
+        get sheetTiles() {
+          return Array.from({length:Math.ceil(this.count/this.columns)*this.columns},(_,i)=>({index:i,empty:i>=this.count,minute:Math.min(this.filmLength,i*this.interval)}));
+        },
         get requestedLength() { return Math.max(10, Math.min(180, Math.floor(Number(this.span) || 60))); },
         get interval() { return Math.min(this.requestedLength, Math.max(1, Math.floor(Number(this.sample) || 5))); },
-        get filmLength() { return Math.min(this.requestedLength, (Math.max(3,Math.min(36,Number(this.limit)||36))-1)*this.interval); },
+        get filmLength() { return Math.min(this.requestedLength, (this.capacity-1)*this.interval); },
         get count() { return Math.ceil(this.filmLength / this.interval) + 1; },
         get summary() { return `Za ${this.filmLength} minut přibližně ${this.count} fotografií → jeden závěr AI.`; },
         get frequency() { return `Při nepřetržitém 24hodinovém sběru přibližně ${Math.round(1440 / this.filmLength)} vyhodnocení za den na jednu kameru, bez výpadků, opakovaných pokusů a limitů. V denním režimu méně.`; },

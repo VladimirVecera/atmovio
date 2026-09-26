@@ -2,6 +2,16 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 5.3.1 – 2026-09-26 – compact administration and redesigned system navigation
+
+- Shorten administration labels and page introductions; move optional explanations into accessible disclosures
+  across cameras, AI, storage, live view, videos, studio, system and diagnostics. Keep critical warnings visible.
+- Replace widely spaced internal tabs with a compact sidebar, clear selected page and dedicated content heading.
+- Share the navigation across overview, access, integration, maintenance and update pages; use a compact mobile grid.
+- Put the primary Atmovio password form first and constrain its width for readable, consistent settings.
+- Simplify AI timing into interval, frame capacity and editable auto-calculated duration, alongside a live
+  contact-sheet layout, pixel dimensions and effective evaluation time. Recommended values fill only the draft.
+
 ## 5.3 – 2026-09-26 – clearer administration and bounded AI evidence
 
 - Separate system overview, passwords, API integration and maintenance into dedicated pages; preserve existing actions.

@@ -48,10 +48,23 @@
     });
     Alpine.data('filmTiming', function (mode, active, sample, span, limit) {
       return {
-        mode: mode, active: active, sample: sample, span: span, limit: limit || 36,
+        mode: mode, active: active, sample: sample, span: span, limit: limit || 36, automatic: Number(span) === Math.max(10,Math.min(180,(Number(limit || 36)-1)*Number(sample))),
+        recommend: function () { this.active=true; this.mode='batch'; this.sample=5; this.limit=9; this.automatic=true; this.syncDuration(); },
+        syncDuration: function () {
+          if (!this.automatic || this.mode!=='batch' || !this.active) return;
+          if (!Number.isInteger(Number(this.sample)) || Number(this.sample)<1 || !Number.isInteger(Number(this.limit)) || Number(this.limit)<3) return;
+          this.span=Math.max(10,Math.min(180,(this.capacity-1)*Math.min(1440,Number(this.sample))));
+        },
+        get capacity() { return Math.max(3,Math.min(36,Math.floor(Number(this.limit)||36))); },
+        get columns() { return Math.min(this.count<=9 ? 3 : 4,this.count); },
+        get photoSize() { return this.count<=9 ? '720 × 405' : '480 × 270'; },
+        get sheetSize() { return (this.columns*(this.count<=9 ? 720 : 480))+' × '+(Math.ceil(this.count/this.columns)*(this.count<=9 ? 435 : 300)); },
+        get sheetTiles() {
+          return Array.from({length:Math.ceil(this.count/this.columns)*this.columns},(_,i)=>({index:i,empty:i>=this.count,minute:Math.min(this.filmLength,i*this.interval)}));
+        },
         get requestedLength() { return Math.max(10, Math.min(180, Math.floor(Number(this.span) || 60))); },
         get interval() { return Math.min(this.requestedLength, Math.max(1, Math.floor(Number(this.sample) || 5))); },
-        get filmLength() { return Math.min(this.requestedLength, (Math.max(3,Math.min(36,Number(this.limit)||36))-1)*this.interval); },
+        get filmLength() { return Math.min(this.requestedLength, (this.capacity-1)*this.interval); },
         get count() { return Math.ceil(this.filmLength / this.interval) + 1; },
         get summary() { return `Za ${this.filmLength} minut přibližně ${this.count} fotografií → jeden závěr AI.`; },
         get frequency() { return `Při nepřetržitém 24hodinovém sběru přibližně ${Math.round(1440 / this.filmLength)} vyhodnocení za den na jednu kameru, bez výpadků, opakovaných pokusů a limitů. V denním režimu méně.`; },
