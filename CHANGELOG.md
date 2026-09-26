@@ -2,6 +2,11 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 5.3.3 – 2026-09-26 – timelapse rule in AI detection
+
+- Move the timelapse trigger and score threshold into AI detection → Cameras and phenomena.
+- Preserve existing values and prevent video-settings saves from changing the detection rule.
+
 ## 5.3.2 – 2026-09-26 – consistent AI navigation and timelapse triggers
 
 - Keep AI detection and video settings connected with shared navigation; strengthen primary and settings menus.

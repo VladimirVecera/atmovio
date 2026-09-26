@@ -203,10 +203,16 @@ try:
     a.schedule_film_export(episode_cfg,single,[])
     assert len(rows('auto_exports'))==count+1
     form_cfg=copy.deepcopy(episode_cfg)
-    a.apply_export_form({'ax_enabled':'on','ax_timelapse_enabled':'on','ax_timelapse_threshold':'9','ax_cam_episode':'on'},form_cfg,['episode'])
+    a.apply_ai_form({'scope':'ai','ax_timelapse_enabled':'on','ax_timelapse_threshold':'9'},form_cfg,['episode'])
     assert form_cfg['ai']['auto_export']['timelapse_threshold']==9
+    a.apply_export_form({'ax_enabled':'on','ax_cam_episode':'on'},form_cfg,['episode'])
+    assert form_cfg['ai']['auto_export']['timelapse_enabled'] is True
+    assert form_cfg['ai']['auto_export']['timelapse_threshold']==9
+    a.apply_ai_form({'scope':'ai','ax_timelapse_threshold':'6'},form_cfg,['episode'])
+    assert form_cfg['ai']['auto_export']['timelapse_enabled'] is False
+    assert form_cfg['ai']['auto_export']['timelapse_threshold']==6
     try:
-        a.apply_export_form({'ax_timelapse_threshold':'11'},form_cfg,['episode'])
+        a.apply_ai_form({'scope':'ai','ax_timelapse_threshold':'11'},form_cfg,['episode'])
         raise AssertionError('Invalid threshold accepted')
     except ValueError: pass
     ok('Opt-in timelapse triggers below visual threshold, respects threshold, film evidence, bounds and deduplication')

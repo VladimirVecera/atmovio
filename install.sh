@@ -475,7 +475,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "5.3.2"
+APP_VERSION = "5.3.3"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -3569,6 +3569,10 @@ TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block head %}{% endblock %
 <div class="hint">Nezaškrtnuté jevy AI pořád vidí a zapíše do historie, jen na ně nepřijde upozornění. Vlastní jev přidáš níže.</div>
 </div>
 
+<div class="card timelapse-rule" x-data="{enabled: {{ ai.auto_export.timelapse_enabled|default(false)|tojson }}}">
+<label class="check"><input type="checkbox" name="ax_timelapse_enabled" x-model="enabled"><span>Zajímavý časosběr jako důvod pro video</span></label>
+<div x-show="enabled"><label for="tl-threshold">Skóre časosběru od</label><input class="short" id="tl-threshold" name="ax_timelapse_threshold" type="number" min="1" max="10" step="1" required value="{{ ai.auto_export.timelapse_threshold|default(7) }}"><p class="hint">AI hodnotí vývoj oblačnosti v dokončeném filmu. Práh platí pro všechny sledované kamery.</p></div><p class="hint">Ukládání a délku klipu nastavíš v <a href="/videos/settings">AI videích →</a></p></div>
+
 <div class="cam-rules">
 {% for c in cameras %}{% set r = cam_rules.get(c) or {} %}
 <div class="card cam-rule" x-data="{on: {{ 'true' if c in ai.cameras else 'false' }}, mode: '{{ 'custom' if r.custom else 'default' }}'}" :class="{off: !on}">
@@ -4048,9 +4052,6 @@ TEMPLATES["export_settings.html"] = """{% extends "base.html" %}{% block actions
 <form method="post" action="/videos/settings" class="settings-form editor-form">
 <section class="form-section"><div class="section-copy"><span class="eyebrow">01 / Automatizace</span><h2>Ukládání po detekci</h2><p>Klip vznikne při vybraném jevu nebo zajímavém časosběru. <a href="/ai#kamery">Nastavit jevy →</a></p></div>
 <div class="section-fields"><label class="check setting-switch"><input type="checkbox" name="ax_enabled" {% if ai.auto_export.enabled %}checked{% endif %}><span><strong>Automaticky ukládat videa</strong><small>Klip se uloží, jakmile je celý úsek zaznamenaný.</small></span></label>
-<div class="timelapse-rule" x-data="{enabled: {{ ai.auto_export.timelapse_enabled|default(false)|tojson }}}">
-<label class="check"><input type="checkbox" name="ax_timelapse_enabled" x-model="enabled"><span>Ukládat i zajímavý časosběr</span></label>
-<div x-show="enabled"><label for="tl-threshold">Skóre časosběru od</label><input class="short" id="tl-threshold" name="ax_timelapse_threshold" type="number" min="1" max="10" step="1" required value="{{ ai.auto_export.timelapse_threshold|default(7) }}"><p class="hint">Vývoj oblačnosti · nezávisle na skóre jevu · jen dokončené AI filmy.</p></div></div>
 <fieldset class="camera-selection"><legend>Zapojené kamery</legend>{% for c in cameras %}<label class="check camera-option"><input type="checkbox" name="ax_cam_{{ c }}" {% if c in ai.auto_export.cameras %}checked{% endif %}><span>{{ cam(c) }}{% if c not in ai.cameras %}<small class="status-warning">AI detekce není pro tuto kameru zapnutá.</small>{% endif %}</span></label>{% else %}<div class="empty-form">Nejdříve <a href="/cameras">přidej kameru</a>.</div>{% endfor %}</fieldset></div></section>
 <section class="form-section"><div class="section-copy"><span class="eyebrow">02 / Obsah klipu</span><h2>Rozsah a rychlost</h2><p>Zvol pevnou celkovou délku, nebo nech délku řídit podle průběhu události. Rozsah jednotlivého klipu můžeš upřesnit časem OD–DO na detailu detekce. Kamerový záznam musí zůstat dostupný na disku.</p></div>
 <div class="section-fields" x-data="{lengthMode:'{{ ai.auto_export.length_mode }}'}">
@@ -5781,6 +5782,17 @@ def save_ai_form(form):
 
 def apply_ai_form(form, cfg, cameras):
     ai = cfg["ai"]
+    # The rule belongs to AI detection; video settings must preserve it.
+    if "ax_timelapse_threshold" in form:
+        ax = dict(ai.get("auto_export") or DEFAULT_CONFIG["ai"]["auto_export"])
+        ax["timelapse_enabled"] = bool(form.get("ax_timelapse_enabled"))
+        try:
+            ax["timelapse_threshold"] = int(form.get("ax_timelapse_threshold", ax.get("timelapse_threshold", 7)))
+        except (TypeError, ValueError):
+            raise ValueError("Skóre časosběru musí být celé číslo od 1 do 10.")
+        if not 1 <= ax["timelapse_threshold"] <= 10:
+            raise ValueError("Skóre časosběru musí být od 1 do 10.")
+        ai["auto_export"] = ax
     old_provider = ai["provider"]
     for key in ("enabled", "day_only", "prefilter", "fast_mode", "dark_skip"):
         ai[key] = bool(form.get(key))
@@ -5844,13 +5856,6 @@ def apply_export_form(form, cfg, cameras):
     ai = cfg["ai"]
     ax = dict(ai.get("auto_export") or DEFAULT_CONFIG["ai"]["auto_export"])
     ax["enabled"] = bool(form.get("ax_enabled"))
-    ax["timelapse_enabled"] = bool(form.get("ax_timelapse_enabled"))
-    try:
-        ax["timelapse_threshold"] = int(form.get("ax_timelapse_threshold", ax.get("timelapse_threshold", 7)))
-    except (TypeError, ValueError):
-        raise ValueError("Skóre časosběru musí být celé číslo od 1 do 10.")
-    if not 1 <= ax["timelapse_threshold"] <= 10:
-        raise ValueError("Skóre časosběru musí být od 1 do 10.")
     if form.get("ax_length_mode") in ("event", "fixed"):
         ax["length_mode"] = form["ax_length_mode"]
     if "ax_duration" in form and ax.get("length_mode") == "fixed":
