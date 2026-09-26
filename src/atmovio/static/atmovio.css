@@ -1141,3 +1141,11 @@ header.top nav.menu > a.active, header.top nav.menu .dd > button.active { backgr
 .timelapse-rule input[type="number"] { max-width:130px; }
 .flash a.btn:not(.sec) { color:var(--pico-primary-inverse); text-decoration:none; }
 @media (max-width:600px) { .ai-settings-flow { gap:6px; } .ai-settings-flow a { padding:8px 10px; } }
+
+.phenomenon-group { margin:8px 0; padding:0 14px; border:1px solid var(--at-line); border-radius:10px; background:var(--pico-card-background-color); }
+.phenomenon-group > summary { display:flex; align-items:center; gap:10px; padding:13px 0; font-size:13px; color:var(--at-text); }
+.phenomenon-group > summary::before { content:""; width:6px; height:6px; flex:none; border-right:1.5px solid currentColor; border-bottom:1.5px solid currentColor; transform:rotate(-45deg); }
+.phenomenon-group[open] > summary::before { transform:rotate(45deg); }
+.phenomenon-group > summary .hint { margin-left:auto; }
+.phenomenon-group .chips { padding:4px 0 14px; }
+.phenomenon-group .chip { white-space:normal; }

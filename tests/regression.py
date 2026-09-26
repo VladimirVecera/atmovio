@@ -1,7 +1,7 @@
 """Offline integration regression checks; no real cameras, APIs or system services."""
 import os, sys, tempfile, json, copy, re, io, datetime as dt, contextlib, subprocess
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 from html.parser import HTMLParser
 from zoneinfo import ZoneInfo
 base=Path(tempfile.mkdtemp(prefix='atmovio-47-fixtures-'))
@@ -23,6 +23,27 @@ cfg['camera_names']={'test_cam':'Testovací kamera'}
 cfg['ai'].update(enabled=True,provider='ollama',cameras=['test_cam'],cam_rules={'test_cam':{'custom':True,'threshold':8,'phenomena':['cervanky'],'any':False}})
 cfg['ai']['auto_export'].update(enabled=True,cameras=['test_cam'])
 a.save_config(cfg)
+# Every built-in is reachable once; custom categories remain in their own group.
+group_cfg=copy.deepcopy(cfg['ai'])
+group_cfg['custom_phenomena']=[{'id':'custom_test','label':'Vlastní jev','desc':'Ukázka'}]
+grouped=[p[0] for _,items in a.phenomena_groups(group_cfg) for p in items]
+assert len(grouped)==len(set(grouped))==len(a.PHENOMENA)+1
+assert set(a.PHENOMENA_IDS).issubset(grouped)
+assert 'vice_vrstev' not in a.build_prompt(cfg['ai'],0)
+assert 'vice_vrstev' in a.build_prompt(cfg['ai'],8)
+response=Mock()
+response.json.return_value={'response':json.dumps({'score':8,'phenomena':['vice_vrstev','cavum','unknown'],'timelapse':9})}
+with patch.object(a.requests,'post',return_value=response):
+    single,_=a._ai_evaluate_once(cfg['ai'],b'fixture',0)
+    film,_=a._ai_evaluate_once(cfg['ai'],b'fixture',8)
+assert single['phenomena']==['cavum']
+assert film['phenomena']==['vice_vrstev','cavum']
+old=copy.deepcopy(cfg);old['ai']['phenomena']=['cervanky'];old['ai']['phenomena_seen']=['2']
+a.save_config(old)
+assert a.load_config()['ai']['phenomena']==['cervanky']
+assert a.load_config()['ai']['cam_rules']==old['ai']['cam_rules']
+a.save_config(cfg)
+ok('Grouped catalog preserves selections and filters unsupported single-image motion')
 frigate={'cameras':{'test_cam':{'enabled':True,'ffmpeg':{'inputs':[{'path':'rtsp://192.0.2.1/live','roles':['record','detect']}]}}},'record':{'enabled':True,'continuous':{'days':7}},'go2rtc':{'streams':{'test_cam':['rtsp://192.0.2.1/live']}}}
 a.frigate_write_yaml(cfg,frigate)
 now=dt.datetime.now(ZoneInfo(cfg['tz']))

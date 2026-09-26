@@ -56,7 +56,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "5.3.3"
+APP_VERSION = "5.3.4"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -85,6 +85,29 @@ PHENOMENA = [
     ("dest", "Silný déšť", "silný déšť viditelný přímo v záběru – kapky, stékající voda, mlžný závoj deště, zhoršená viditelnost"),
     ("snezeni", "Sněžení", "husté sněžení nebo sněhová přeháňka viditelná v záběru"),
     ("jine", "Fotogenická / zajímavá obloha", "cokoliv výrazně fotogenického, co nespadá do předchozích kategorií – krásné barvy mraků, dramatické nasvícení, výrazná struktura oblačnosti, neobvyklá atmosféra"),
+    ('undulatus', 'Vlnová oblačnost', 'pravidelné vlny nebo pásy v oblačnosti; tvar sám nedokládá pohyb'),
+    ('fluctus', 'Kelvin–Helmholtzovy vlny', 'řada oblačných hřebenů připomínajících lámající se vlny; neoznačuj běžné zvlnění jako fluctus'),
+    ('cavum', 'Díra v oblačnosti', 'výrazný kruhový či protáhlý otvor v souvislé vrstvě oblaků, případně s vláknitými srážkami uvnitř'),
+    ('cirry', 'Vláknitá oblačnost', 'výrazné jemné vláknité nebo péřovité struktury vysoké oblačnosti'),
+    ('veze', 'Věžovitá oblačnost', 'rostoucí či statické výrazné kupovité věže; růst tvrď pouze z časové série'),
+    ('pileus', 'Oblačná čepička', 'hladká oblačná čepička nad vrcholem kupovitého oblaku'),
+    ('irizace', 'Duhové zbarvení mraků', 'jemné barevné pásy či skvrny na oblacích blízko slunce, ne duha a ne odlesk objektivu'),
+    ('korona', 'Koróna kolem Slunce / Měsíce', 'malé barevné prstence těsně kolem světelného zdroje; odliš od hala a odlesků'),
+    ('nocni_oblaky', 'Noční svítící oblaky', 'jemné světlé namodralé vláknité či vlnové oblaky na soumračné obloze; při nejistotě nezaměňuj s běžnými nasvícenými mraky'),
+    ('polarni_zare', 'Polární záře', 'barevné oblouky, sloupy nebo záclony na noční obloze; vyluč světelné znečištění a odlesky, při nejistotě nepotvrzuj'),
+    ('mesic', 'Měsíc v oblačnosti', 'výrazná kompozice měsíce a oblačnosti, prosvítání nebo nasvícení mraků'),
+    ('kondenzacni_stopy', 'Kondenzační stopy', 'výrazné stopy letadel a jejich vzory v obloze; rozptylování tvrď jen z časové série'),
+    ('vice_vrstev', 'Rozdílný pohyb vrstev', 'POUZE Z ČASOVÉ SÉRIE: dvě vrstvy oblaků se prokazatelně posouvají různými směry nebo rozdílným tempem; neurčuj výšku ani skutečný vítr'),
+    ('rust_oblaku', 'Růst a vznik oblaků', 'POUZE Z ČASOVÉ SÉRIE: pozorovatelný vznik, nabývání nebo vertikální růst oblaků'),
+    ('rozpad_oblaku', 'Rozpouštění oblaků', 'POUZE Z ČASOVÉ SÉRIE: oblaky slábnou či zanikají; odliš od pouhého odchodu ze záběru'),
+    ('pohyb_oblaku', 'Výrazný pohyb oblačnosti', 'POUZE Z ČASOVÉ SÉRIE: doložený působivý přesun oblaků přes záběr, ne pouze staticky hezká obloha'),
+    ('vlneni', 'Proměny a vlnění oblačnosti', 'POUZE Z ČASOVÉ SÉRIE: postupující vlny, měnící se struktury nebo pozorovatelné stáčení oblačnosti; nejde o potvrzení rotující bouře'),
+    ('prichod_srazek', 'Příchod / odchod přeháňky', 'POUZE Z ČASOVÉ SÉRIE: srážková oblast se přibližuje či vzdaluje v obraze'),
+    ('pohyb_mlhy', 'Převalování a ústup mlhy', 'POUZE Z ČASOVÉ SÉRIE: mlha se přelévá, vystupuje, rozpouští nebo odhaluje obzor'),
+    ('zatahovani', 'Zatahování / vyjasňování', 'POUZE Z ČASOVÉ SÉRIE: výrazná změna podílu oblačnosti a odkrytí či zakrytí oblohy'),
+    ('zmeny_barev', 'Proměny barev oblohy', 'POUZE Z ČASOVÉ SÉRIE: skutečný vývoj barev oblohy či mraků, ne skok automatiky vyvážení bílé'),
+    ('svetlo_stiny', 'Pohyb světla, paprsků a stínů', 'POUZE Z ČASOVÉ SÉRIE: proměnlivé prosvítání, pohyb paprsků nebo stínů mraků; ne změna automatické expozice'),
+    ('soumrak', 'Přechod dne a noci', 'POUZE Z ČASOVÉ SÉRIE: pozvolný úsvit či soumrak se zajímavým vývojem světla; ne pouhé přepnutí kamery do nočního režimu'),
 ]
 PHENOMENA_IDS = [p[0] for p in PHENOMENA]
 PHENOMENA_LABELS = {p[0]: p[1] for p in PHENOMENA}
@@ -99,6 +122,65 @@ def phenomena_catalog(ai: dict | None = None) -> list:
         if c.get("id") and c.get("label"):
             out.append((c["id"], c["label"], c.get("desc") or c["label"]))
     return out
+
+
+TEMPORAL_PHENOMENA = {'pohyb_mlhy',
+ 'pohyb_oblaku',
+ 'prichod_srazek',
+ 'rozpad_oblaku',
+ 'rust_oblaku',
+ 'soumrak',
+ 'svetlo_stiny',
+ 'vice_vrstev',
+ 'vlneni',
+ 'zatahovani',
+ 'zmeny_barev'}
+PHENOMENA_GROUPS = [('Oblačnost a struktury',
+  ['beranci',
+   'lentikularni',
+   'asperitas',
+   'undulatus',
+   'fluctus',
+   'cavum',
+   'cirry',
+   'veze',
+   'pileus',
+   'kondenzacni_stopy']),
+ ('Bouřky a srážky',
+  ['shelf',
+   'mammatus',
+   'bourka',
+   'blesk',
+   'tornado',
+   'wallcloud',
+   'rollcloud',
+   'kroupy',
+   'prehanka',
+   'virga',
+   'dest',
+   'snezeni']),
+ ('Světlo a noční obloha',
+  ['cervanky', 'duha', 'halo', 'paprsky', 'irizace', 'korona', 'nocni_oblaky', 'polarni_zare', 'mesic']),
+ ('Mlha a další', ['mlha', 'jine']),
+ ('Pohyb a proměny · AI film',
+  ['vice_vrstev',
+   'rust_oblaku',
+   'rozpad_oblaku',
+   'pohyb_oblaku',
+   'vlneni',
+   'prichod_srazek',
+   'pohyb_mlhy',
+   'zatahovani',
+   'zmeny_barev',
+   'svetlo_stiny',
+   'soumrak'])]
+
+def phenomena_groups(ai: dict) -> list:
+    catalog = phenomena_catalog(ai)
+    used = {pid for _, ids in PHENOMENA_GROUPS for pid in ids}
+    groups = [(name, [p for p in catalog if p[0] in ids]) for name, ids in PHENOMENA_GROUPS]
+    custom = [p for p in catalog if p[0] not in used]
+    return groups + ([("Vlastní jevy", custom)] if custom else [])
 
 
 def phen_labels(ai: dict | None = None) -> dict:
@@ -995,7 +1077,7 @@ def frigate_reset_admin_password(cfg) -> str:
 # --------------------------------------------------------------------------- AI providers
 
 def build_prompt(ai: dict, strip: int = 0) -> str:
-    selected = phenomena_catalog(ai)
+    selected = [p for p in phenomena_catalog(ai) if strip or p[0] not in TEMPORAL_PHENOMENA]
     lines = [DEFAULT_PROMPT]
     if strip and not ai.get("_film_batch"):
         lines += ["",
@@ -1010,7 +1092,9 @@ def build_prompt(ai: dict, strip: int = 0) -> str:
                   "Description a evolution musí popsat průběh a případné mezery mezi snímky. "
                   "event_start_frame a event_end_frame jsou čísla prvního a posledního snímku zajímavé události (od 1). "
                   "Bez události vrať null. ongoing=true pouze když tento jev na posledním snímku stále probíhá. "
-                  "Neodhaduj přesné časy mezi snímky. Trend popisuje stav na konci filmu."]
+                  "Neodhaduj přesné časy mezi snímky. Trend popisuje stav na konci filmu. "
+                  "V evolution stručně vysvětli, zda film stojí za časosběr a proč. Pokud je zajímavý pouze pohyb či vývoj, "
+                  "event_start_frame a event_end_frame vymezí jeho nejzajímavější doložený úsek."]
     if strip:
         lines += ["Timelapse hodnoť nezávisle na score jednotlivého jevu: sleduj změny tvarů, vznik a zánik oblaků, "
                   "pozorovatelný posun a rozdílné směry pohybu vrstev oblačnosti. Krásný vývoj může mít vysoké timelapse "
@@ -1024,7 +1108,10 @@ def build_prompt(ai: dict, strip: int = 0) -> str:
         "Hodnocení score: 0–3 nudná, šedá, tmavá nebo rozmazaná obloha; 4–6 hezká, ale běžná obloha; "
         "7–8 výrazný, fotogenický jev; 9–10 výjimečná podívaná.",
         "Do pole phenomena dej jen id ze seznamu, které jsou na snímku SKUTEČNĚ vidět; jinak prázdné pole. "
-        "Nehodnoť objekty na zemi, jen oblohu a počasí.",
+        "Hodnoť oblohu a počasí; stíny v krajině mohou pouze podpořit doložený vývoj světla. "
+        "Nezaměňuj déšť či znečištění objektivu, chvění kamery, kompresi, automatickou expozici ani noční režim za meteorologický jev. "
+        "Z fotografie nepotvrzuj tornádo, kroupy, rotaci ani rychlost větru bez přímého důkazu; popiš jen viditelné znaky. "
+        "Mezery mezi snímky přiznej, chybějící průběh si nedomýšlej.",
     ]
     lines += ["Uveď také evolution: krátký věcný popis vývoje doloženého snímky, bez domněnek. "
               "U jediného snímku evolution ponech prázdné. Nezaměňuj časový pás s celým výsledným videem."]
@@ -1223,7 +1310,7 @@ def _ai_evaluate_once(ai: dict, image_bytes: bytes, strip: int = 0) -> tuple[dic
         phenomena = [phenomena]
     phenomena = [str(p).strip().lower() for p in phenomena]
     known = [p[0] for p in phenomena_catalog(ai)]
-    phenomena = [p for p in phenomena if p in known]
+    phenomena = [p for p in phenomena if p in known and (strip or p not in TEMPORAL_PHENOMENA)]
     trend = str(parsed.get("trend") or "").strip().lower()[:20]
     trend = {"nastupuje": "nastupuje", "vrcholi": "vrcholí", "vrcholí": "vrcholí", "odeznívá": "odeznívá", "odezniva": "odeznívá",
              "beze změny": "beze změny", "beze zmeny": "beze změny", "static": "beze změny", "rising": "nastupuje", "peak": "vrcholí", "fading": "odeznívá"}.get(trend, trend)
@@ -3146,14 +3233,15 @@ TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block head %}{% endblock %
 <label>Upozornit, když je obloha aspoň…</label><select name="threshold">{% for v, t in thr_opts %}<option value="{{ v }}" {% if ai.threshold == v %}selected{% endif %}>{{ t }}</option>{% endfor %}</select>
 <label class="check any"><input type="checkbox" name="any_photo" {% if ai.get('any_photogenic', True) %}checked{% endif %}> <b>Cokoli fotogenického</b> <span class="hint">– upozornit i tehdy, když nejde o žádný z vybraných jevů, ale záběr vypadá výjimečně (skóre dosáhne prahu)</span></label>
 <label>…a navíc tyto konkrétní jevy</label>
-<div class="chips">{% for pid, label, desc in phenomena %}<label class="chip" title="{{ desc }}"><input type="checkbox" name="ph_{{ pid }}" {% if pid in ai.phenomena %}checked{% endif %}> {{ label }}</label>{% endfor %}</div>
-<div class="hint">Nezaškrtnuté jevy AI pořád vidí a zapíše do historie, jen na ně nepřijde upozornění. Vlastní jev přidáš níže.</div>
+{% for group, entries in phenomenon_groups %}<details class="phenomenon-group"><summary>{{ group }} <span class="hint">{{ entries|length }}</span></summary><div class="chips">{% for pid, label, desc in entries %}<label class="chip" title="{{ desc }}"><input type="checkbox" name="ph_{{ pid }}" {% if pid in ai.phenomena %}checked{% endif %}> {{ label }}</label>{% endfor %}</div></details>{% endfor %}
+<div class="hint">Vyber skupinu a jevy pro upozornění. Nové jevy po aktualizaci zapni podle potřeby.</div>
 </div>
 
 <div class="card timelapse-rule" x-data="{enabled: {{ ai.auto_export.timelapse_enabled|default(false)|tojson }}}">
 <label class="check"><input type="checkbox" name="ax_timelapse_enabled" x-model="enabled"><span>Zajímavý časosběr jako důvod pro video</span></label>
 <div x-show="enabled"><label for="tl-threshold">Skóre časosběru od</label><input class="short" id="tl-threshold" name="ax_timelapse_threshold" type="number" min="1" max="10" step="1" required value="{{ ai.auto_export.timelapse_threshold|default(7) }}"><p class="hint">AI hodnotí vývoj oblačnosti v dokončeném filmu. Práh platí pro všechny sledované kamery.</p></div><p class="hint">Ukládání a délku klipu nastavíš v <a href="/videos/settings">AI videích →</a></p></div>
 
+<p class="hint">Rychlé změny mohou mezi snímky uniknout. Pro noční jevy uprav také denní režim v Časování.</p>
 <div class="cam-rules">
 {% for c in cameras %}{% set r = cam_rules.get(c) or {} %}
 <div class="card cam-rule" x-data="{on: {{ 'true' if c in ai.cameras else 'false' }}, mode: '{{ 'custom' if r.custom else 'default' }}'}" :class="{off: !on}">
@@ -3165,7 +3253,7 @@ TEMPLATES["ai.html"] = """{% extends "base.html" %}{% block head %}{% endblock %
   <label>Upozornit, když je obloha aspoň…</label><select name="thr_{{ c }}">{% for v, t in thr_opts %}<option value="{{ v }}" {% if (r.threshold or ai.threshold) == v %}selected{% endif %}>{{ t }}</option>{% endfor %}</select>
   <label class="check any"><input type="checkbox" name="cany_{{ c }}" {% if r.get('any', ai.get('any_photogenic', True)) %}checked{% endif %}> <b>Cokoli fotogenického</b> <span class="hint">– i bez shody s jevy, když je záběr výjimečný</span></label>
   <label>…a navíc tyto konkrétní jevy</label>
-  <div class="chips">{% for pid, label, desc in phenomena %}<label class="chip" title="{{ desc }}"><input type="checkbox" name="cph_{{ c }}_{{ pid }}" {% if pid in (r.phenomena or ai.phenomena) %}checked{% endif %}> {{ label }}</label>{% endfor %}</div>
+  {% for group, entries in phenomenon_groups %}<details class="phenomenon-group"><summary>{{ group }} <span class="hint">{{ entries|length }}</span></summary><div class="chips">{% for pid, label, desc in entries %}<label class="chip" title="{{ desc }}"><input type="checkbox" name="cph_{{ c }}_{{ pid }}" {% if pid in (r.phenomena or ai.phenomena) %}checked{% endif %}> {{ label }}</label>{% endfor %}</div></details>{% endfor %}
  </div>
  </div>
 </div>
@@ -5321,7 +5409,7 @@ def ai_page(request: Request):
     sr, ss = daylight_window(cfg, now.date())
     cameras = frigate_cameras(cfg)
     return render(request, "ai.html", "AI hlídání oblohy", cfg=cfg, ai=cfg["ai"], cameras=cameras, test=test, check=check,
-                  providers=PROVIDERS, provider_info=PROVIDER_INFO, phenomena=phenomena_catalog(cfg["ai"]), custom_phenomena=cfg["ai"].get("custom_phenomena") or [],
+                  providers=PROVIDERS, provider_info=PROVIDER_INFO, phenomena=phenomena_catalog(cfg["ai"]), phenomenon_groups=phenomena_groups(cfg["ai"]), custom_phenomena=cfg["ai"].get("custom_phenomena") or [],
                   cam_rules=cfg["ai"].get("cam_rules") or {}, used_today=watcher.calls_today(cfg, now), stats7=ai_stats_days(now, 7),
                   sun=sun_times(cfg, now), estimate=ai_estimate(cfg, max(1, len(cfg["ai"]["cameras"]))))
 

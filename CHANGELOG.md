@@ -2,6 +2,13 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 5.3.4 – 2026-09-26 – grouped sky and timelapse phenomena
+
+- Add 23 cloud, optical, night-sky and temporal categories in compact groups, including custom camera rules.
+- Preserve existing selections; new installations include the extended catalog by default.
+- Require time-series evidence for motion categories and reject those IDs from single-image responses.
+- Ask for timelapse reasoning and observed frame bounds; distinguish camera artifacts from weather.
+
 ## 5.3.3 – 2026-09-26 – timelapse rule in AI detection
 
 - Move the timelapse trigger and score threshold into AI detection → Cameras and phenomena.
