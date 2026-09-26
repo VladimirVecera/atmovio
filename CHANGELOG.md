@@ -2,6 +2,12 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 5.3.12 – 2026-09-26 – notify after the complete AI video
+
+- Detection notifications with automatic video enabled wait for the playable final main export.
+- Intermediate safety parts and manually created clips do not release the notification.
+- Export failure alerts remain separate from successful video notifications.
+
 ## 5.3.11 – 2026-09-26 – local system history and charts
 
 - Add System → Graphs for HDD usage, CPU temperature/utilization, RAM, system load and AI activity, with shared date ranges and Today/Yesterday/3/7/30-day presets.

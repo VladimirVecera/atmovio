@@ -57,7 +57,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "5.3.11"
+APP_VERSION = "5.3.12"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -2262,7 +2262,7 @@ class AtmovioWatcher(threading.Thread):
                         if result.get("video_error"):
                             raise RuntimeError(result["video_error"])
                         queue_video_notification(rid, dict(subject=subject, body=body, image=result["image"], score=parsed["score"], phenomena=fresh, ts=now.isoformat()))
-                        note = "E-mail čeká na první uloženou a přehratelnou část videa."
+                        note = "E-mail čeká na dokončení celého hlavního videa."
                         self.last_notify[cam] = ts_now
                         self.record_update(rid, notified=0, note=note)
                         result.update(notified=0, note=note)
@@ -3859,7 +3859,7 @@ TEMPLATES["export_settings.html"] = """{% extends "base.html" %}{% block actions
 <fieldset class="camera-selection"><legend>Zapojené kamery</legend>{% for c in cameras %}<label class="check camera-option"><input type="checkbox" name="ax_cam_{{ c }}" {% if c in ai.auto_export.cameras %}checked{% endif %}><span>{{ cam(c) }}{% if c not in ai.cameras %}<small class="status-warning">AI detekce není pro tuto kameru zapnutá.</small>{% endif %}</span></label>{% else %}<div class="empty-form">Nejdříve <a href="/cameras">přidej kameru</a>.</div>{% endfor %}</fieldset></div></section>
 <section class="form-section"><div class="section-copy"><span class="eyebrow">02 / Obsah klipu</span><h2>Rozsah a rychlost</h2><p>Zvol pevnou celkovou délku, nebo nech délku řídit podle průběhu události. Rozsah jednotlivého klipu můžeš upřesnit časem OD–DO na detailu detekce. Kamerový záznam musí zůstat dostupný na disku.</p></div>
 <div class="section-fields" x-data="{lengthMode:'{{ ai.auto_export.length_mode }}'}">
-<p class="hint">Při pokračujícím jevu se ukládají průběžné části. E-mail přijde až s první přehratelnou částí. Režim celé události dovoluje i několikahodinové video; pevná délka zůstává omezená zadaným časem.</p><label for="clip-length-mode">Délka ukládaného videa</label><select id="clip-length-mode" name="ax_length_mode" x-model="lengthMode"><option value="event">Celá událost · průběžné části a souvislé video</option><option value="fixed">Pevná celková délka</option></select>
+<p class="hint">Při pokračujícím jevu se ukládají průběžné části. E-mail přijde až po dokončení celého hlavního videa. Režim celé události dovoluje i několikahodinové video; pevná délka zůstává omezená zadaným časem.</p><label for="clip-length-mode">Délka ukládaného videa</label><select id="clip-length-mode" name="ax_length_mode" x-model="lengthMode"><option value="event">Celá událost · průběžné části a souvislé video</option><option value="fixed">Pevná celková délka</option></select>
 <div x-show="lengthMode==='fixed'"><label for="clip-duration">Celková délka (minut)</label><div class="input-unit short"><input id="clip-duration" type="number" name="ax_duration" min="1" max="120" step="1" value="{{ ai.auto_export.duration_min }}"><span>minut</span></div><p class="hint">1–120 minut, včetně rezervy před jevem.</p><details class="inline-help"><summary>Výpočet začátku a konce</summary><p class="field-help">1–120 minut zdrojového záznamu, včetně rezervy před jevem. Začátek = začátek jevu minus „Před detekcí“, konec = začátek plus tato délka. Rezerva „Po detekci“ se v tomto režimu nepřičítá. Při pokračování vznikne další navazující část.</p></details></div>
 <div class="field-grid"><div><label for="clip-before">Před detekcí</label><div class="input-unit"><input id="clip-before" type="number" name="ax_before" min="0" max="60" value="{{ ai.auto_export.before_min }}"><span>minut</span></div></div><div><label for="clip-after">Po detekci</label><div class="input-unit"><input id="clip-after" :disabled="lengthMode==='fixed'" type="number" name="ax_after" min="0" max="60" value="{{ ai.auto_export.after_min }}"><span>minut</span></div></div></div>
 <label for="clip-playback">Rychlost zdrojového klipu</label><select id="clip-playback" name="ax_playback"><option value="realtime" {% if ai.auto_export.playback != 'timelapse_25x' %}selected{% endif %}>Původní rychlost · doporučeno</option><option value="timelapse_25x" {% if ai.auto_export.playback == 'timelapse_25x' %}selected{% endif %}>Časosběr 25×</option></select><p class="hint">Délka označuje zdrojový záznam, nikoli zrychlené video.</p><details class="inline-help"><summary>Délka a rychlost videa</summary><p class="field-help">Délka výše označuje čas zaznamenané události. Při původní rychlosti mají 2 hodiny záznamu délku 2 hodiny; časosběr 25× je zkrátí na 4 minuty 48 sekund. Pro další úpravy ponech původní rychlost.</p></details></div></section>
@@ -6584,7 +6584,12 @@ def process_video_notifications(cfg):
         rid = notice["detection_id"]
         linked_jobs = [j for j in jobs if rid in export_detection_ids(j)]
         job_ids = {j["id"] for j in linked_jobs}
-        linked = [v for v in videos if rid in export_detection_ids(v) or v.get("event_parent_id") in job_ids]
+        # Only the final automatic export may release the notification.
+        # Safety parts and manual clips can be playable while the event is still open.
+        linked = [v for v in videos if not v.get("event_parent_id") and (
+            v.get("event_job_id") in job_ids or
+            any(j["status"] == "done" and j.get("message") == v.get("frigate_id")
+                and v.get("frigate_id") for j in linked_jobs))]
         payload = json.loads(notice["payload"])
         target = dt.datetime.fromisoformat(payload["ts"]).timestamp()
         try:
@@ -6603,9 +6608,7 @@ def process_video_notifications(cfg):
             if ready:
                 v = ready[0]
                 link = f"{base}/recording/{v['id']}" if base else ""
-                detail = f"Video je uložené a připravené k přehrání. Rozsah: {v['range_h']}.\n"
-                if v.get("event_parent_id"):
-                    detail += "Jde o první dostupnou část. Pokud jev pokračuje, ukládají se další části; výsledné souvislé video vznikne po uzavření události.\n"
+                detail = f"Celé hlavní video je uložené a připravené k přehrání. Rozsah: {v['range_h']}.\n"
                 subject = payload["subject"] + " · video připravené"
             else:
                 link = f"{base}/detection/{rid}" if base else ""

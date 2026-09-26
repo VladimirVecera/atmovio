@@ -29,9 +29,8 @@ try:
   a.process_video_notifications(cfg);mail.assert_not_called()
   videos[0].update(ready=True,in_progress=False)
   a.process_event_parts(cfg);a.process_video_notifications(cfg)
-  assert mail.call_count==1 and mail.call_args.kwargs['link']==f"http://fixture.local/recording/{ex['id']}"
-  assert 'video připravené' in mail.call_args.args[1]
-  a.process_video_notifications(cfg);assert mail.call_count==1
+  mail.assert_not_called()
+  a.process_video_notifications(cfg);mail.assert_not_called()
   # Three observed hours stay in one full-event job, while parts are contiguous and immutable.
   for n in [2,3]:
    clock[0]=start+n*3600
@@ -43,14 +42,30 @@ try:
   assert len(parts)==3 and all(parts[i]['end_ts']==parts[i+1]['start_ts'] for i in range(2))
   # A fresh alert in the third film must not point to the already saved first hour.
   a.queue_video_notification(r['id'],dict(subject='Later event',body='Later clouds',image='none.jpg',score=8,phenomena=['cervanky'],ts=r['ts']))
-  a.process_video_notifications(cfg);assert mail.call_count==1
+  a.process_video_notifications(cfg);mail.assert_not_called()
   videos.append(dict(videos[0],id=999,start_ts=start+7200,end_ts=start+10800,range_h='12:00–13:00'))
   a.process_video_notifications(cfg)
-  assert mail.call_count==2 and mail.call_args.kwargs['link']=='http://fixture.local/recording/999'
+  mail.assert_not_called()
+  # A manual clip from the same detection is not the final automatic video.
+  videos.append(dict(videos[0],id=998,event_parent_id=None,start_ts=start-120,end_ts=start+10800))
+  a.process_video_notifications(cfg);mail.assert_not_called()
   a.db_init();a.queue_event_part(jobs[0])
   with a.db() as con:assert con.execute('SELECT COUNT(*) FROM event_parts').fetchone()[0]==3
   state=a.detection_video_statuses(cfg,[first])[first['id']]
   assert 'část' in state['title'] and state['active']
+  # Final export request alone is not enough: wait for its actual playable file.
+  with a.db() as con:
+   con.execute("UPDATE auto_exports SET status='done',film_open=0,message='full-event' WHERE id=?", (jobs[0]['id'],))
+  videos.append(dict(videos[0],id=1000,event_parent_id=None,event_job_id=jobs[0]['id'],
+                     frigate_id='full-event',start_ts=start-120,end_ts=start+10800,
+                     ready=False,in_progress=True,range_h='10:00–13:00'))
+  a.process_video_notifications(cfg);mail.assert_not_called()
+  videos[-1].update(ready=True,in_progress=False)
+  a.process_video_notifications(cfg)
+  assert mail.call_count==2
+  assert all(call.kwargs['link']=='http://fixture.local/recording/1000' for call in mail.call_args_list)
+  assert all('Celé hlavní video' in call.args[2] for call in mail.call_args_list)
+  a.process_video_notifications(cfg);assert mail.call_count==2
  # Actual notification branch queues before delivery, including ordinary single-image mode.
  cfg['ai'].update(prefilter=False,skip_dark=False,threshold=7,phenomena=['cervanky'],any=True)
  cfg['ai']['strip']['enabled']=False
@@ -61,5 +76,5 @@ try:
   mail.assert_not_called()
   with a.db() as con:assert con.execute('SELECT status FROM video_notifications WHERE detection_id=?',(result['id'],)).fetchone()[0]=='pending'
   assert result['notified']==0
- print('PASS: no notification before playable export, one delivery with direct clip link, three-hour continuous event with contiguous safety parts, restart idempotency, no automatic Studio trigger, actual deferred detection branch')
+ print('PASS: no notification before playable export, delivery only with final main clip link, intermediate and manual clips never notify, three-hour continuous event with contiguous safety parts, restart idempotency, no automatic Studio trigger, actual deferred detection branch')
 finally:shutil.rmtree(base)
