@@ -2,6 +2,13 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 5.3.7 – 2026-09-26 – compact dashboard for any camera count
+
+- Show all dashboard cameras, removing the previous four-camera limit.
+- Adapt the camera grid to the available width and cap individual cards at 420 px, including single-camera setups.
+- Reduce card spacing and keep AI summaries compact, with descriptions available in detection details.
+- Verify dashboard rendering for 1, 2, 3, 4, 5 and 8 cameras.
+
 ## 5.3.6 – 2026-09-26 – dashboard and recording workflow
 
 - AI videa rozlišují průběžné části, pevnou délku a souvislé video události; u typu je výrazně uvedena délka zdrojového záznamu.

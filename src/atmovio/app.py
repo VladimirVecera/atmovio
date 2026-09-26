@@ -56,7 +56,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "5.3.6"
+APP_VERSION = "5.3.7"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -2952,7 +2952,7 @@ TEMPLATES["dashboard.html"] = """{% extends "base.html" %}{% block head %}{% end
 <div class="section-head"><h2>Kamery <span class="count">({{ ns.online }} z {{ cameras|length }})</span>{% if cameras %}{% if down_count %}<span class="badge err">{{ down_count }} {{ 'výpadek' if down_count == 1 else 'výpadky' }}</span>{% elif ns.online == cameras|length %}<span class="badge ok">všechny kamery v pořádku</span>{% else %}<span class="badge warn">{{ cameras|length - ns.online }} bez obrazu</span>{% endif %}{% endif %}</h2>
  <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap"><a class="btn small sec" href="/live">{{ icons.play|safe }} Živý náhled</a><a class="btn small sec" href="/cameras">{{ icons.cog|safe }} Správa kamer</a></div></div>
 <div class="cams">
-{% for c in cameras[:4] %}{% set s = fs.cameras.get(c) %}{% set info = caminfo[c] %}{% set out = outages.get('cam:' ~ c) %}
+{% for c in cameras %}{% set s = fs.cameras.get(c) %}{% set info = caminfo[c] %}{% set out = outages.get('cam:' ~ c) %}
 <div class="cam"><a class="img" href="/camera/{{ c }}" title="Otevřít kameru"><img src="/live/{{ c }}.jpg?t={{ now_ts }}" alt="" loading="lazy" onerror="window.swImgFail?swImgFail(this):this.style.display='none'">
 {% if out %}<span class="live"><span class="dot err"></span>VÝPADEK</span>{% elif s and s.fps %}<span class="live"><span class="dot ok"></span>ŽIVĚ</span><span class="fps" title="snímků/s náhledového streamu pro AI a náhled; záznam se ukládá v plné kvalitě kamery">{{ '%.0f'|format(s.fps) }} fps</span>{% else %}<span class="live"><span class="dot warn"></span>BEZ SIGNÁLU</span>{% endif %}</a>
 <div class="body"><div class="name"><span>{{ cam(c) }}</span>{% if out %}<span class="badge err">{{ out }}</span>{% endif %}</div>

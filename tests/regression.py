@@ -84,6 +84,14 @@ with contextlib.ExitStack() as stack:
  assert client.post('/login',data={'password':os.environ['ATMOVIO_ADMIN_PASSWORD']}).status_code==403;ok('POST without CSRF rejected')
  assert client.post('/login',data={'password':os.environ['ATMOVIO_ADMIN_PASSWORD'],'csrf_token':token},follow_redirects=False).status_code==303
  ok('Session login with CSRF')
+ for camera_count in (1, 2, 3, 4, 5, 8):
+  names=[f'layout_cam_{i}' for i in range(camera_count)]
+  with patch.object(a,'frigate_cameras',return_value=names), patch.object(a,'camera_info',return_value={'ip':'192.0.2.1','via':'LAN'}):
+   page=client.get('/')
+   assert page.status_code==200
+   for name in names: assert f'href="/camera/{name}" title="Otevřít kameru"' in page.text
+ ok('Dashboard includes every camera for 1, 2, 3, 4, 5 and 8 cameras')
+
  # Updater expressions must survive HTML attribute parsing, including quoted/multiline logs.
  class UpdaterAttrs(HTMLParser):
   expression = None

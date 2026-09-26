@@ -1171,3 +1171,18 @@ header.top nav.menu > a.active, header.top nav.menu .dd > button.active { backgr
 @media(min-width:900px){.recording-editor .clip-range-fields{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 140px}.recording-editor .clip-range-fields>div:last-child{grid-column:auto;max-width:none}}
 
 .video-kind{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem .65rem;margin-bottom:.65rem;font-size:.85rem}
+
+/* Compact overview cards; empty slots do not stretch one camera across the page. */
+.dashboard-main .cams {
+ grid-template-columns: repeat(auto-fill,minmax(min(100%,300px),1fr));
+ gap: 16px;
+ max-width: none;
+ margin-inline: 0;
+}
+.dashboard-main .cam { width: 100%; max-width: 420px; }
+.dashboard-main .cam .body { padding: .65rem .75rem; gap: .3rem; }
+.dashboard-main .cam .name { font-size: 1rem; }
+.dashboard-main .cam .ai-note { margin-top: .15rem; padding: .4rem .5rem; }
+.dashboard-main .cam .ai-note .desc { display: none; }
+.dashboard-main .cam .ai-note .t b { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.dashboard-main .cam .acts .btn { padding: .45rem .6rem; font-size: .8rem; }

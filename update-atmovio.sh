@@ -116,7 +116,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "5.3.6"
+APP_VERSION = "5.3.7"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -3012,7 +3012,7 @@ TEMPLATES["dashboard.html"] = """{% extends "base.html" %}{% block head %}{% end
 <div class="section-head"><h2>Kamery <span class="count">({{ ns.online }} z {{ cameras|length }})</span>{% if cameras %}{% if down_count %}<span class="badge err">{{ down_count }} {{ 'výpadek' if down_count == 1 else 'výpadky' }}</span>{% elif ns.online == cameras|length %}<span class="badge ok">všechny kamery v pořádku</span>{% else %}<span class="badge warn">{{ cameras|length - ns.online }} bez obrazu</span>{% endif %}{% endif %}</h2>
  <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap"><a class="btn small sec" href="/live">{{ icons.play|safe }} Živý náhled</a><a class="btn small sec" href="/cameras">{{ icons.cog|safe }} Správa kamer</a></div></div>
 <div class="cams">
-{% for c in cameras[:4] %}{% set s = fs.cameras.get(c) %}{% set info = caminfo[c] %}{% set out = outages.get('cam:' ~ c) %}
+{% for c in cameras %}{% set s = fs.cameras.get(c) %}{% set info = caminfo[c] %}{% set out = outages.get('cam:' ~ c) %}
 <div class="cam"><a class="img" href="/camera/{{ c }}" title="Otevřít kameru"><img src="/live/{{ c }}.jpg?t={{ now_ts }}" alt="" loading="lazy" onerror="window.swImgFail?swImgFail(this):this.style.display='none'">
 {% if out %}<span class="live"><span class="dot err"></span>VÝPADEK</span>{% elif s and s.fps %}<span class="live"><span class="dot ok"></span>ŽIVĚ</span><span class="fps" title="snímků/s náhledového streamu pro AI a náhled; záznam se ukládá v plné kvalitě kamery">{{ '%.0f'|format(s.fps) }} fps</span>{% else %}<span class="live"><span class="dot warn"></span>BEZ SIGNÁLU</span>{% endif %}</a>
 <div class="body"><div class="name"><span>{{ cam(c) }}</span>{% if out %}<span class="badge err">{{ out }}</span>{% endif %}</div>
@@ -10898,6 +10898,21 @@ header.top nav.menu > a.active, header.top nav.menu .dd > button.active { backgr
 @media(min-width:900px){.recording-editor .clip-range-fields{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 140px}.recording-editor .clip-range-fields>div:last-child{grid-column:auto;max-width:none}}
 
 .video-kind{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem .65rem;margin-bottom:.65rem;font-size:.85rem}
+
+/* Compact overview cards; empty slots do not stretch one camera across the page. */
+.dashboard-main .cams {
+ grid-template-columns: repeat(auto-fill,minmax(min(100%,300px),1fr));
+ gap: 16px;
+ max-width: none;
+ margin-inline: 0;
+}
+.dashboard-main .cam { width: 100%; max-width: 420px; }
+.dashboard-main .cam .body { padding: .65rem .75rem; gap: .3rem; }
+.dashboard-main .cam .name { font-size: 1rem; }
+.dashboard-main .cam .ai-note { margin-top: .15rem; padding: .4rem .5rem; }
+.dashboard-main .cam .ai-note .desc { display: none; }
+.dashboard-main .cam .ai-note .t b { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.dashboard-main .cam .acts .btn { padding: .45rem .6rem; font-size: .8rem; }
 ATMOVIO_CSS_EOF
   cat > "$1/atmovio.js" <<'ATMOVIO_JS_EOF'
 /* Atmovio – interakce (Alpine.js komponenty + pomocné funkce). */
