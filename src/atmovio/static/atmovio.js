@@ -304,6 +304,7 @@
           var speed = form && form.querySelector('[name=speed]');
           fd.append('csrf_token', csrf ? csrf.value : '');
           fd.append('sid', opts.sid || 0); fd.append('vid', opts.vid || 0); fd.append('speed', speed ? speed.value : 20);
+          ['trim_start','trim_end'].forEach(function(name){var el=form && form.querySelector('[name='+name+']');if(el)fd.append(name,el.value);});
           self.busy = true; self.metaMsg = ''; self.proposal = null;
           fetch('/studio/metadata', {method: 'POST', body: fd, credentials: 'same-origin'})
             .then(function (r) { return r.json(); }).then(function (d) {
@@ -398,10 +399,20 @@
 
   // ---------- Náhled rychlosti ve studiu: přehraje zdrojové video tak, jak bude vypadat zrychlené ----------
     // Do 16× nativně, výš skoky v čase (jako v přehrávači). Orientační – hotové video je plynulé.
-    Alpine.data('speedPreview', function (src, speed) {
+    Alpine.data('speedPreview', function (src, speed, duration, trimStart, trimEnd) {
       return {
+        duration: duration || 0, trimStart: trimStart || 0, trimEnd: trimEnd == null ? duration : trimEnd, trimError: '',
+        stamp: function(t) { t=Math.max(0,Math.round(t||0)); return Math.floor(t/3600)+':'+String(Math.floor(t/60)%60).padStart(2,'0')+':'+String(t%60).padStart(2,'0'); },
+        adjustTrim: function(side) {
+          this.stop(); this.$refs.trimVideo.pause();
+          if(side==='start') this.trimStart=Math.max(0,Math.min(Number(this.trimStart)||0,this.trimEnd-0.1));
+          else this.trimEnd=Math.min(this.duration,Math.max(Number(this.trimEnd)||this.duration,this.trimStart+0.1));
+          this.$refs.trimVideo.currentTime=side==='start'?this.trimStart:Math.max(this.trimStart,this.trimEnd-0.1);
+        },
+        previewTrim: function() { var v=this.$refs.trimVideo; this.stop();v.currentTime=this.trimStart;v.playbackRate=1;v.play().catch(()=>{this.trimError='Přehrání se nepodařilo spustit.';}); },
+        boundPreview: function() { var v=this.$refs.trimVideo;if(v.currentTime>=this.trimEnd){v.pause();}else if(v.currentTime<this.trimStart){v.currentTime=this.trimStart;} },
         src: src, on: false, speed: speed || 20, running: false, timer: null, seekHandler: null, pos: '',
-        fmt: function (t) { t = Math.max(1, Math.round(t || 0)); return Math.floor(t / 60) + ':' + ('0' + t % 60).slice(-2); },
+        fmt: function (t) { t = Math.max(0, Math.round(t || 0)); return Math.floor(t / 60) + ':' + ('0' + t % 60).slice(-2); },
       // Odhad doby vytváření na RPi 5: dekódování všech snímků (do 120×) nebo jen klíčových, + kódování ~35 sn./s v 1080p.
       eta: function (dur, fps, width) {
         var px = Math.min(1, (width || 1920) / 1920) || 1;
@@ -421,7 +432,7 @@
           var self = this, v = this.video, ms = this.speed >= 120 ? 250 : 125;
           if (!self.running) return;
           if (!isFinite(v.duration)) { self.stop(); return; }
-        if (v.currentTime >= v.duration - 0.05) { v.currentTime = 0; }   // dokola, dokud to uživatel nezavře
+        if (v.currentTime >= self.trimEnd - 0.05) { v.currentTime = self.trimStart; }   // dokola, dokud to uživatel nezavře
           var t0 = performance.now();
           self.seekHandler = function () {
             v.removeEventListener('seeked', self.seekHandler); self.seekHandler = null;
@@ -430,15 +441,15 @@
             self.timer = setTimeout(function () { self.tick(); }, Math.max(0, ms - (performance.now() - t0)));
           };
           v.addEventListener('seeked', self.seekHandler);
-          v.currentTime = Math.min(v.duration, v.currentTime + self.speed * ms / 1000);
+          v.currentTime = Math.min(self.trimEnd, v.currentTime + self.speed * ms / 1000);
         },
         play: function (speed) {
           var self = this, v = this.video;
-          this.speed = speed; this.on = true; this.stop();
+          this.speed = speed; this.on = true; this.stop(); if(this.$refs.trimVideo) this.$refs.trimVideo.pause();
           if (!v.src) { v.src = this.src; }
           v.muted = true; v.loop = true;
           var go = function () {
-            v.currentTime = 0;
+            v.currentTime = self.trimStart;
             if (self.speed <= 16) { v.playbackRate = self.speed; v.play().catch(function () {}); }
             else { v.playbackRate = 1; self.running = true; self.tick(); }
           };
@@ -447,7 +458,7 @@
         init: function () {
           var self = this;
           this.$watch('speed', function (s) { if (self.on) self.play(s); });
-          this.$refs.v.addEventListener('timeupdate', function () { if (self.speed <= 16) self.pos = self.fmt(self.video.currentTime) + ' / ' + self.fmt(self.video.duration); });
+          this.$refs.v.addEventListener('timeupdate', function () { if (self.speed <= 16 && self.video.currentTime >= self.trimEnd) self.video.currentTime = self.trimStart; if (self.speed <= 16) self.pos = self.fmt(self.video.currentTime) + ' / ' + self.fmt(self.video.duration); });
                   }
       };
     });

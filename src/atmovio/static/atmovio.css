@@ -1196,3 +1196,12 @@ header.top nav.menu > a.active, header.top nav.menu .dd > button.active { backgr
 .metric-empty{min-height:180px;display:grid;place-items:center}
 .metrics-controls .btn[aria-pressed=true]{background:var(--pico-primary-background);color:#fff;opacity:1}
 @media(max-width:950px){.metrics-grid{grid-template-columns:minmax(0,1fr)}}
+
+/* Non-destructive Studio selection, keyboard-accessible native handles. */
+.studio-trim-video{width:100%;max-height:360px;display:block;background:#0b1220;border-radius:12px}
+.trim-rail{position:relative;height:48px;margin:12px 0;background:linear-gradient(var(--border,#dbe2ee),var(--border,#dbe2ee)) center/100% 8px no-repeat}
+.trim-selection{position:absolute;top:20px;height:8px;left:var(--from);right:calc(100% - var(--to));background:#2563eb}
+.trim-rail input[type=range]{position:absolute;inset:0;width:100%;height:48px;margin:0;padding:0;border:0;background:transparent;pointer-events:none;appearance:none;-webkit-appearance:none}
+.trim-rail input::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:20px;height:32px;border-radius:6px;background:#2563eb;border:2px solid white;box-shadow:0 1px 4px #0004;pointer-events:auto;cursor:ew-resize}
+.trim-rail input::-moz-range-thumb{width:18px;height:30px;border-radius:6px;background:#2563eb;border:2px solid white;pointer-events:auto;cursor:ew-resize}
+.trim-rail input:focus-visible::-webkit-slider-thumb{outline:3px solid #60a5fa;outline-offset:2px}

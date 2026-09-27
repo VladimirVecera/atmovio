@@ -117,7 +117,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "5.3.13"
+APP_VERSION = "5.3.14"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -831,7 +831,7 @@ def db_init():
             )"""
         )
         scols = {r["name"] for r in con.execute("PRAGMA table_info(studio_videos)")}
-        for col in ("yt_meta TEXT", "yt_error TEXT"):
+        for col in ("yt_meta TEXT", "yt_error TEXT", "trim_start REAL DEFAULT 0", "trim_end REAL"):
             if col.split()[0] not in scols:
                 con.execute(f"ALTER TABLE studio_videos ADD COLUMN {col}")
         for row in con.execute("SELECT e.* FROM evaluations e WHERE e.id IN (SELECT detection_id FROM exports WHERE ai_context IS NULL)").fetchall():
@@ -3990,10 +3990,21 @@ TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<d
  <div class="card studio-src"><a class="thumb" href="/videos/{{ export.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ export.name }}"><img src="/videos/{{ export.id }}/thumb.jpg" alt="" onerror="this.style.visibility='hidden'"><span class="play">▶</span></a>
   <div><div class="hint">Zdrojové video</div><b>{{ export.name }}</b><div class="hint">{{ cam(export.camera) }} · záznam {{ vars.delka }}{% if src.width %} · {{ src.width }}×{{ src.height }}{% endif %}</div></div></div>
 
- <div class="card" x-data="speedPreview('/videos/{{ export.id }}/play.mp4', {{ values.speed }})"><h2>1. Rychlost</h2>
+ <div class="card" x-data="speedPreview('/videos/{{ export.id }}/play.mp4', {{ values.speed }}, {{ src.duration }}, {{ values.trim_start }}, {{ values.trim_end }})"><h2>1. Ořez a rychlost</h2>
+  <video x-ref="trimVideo" class="studio-trim-video" src="/videos/{{ export.id }}/play.mp4" controls playsinline preload="metadata" poster="/videos/{{ export.id }}/thumb.jpg" @timeupdate="boundPreview()" @play="boundPreview()" @error="trimError = 'Náhled nelze načíst. Ověř dostupnost zdrojového videa.'"></video>
+  <div class="trim-rail" :style="'--from:' + (trimStart / duration * 100) + '%;--to:' + (trimEnd / duration * 100) + '%'">
+    <div class="trim-selection"></div>
+    <input type="range" aria-label="Začátek ořezu" min="0" :max="duration" step="0.1" x-model.number="trimStart" @input="adjustTrim('start')">
+    <input type="range" aria-label="Konec ořezu" min="0" :max="duration" step="0.1" x-model.number="trimEnd" @input="adjustTrim('end')">
+  </div>
+  <div class="row"><div><label>OD · sekundy ve videu</label><input type="number" name="trim_start" min="0" :max="trimEnd - 0.1" step="any" x-model.number="trimStart" @change="adjustTrim('start')"><span class="hint" x-text="stamp(trimStart)"></span></div>
+  <div><label>DO · sekundy ve videu</label><input type="number" name="trim_end" :min="trimStart + 0.1" :max="duration" step="any" x-model.number="trimEnd" @change="adjustTrim('end')"><span class="hint" x-text="stamp(trimEnd)"></span></div></div>
+  <div class="actions"><button type="button" class="btn small" @click="previewTrim()">▶ Přehrát výběr</button><button type="button" class="btn small sec" @click="trimStart=0;trimEnd=duration;adjustTrim('start')">Celé video</button><b x-text="'Vybráno ' + stamp(trimEnd-trimStart)"></b></div>
+  <p class="hint" role="status" x-text="trimError"></p>
+  <p class="hint">Ořez se použije až při vytvoření videa. Původní soubor zůstane zachovaný. Po ořezu zkontroluj nadpis a popis.</p>
   <div class="speed-pick"><button type="button" class="btn small sec" @click="speed = Math.max(10, speed - 10)">−10</button><input type="range" name="speed" min="10" max="240" step="10" x-model.number="speed" list="speed-ticks"><button type="button" class="btn small sec" @click="speed = Math.min(240, speed + 10)">+10</button><b class="speed-val" x-text="speed + '×'"></b></div>
   <datalist id="speed-ticks">{% for s in speeds %}<option value="{{ s }}"></option>{% endfor %}</datalist>
-  <p class="hint" style="margin:.6rem 0 0">Ze záznamu dlouhého <b>{{ vars.delka }}</b> vznikne video dlouhé <b x-text="fmt({{ '%.1f'|format(src.duration or 0) }} / speed)"></b>; vytvoření potrvá <b x-text="eta({{ '%.1f'|format(src.duration or 0) }}, {{ '%.1f'|format(src.fps or 25) }}, {{ src.width or 1920 }})"></b> (odhad). Doporučení: západ slunce 20–30×, celý den 120–240×.</p>
+  <p class="hint" style="margin:.6rem 0 0">Z výběru vznikne časosběr dlouhý <b x-text="fmt((trimEnd - trimStart) / speed)"></b>; vytvoření potrvá <b x-text="eta(trimEnd - trimStart, {{ '%.1f'|format(src.fps or 25) }}, {{ src.width or 1920 }})"></b> (odhad, délka bez intra).</p>
   <div class="speed-preview" :class="{open: on}">
    <button type="button" class="btn small sec" x-show="!on" @click="play(speed)">▶ Ukázat, jak bude video rychlé</button>
    <div x-show="on" x-cloak>
@@ -7321,6 +7332,8 @@ def studio_estimate(cfg, row: dict) -> float:
         dur = float(ex["end_ts"] - ex["start_ts"]) if ex else 600.0
     except Exception:
         dur = 600.0
+    if row.get("trim_end") is not None:
+        dur = max(0.1, float(row["trim_end"]) - float(row.get("trim_start") or 0))
     speed = max(10, int(row.get("speed") or 20))
     decode = dur / 40 if speed >= 120 else dur * 25 / 260
     encode = (dur / speed) * 30 / 35
@@ -7374,7 +7387,16 @@ def studio_rows(cfg, export_id=None, sid=None, limit: int = -1) -> list:
     return rows
 
 
-def studio_enqueue(cfg, export: dict, speed: int, intro: bool, music: str, text: str, title: str, description: str, auto: int = 0) -> int:
+def studio_trim_bounds(duration, start=0, end=None):
+    import math
+    duration, start = float(duration), float(start or 0)
+    end = duration if end is None else float(end)
+    if not all(math.isfinite(x) for x in (duration, start, end)) or not 0 <= start < end <= duration + 0.05:
+        raise ValueError("Ořez musí být uvnitř zdrojového videa a konec musí být za začátkem.")
+    return start, min(end, duration)
+
+
+def studio_enqueue(cfg, export: dict, speed: int, intro: bool, music: str, text: str, title: str, description: str, auto: int = 0, trim_start: float = 0, trim_end: float | None = None) -> int:
     sc = studio_cfg(cfg)
     speed = int(round(speed / 10) * 10) if 10 <= speed <= 240 else int(sc.get("speed", 20) or 20)
     if music and not (studio_assets_dir() / "music" / music).is_file():
@@ -7383,10 +7405,10 @@ def studio_enqueue(cfg, export: dict, speed: int, intro: bool, music: str, text:
     if credit and credit not in (description or ""):
         description = (description.rstrip() + "\n\n" + credit).strip()
     with db() as con:
-        cur = con.execute("INSERT INTO studio_videos (export_id, camera, name, speed, intro, music, text, title, description, status, created, auto) "
-                          "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        cur = con.execute("INSERT INTO studio_videos (export_id, camera, name, speed, intro, music, text, title, description, status, created, auto, trim_start, trim_end) "
+                          "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                           (export["id"], export["camera"], export["name"], speed, 1 if intro else 0, music, text, title[:100], description[:5000],
-                           "queued", dt.datetime.now().isoformat(timespec="seconds"), auto))
+                           "queued", dt.datetime.now().isoformat(timespec="seconds"), auto, trim_start, trim_end))
         sid = int(cur.lastrowid)
     studio_kick()
     return sid
@@ -7456,7 +7478,8 @@ def studio_render(cfg, job: dict):
         h = int(round(h * 1920 / w / 2) * 2)
         w = 1920
     w, h = w - w % 2, h - h % 2
-    main_sec = max(1.0, info["duration"] / speed)
+    trim_start, trim_end = studio_trim_bounds(info["duration"], job.get("trim_start"), job.get("trim_end"))
+    main_sec = (trim_end - trim_start) / speed
     out_dir = studio_out_dir(cfg)
     out = out_dir / f"{job['id']}.mp4"
     tmp = out_dir / f"{job['id']}.part.mp4"
@@ -7465,13 +7488,13 @@ def studio_render(cfg, job: dict):
     cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-progress", "pipe:1", "-nostats", "-threads", "4"]
     if speed >= 120:
         cmd += ["-skip_frame", "nokey"]     # při 120× a víc stačí klíčové snímky – dekóduje se mnohonásobně rychleji
-    cmd += ["-i", str(src)]
+    cmd += ["-ss", str(trim_start), "-t", str(trim_end - trim_start), "-i", str(src)]
     inputs = 1
     filters = []
     scale = f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps},format=yuv420p"
     vfi, vfo = float(sc.get("video_fade_in", 1) or 0), float(sc.get("video_fade_out", 2) or 0)
     vfi, vfo = min(vfi, main_sec / 3), min(vfo, main_sec / 3)
-    main = f"[0:v]setpts=PTS/{speed},{scale}"
+    main = f"[0:v]setpts=(PTS-STARTPTS)/{speed},{scale}"
     if vfi > 0:
         main += f",fade=t=in:st=0:d={vfi:.2f}"          # záznam se rozjasní ze tmy
     if vfo > 0:
@@ -7663,7 +7686,8 @@ def _studio_vars_for_row(cfg, row: dict) -> dict:
 
 
 @app.post("/studio/metadata")
-def studio_metadata_proposal(request: Request, sid: int = Form(0), vid: int = Form(0), speed: int = Form(20)):
+def studio_metadata_proposal(request: Request, sid: int = Form(0), vid: int = Form(0), speed: int = Form(20),
+                             trim_start: float = Form(0), trim_end: float | None = Form(None)):
     cfg = load_config()
     try:
         music = ""
@@ -7671,12 +7695,18 @@ def studio_metadata_proposal(request: Request, sid: int = Form(0), vid: int = Fo
             rows = studio_rows(cfg, sid=sid)
             if not rows:
                 raise ValueError("Video neexistuje.")
+            if rows[0].get("trim_start") or rows[0].get("trim_end") is not None:
+                raise ValueError("AI podklady patří celému zdroji. Po ořezu zkontroluj nadpis a popis ručně.")
             v = _studio_vars_for_row(cfg, rows[0])
             music = rows[0].get("music") or ""
         else:
             ex = _studio_export(cfg, vid)
             if not ex:
                 raise ValueError("Zdrojový klip neexistuje.")
+            if trim_start or trim_end is not None:
+                ctx = _studio_form_ctx(cfg, ex, speed)
+                if trim_start or trim_end < ctx["src"]["duration"] - 0.05:
+                    raise ValueError("AI podklady patří celému zdroji. Po ořezu zkontroluj nadpis a popis ručně.")
             v = studio_vars(cfg, ex, max(10, min(240, speed)))
         data = studio_metadata(cfg, v)
         credit = music_credit(music) if music else ""
@@ -7737,7 +7767,9 @@ def studio_new(request: Request, vid: int, again: int = 0):
     speed = int(prev["speed"]) if prev else int(sc.get("speed", 20) or 20)
     ctx = _studio_form_ctx(cfg, export, speed)
     v = ctx["vars"]
-    values = {"speed": speed, "intro": bool(prev["intro"]) if prev else bool(sc.get("intro", True)),
+    values = {"trim_start": (prev.get("trim_start") or 0) if prev else 0,
+              "trim_end": prev.get("trim_end") if prev and prev.get("trim_end") is not None else ctx["src"]["duration"],
+              "speed": speed, "intro": bool(prev["intro"]) if prev else bool(sc.get("intro", True)),
               "music": prev["music"] if prev else sc.get("music_default", ""),
               "text_on": bool(prev["text"]) if prev else bool(sc.get("text_enabled", True)),
               "text": prev["text"] if prev and prev["text"] else sc.get("text", ""),
@@ -7756,14 +7788,23 @@ def studio_new(request: Request, vid: int, again: int = 0):
 
 @app.post("/studio/new/{vid}")
 def studio_new_post(request: Request, vid: int, speed: int = Form(20), intro: str = Form(""), music: str = Form(""), text_on: str = Form(""),
-                    text: str = Form(""), title: str = Form(""), description: str = Form("")):
+                    text: str = Form(""), title: str = Form(""), description: str = Form(""),
+                    trim_start: float = Form(0), trim_end: float | None = Form(None)):
     cfg = load_config()
     export = _studio_export(cfg, vid)
     if not export:
         flash(request, "Tohle video už neexistuje.", "err")
         return RedirectResponse("/videos", status_code=303)
+    try:
+        source = frigate_media_path((frigate_exports(cfg).get(export["frigate_id"]) or {}).get("video_path", ""))
+        info = ffprobe_info(source) if source and source.is_file() else {}
+        if not info.get("duration"):
+            raise ValueError("Zdrojové video není připravené k ořezu.")
+        trim_start, trim_end = studio_trim_bounds(info["duration"], trim_start, trim_end)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
     sid = studio_enqueue(cfg, export, speed, bool(intro), music.strip(), text.strip() if text_on else "", title.strip() or export["name"],
-                         description.strip())
+                         description.strip(), trim_start=trim_start, trim_end=trim_end if trim_start or trim_end < info["duration"] - 0.05 else None)
     flash(request, "Video se vytváří – podle délky záznamu to trvá od pár sekund do několika minut. Stránka se sama obnoví.")
     return RedirectResponse(f"/studio/v/{sid}", status_code=303)
 
@@ -11284,6 +11325,15 @@ header.top nav.menu > a.active, header.top nav.menu .dd > button.active { backgr
 .metric-empty{min-height:180px;display:grid;place-items:center}
 .metrics-controls .btn[aria-pressed=true]{background:var(--pico-primary-background);color:#fff;opacity:1}
 @media(max-width:950px){.metrics-grid{grid-template-columns:minmax(0,1fr)}}
+
+/* Non-destructive Studio selection, keyboard-accessible native handles. */
+.studio-trim-video{width:100%;max-height:360px;display:block;background:#0b1220;border-radius:12px}
+.trim-rail{position:relative;height:48px;margin:12px 0;background:linear-gradient(var(--border,#dbe2ee),var(--border,#dbe2ee)) center/100% 8px no-repeat}
+.trim-selection{position:absolute;top:20px;height:8px;left:var(--from);right:calc(100% - var(--to));background:#2563eb}
+.trim-rail input[type=range]{position:absolute;inset:0;width:100%;height:48px;margin:0;padding:0;border:0;background:transparent;pointer-events:none;appearance:none;-webkit-appearance:none}
+.trim-rail input::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:20px;height:32px;border-radius:6px;background:#2563eb;border:2px solid white;box-shadow:0 1px 4px #0004;pointer-events:auto;cursor:ew-resize}
+.trim-rail input::-moz-range-thumb{width:18px;height:30px;border-radius:6px;background:#2563eb;border:2px solid white;pointer-events:auto;cursor:ew-resize}
+.trim-rail input:focus-visible::-webkit-slider-thumb{outline:3px solid #60a5fa;outline-offset:2px}
 ATMOVIO_CSS_EOF
   cat > "$1/atmovio.js" <<'ATMOVIO_JS_EOF'
 /* Atmovio – interakce (Alpine.js komponenty + pomocné funkce). */
@@ -11592,6 +11642,7 @@ ATMOVIO_CSS_EOF
           var speed = form && form.querySelector('[name=speed]');
           fd.append('csrf_token', csrf ? csrf.value : '');
           fd.append('sid', opts.sid || 0); fd.append('vid', opts.vid || 0); fd.append('speed', speed ? speed.value : 20);
+          ['trim_start','trim_end'].forEach(function(name){var el=form && form.querySelector('[name='+name+']');if(el)fd.append(name,el.value);});
           self.busy = true; self.metaMsg = ''; self.proposal = null;
           fetch('/studio/metadata', {method: 'POST', body: fd, credentials: 'same-origin'})
             .then(function (r) { return r.json(); }).then(function (d) {
@@ -11686,10 +11737,20 @@ ATMOVIO_CSS_EOF
 
   // ---------- Náhled rychlosti ve studiu: přehraje zdrojové video tak, jak bude vypadat zrychlené ----------
     // Do 16× nativně, výš skoky v čase (jako v přehrávači). Orientační – hotové video je plynulé.
-    Alpine.data('speedPreview', function (src, speed) {
+    Alpine.data('speedPreview', function (src, speed, duration, trimStart, trimEnd) {
       return {
+        duration: duration || 0, trimStart: trimStart || 0, trimEnd: trimEnd == null ? duration : trimEnd, trimError: '',
+        stamp: function(t) { t=Math.max(0,Math.round(t||0)); return Math.floor(t/3600)+':'+String(Math.floor(t/60)%60).padStart(2,'0')+':'+String(t%60).padStart(2,'0'); },
+        adjustTrim: function(side) {
+          this.stop(); this.$refs.trimVideo.pause();
+          if(side==='start') this.trimStart=Math.max(0,Math.min(Number(this.trimStart)||0,this.trimEnd-0.1));
+          else this.trimEnd=Math.min(this.duration,Math.max(Number(this.trimEnd)||this.duration,this.trimStart+0.1));
+          this.$refs.trimVideo.currentTime=side==='start'?this.trimStart:Math.max(this.trimStart,this.trimEnd-0.1);
+        },
+        previewTrim: function() { var v=this.$refs.trimVideo; this.stop();v.currentTime=this.trimStart;v.playbackRate=1;v.play().catch(()=>{this.trimError='Přehrání se nepodařilo spustit.';}); },
+        boundPreview: function() { var v=this.$refs.trimVideo;if(v.currentTime>=this.trimEnd){v.pause();}else if(v.currentTime<this.trimStart){v.currentTime=this.trimStart;} },
         src: src, on: false, speed: speed || 20, running: false, timer: null, seekHandler: null, pos: '',
-        fmt: function (t) { t = Math.max(1, Math.round(t || 0)); return Math.floor(t / 60) + ':' + ('0' + t % 60).slice(-2); },
+        fmt: function (t) { t = Math.max(0, Math.round(t || 0)); return Math.floor(t / 60) + ':' + ('0' + t % 60).slice(-2); },
       // Odhad doby vytváření na RPi 5: dekódování všech snímků (do 120×) nebo jen klíčových, + kódování ~35 sn./s v 1080p.
       eta: function (dur, fps, width) {
         var px = Math.min(1, (width || 1920) / 1920) || 1;
@@ -11709,7 +11770,7 @@ ATMOVIO_CSS_EOF
           var self = this, v = this.video, ms = this.speed >= 120 ? 250 : 125;
           if (!self.running) return;
           if (!isFinite(v.duration)) { self.stop(); return; }
-        if (v.currentTime >= v.duration - 0.05) { v.currentTime = 0; }   // dokola, dokud to uživatel nezavře
+        if (v.currentTime >= self.trimEnd - 0.05) { v.currentTime = self.trimStart; }   // dokola, dokud to uživatel nezavře
           var t0 = performance.now();
           self.seekHandler = function () {
             v.removeEventListener('seeked', self.seekHandler); self.seekHandler = null;
@@ -11718,15 +11779,15 @@ ATMOVIO_CSS_EOF
             self.timer = setTimeout(function () { self.tick(); }, Math.max(0, ms - (performance.now() - t0)));
           };
           v.addEventListener('seeked', self.seekHandler);
-          v.currentTime = Math.min(v.duration, v.currentTime + self.speed * ms / 1000);
+          v.currentTime = Math.min(self.trimEnd, v.currentTime + self.speed * ms / 1000);
         },
         play: function (speed) {
           var self = this, v = this.video;
-          this.speed = speed; this.on = true; this.stop();
+          this.speed = speed; this.on = true; this.stop(); if(this.$refs.trimVideo) this.$refs.trimVideo.pause();
           if (!v.src) { v.src = this.src; }
           v.muted = true; v.loop = true;
           var go = function () {
-            v.currentTime = 0;
+            v.currentTime = self.trimStart;
             if (self.speed <= 16) { v.playbackRate = self.speed; v.play().catch(function () {}); }
             else { v.playbackRate = 1; self.running = true; self.tick(); }
           };
@@ -11735,7 +11796,7 @@ ATMOVIO_CSS_EOF
         init: function () {
           var self = this;
           this.$watch('speed', function (s) { if (self.on) self.play(s); });
-          this.$refs.v.addEventListener('timeupdate', function () { if (self.speed <= 16) self.pos = self.fmt(self.video.currentTime) + ' / ' + self.fmt(self.video.duration); });
+          this.$refs.v.addEventListener('timeupdate', function () { if (self.speed <= 16 && self.video.currentTime >= self.trimEnd) self.video.currentTime = self.trimStart; if (self.speed <= 16) self.pos = self.fmt(self.video.currentTime) + ' / ' + self.fmt(self.video.duration); });
                   }
       };
     });

@@ -2,6 +2,12 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 5.3.14 – 2026-09-27 – non-destructive Studio trimming
+
+- Select a source range with two draggable handles or precise offsets, preview it without creating a file, and see the selected and accelerated duration.
+- Persist the trim with the Studio job and apply it before speed, intro, overlays and music during rendering; original AI clips remain intact.
+- Validate ranges against the source file and warn that existing AI metadata describes the original full clip.
+
 ## 5.3.13 – 2026-09-26 – descriptive timelapse titles
 
 - Preserve the observed phenomenon in timelapse-only exports and Studio evidence instead of replacing it with a generic label.
