@@ -2,6 +2,12 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 5.3.15 – 2026-09-28 – mobile layouts and trim track
+
+- Use one aligned trim track with independent accessible handles and concise time values.
+- Stack Studio and detection editor columns on narrow screens; keep the mobile save controls in normal flow.
+- Remove nested scrolling from mobile AI film cards and align video actions in two columns.
+
 ## 5.3.14 – 2026-09-27 – non-destructive Studio trimming
 
 - Select a source range with two draggable handles or precise offsets, preview it without creating a file, and see the selected and accelerated duration.

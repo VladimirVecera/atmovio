@@ -476,7 +476,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "5.3.14"
+APP_VERSION = "5.3.15"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -4066,7 +4066,7 @@ TEMPLATES["recording_prepared.html"] = """{% extends "base.html" %}{% block acti
 
 TEMPLATES["detection.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small sec" href="/history">← Historie</a></div>{% endblock %}{% block content %}
 {% include "video_status.html" %}
-<div class="grid-2" style="grid-template-columns:minmax(0,3fr) minmax(300px,2fr)">
+<div class="grid-2 media-editor-grid">
 <div x-data="clipRange({{ from_time|tojson|forceescape }}, {{ to_time|tojson|forceescape }}, {{ clip_tz|tojson|forceescape }})">
 <div class="card" style="padding:0;overflow:hidden">
 {% if use_export %}
@@ -4344,14 +4344,14 @@ TEMPLATES["history.html"] = """{% extends "base.html" %}{% block actions %}<div 
 TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small sec" href="/videos">← Videa</a><a class="btn small sec" href="/studio/settings">⚙ Nastavení studia</a></div>{% endblock %}{% block content %}
 {% set intro_sec = (sc.intro_seconds if intro and intro.suffix|lower in ('.png', '.jpg', '.jpeg') else 0) %}
 <form method="post" onsubmit="return swReviewStudio(this)" x-data="{intro: {{ 'true' if values.intro and intro else 'false' }}, textOn: {{ 'true' if values.text_on else 'false' }}}">
-<div class="grid-2" style="grid-template-columns:minmax(0,3fr) minmax(320px,2fr)">
+<div class="grid-2 media-editor-grid">
 <div>
  <div class="card studio-src"><a class="thumb" href="/videos/{{ export.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ export.name }}"><img src="/videos/{{ export.id }}/thumb.jpg" alt="" onerror="this.style.visibility='hidden'"><span class="play">▶</span></a>
   <div><div class="hint">Zdrojové video</div><b>{{ export.name }}</b><div class="hint">{{ cam(export.camera) }} · záznam {{ vars.delka }}{% if src.width %} · {{ src.width }}×{{ src.height }}{% endif %}</div></div></div>
 
- <div class="card" x-data="speedPreview('/videos/{{ export.id }}/play.mp4', {{ values.speed }}, {{ src.duration }}, {{ values.trim_start }}, {{ values.trim_end }})"><h2>1. Ořez a rychlost</h2>
+ <div class="card" x-data="speedPreview('/videos/{{ export.id }}/play.mp4', {{ values.speed }}, {{ src.duration }}, {{ values.trim_start|round(1) }}, {{ values.trim_end|round(1, 'floor') }})"><h2>1. Ořez a rychlost</h2>
   <video x-ref="trimVideo" class="studio-trim-video" src="/videos/{{ export.id }}/play.mp4" controls playsinline preload="metadata" poster="/videos/{{ export.id }}/thumb.jpg" @timeupdate="boundPreview()" @play="boundPreview()" @error="trimError = 'Náhled nelze načíst. Ověř dostupnost zdrojového videa.'"></video>
-  <div class="trim-rail" :style="'--from:' + (trimStart / duration * 100) + '%;--to:' + (trimEnd / duration * 100) + '%'">
+  <div class="trim-rail" :style="'--start-ratio:' + (trimStart / duration) + ';--end-ratio:' + (trimEnd / duration)">
     <div class="trim-selection"></div>
     <input type="range" aria-label="Začátek ořezu" min="0" :max="duration" step="0.1" x-model.number="trimStart" @input="adjustTrim('start')">
     <input type="range" aria-label="Konec ořezu" min="0" :max="duration" step="0.1" x-model.number="trimEnd" @input="adjustTrim('end')">
@@ -4418,7 +4418,7 @@ TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<d
 {% endblock %}"""
 
 TEMPLATES["studio_video.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small sec" href="/youtube">← Videa</a><a class="btn small sec" href="/studio/new/{{ v.export_id }}?again={{ v.id }}">↻ Vytvořit jinak</a></div>{% endblock %}{% block content %}
-<div class="grid-2" style="grid-template-columns:minmax(0,3fr) minmax(320px,2fr)">
+<div class="grid-2 media-editor-grid">
 <div>
  <div class="card" style="padding:0;overflow:hidden">
  {% if v.ready %}<video controls preload="metadata" playsinline style="width:100%;display:block;background:#000;aspect-ratio:16/9" poster="{% if v.thumb %}/studio/v/{{ v.id }}/thumb.jpg{% endif %}" src="/studio/v/{{ v.id }}/play.mp4"></video>
@@ -8064,7 +8064,7 @@ def studio_metadata_proposal(request: Request, sid: int = Form(0), vid: int = Fo
                 raise ValueError("Zdrojový klip neexistuje.")
             if trim_start or trim_end is not None:
                 ctx = _studio_form_ctx(cfg, ex, speed)
-                if trim_start or trim_end < ctx["src"]["duration"] - 0.05:
+                if trim_start or trim_end < ctx["src"]["duration"] - 0.11:
                     raise ValueError("AI podklady patří celému zdroji. Po ořezu zkontroluj nadpis a popis ručně.")
             v = studio_vars(cfg, ex, max(10, min(240, speed)))
         data = studio_metadata(cfg, v)
@@ -8163,7 +8163,7 @@ def studio_new_post(request: Request, vid: int, speed: int = Form(20), intro: st
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
     sid = studio_enqueue(cfg, export, speed, bool(intro), music.strip(), text.strip() if text_on else "", title.strip() or export["name"],
-                         description.strip(), trim_start=trim_start, trim_end=trim_end if trim_start or trim_end < info["duration"] - 0.05 else None)
+                         description.strip(), trim_start=trim_start, trim_end=trim_end if trim_start or trim_end < info["duration"] - 0.11 else None)
     flash(request, "Video se vytváří – podle délky záznamu to trvá od pár sekund do několika minut. Stránka se sama obnoví.")
     return RedirectResponse(f"/studio/v/{sid}", status_code=303)
 
@@ -11686,14 +11686,37 @@ header.top nav.menu > a.active, header.top nav.menu .dd > button.active { backgr
 .metrics-controls .btn[aria-pressed=true]{background:var(--pico-primary-background);color:#fff;opacity:1}
 @media(max-width:950px){.metrics-grid{grid-template-columns:minmax(0,1fr)}}
 
-/* Non-destructive Studio selection, keyboard-accessible native handles. */
+
+/* One shared track; native range controls provide accessible independent handles. */
 .studio-trim-video{width:100%;max-height:360px;display:block;background:#0b1220;border-radius:12px}
-.trim-rail{position:relative;height:48px;margin:12px 0;background:linear-gradient(var(--border,#dbe2ee),var(--border,#dbe2ee)) center/100% 8px no-repeat}
-.trim-selection{position:absolute;top:20px;height:8px;left:var(--from);right:calc(100% - var(--to));background:#2563eb}
-.trim-rail input[type=range]{position:absolute;inset:0;width:100%;height:48px;margin:0;padding:0;border:0;background:transparent;pointer-events:none;appearance:none;-webkit-appearance:none}
-.trim-rail input::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:20px;height:32px;border-radius:6px;background:#2563eb;border:2px solid white;box-shadow:0 1px 4px #0004;pointer-events:auto;cursor:ew-resize}
-.trim-rail input::-moz-range-thumb{width:18px;height:30px;border-radius:6px;background:#2563eb;border:2px solid white;pointer-events:auto;cursor:ew-resize}
-.trim-rail input:focus-visible::-webkit-slider-thumb{outline:3px solid #60a5fa;outline-offset:2px}
+.trim-rail{position:relative;height:48px;margin:12px 0;--thumb:22px;--half-thumb:11px}
+.trim-rail::before,.trim-selection{content:"";position:absolute;top:21px;height:6px;border-radius:3px;pointer-events:none}
+.trim-rail::before{left:var(--half-thumb);right:var(--half-thumb);background:var(--pico-muted-border-color,#dbe2ee)}
+.trim-selection{left:calc(var(--half-thumb) + (100% - var(--thumb)) * var(--start-ratio,0));right:calc(var(--half-thumb) + (100% - var(--thumb)) * (1 - var(--end-ratio,1)));background:var(--pico-primary,#2563eb)}
+.trim-rail input[type=range]{position:absolute;inset:0;width:100%;height:48px;margin:0;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;pointer-events:none;appearance:none;-webkit-appearance:none}
+.trim-rail input[type=range]::-webkit-slider-runnable-track{height:6px;border:0;background:transparent;box-shadow:none;border-radius:0}
+.trim-rail input[type=range]::-moz-range-track{height:6px;border:0;background:transparent;box-shadow:none}
+.trim-rail input[type=range]::-moz-range-progress{background:transparent}
+.trim-rail input[type=range]::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;box-sizing:border-box;width:22px;height:32px;margin-top:-13px;border-radius:7px;background:var(--pico-primary,#2563eb);border:2px solid var(--pico-card-background-color,#fff);box-shadow:0 1px 4px #0004;pointer-events:auto;cursor:ew-resize}
+.trim-rail input[type=range]::-moz-range-thumb{box-sizing:border-box;width:22px;height:32px;border-radius:7px;background:var(--pico-primary,#2563eb);border:2px solid var(--pico-card-background-color,#fff);box-shadow:0 1px 4px #0004;pointer-events:auto;cursor:ew-resize}
+.trim-rail input[type=range]:focus-visible{outline:none}
+.trim-rail input:focus-visible::-webkit-slider-thumb{outline:3px solid var(--pico-primary);outline-offset:3px}
+.trim-rail input:focus-visible::-moz-range-thumb{outline:3px solid var(--pico-primary);outline-offset:3px}
+.media-editor-grid{grid-template-columns:minmax(0,3fr) minmax(320px,2fr)}
+.media-editor-grid>div,.studio-src>div{min-width:0}
+@media(max-width:900px){
+ .media-editor-grid{grid-template-columns:minmax(0,1fr)}
+ .media-editor-grid .savebar{position:static}
+}
+@media(max-width:600px){
+ .grid-2{grid-template-columns:minmax(0,1fr)}
+ .film-cards{max-height:none;overflow:visible}
+ .film-card{flex-direction:row;gap:12px;padding:12px;align-items:flex-start}
+ .film-card>img{width:84px;height:63px;flex-shrink:0}
+ .shot .acts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch}
+ .shot .acts>.btn,.shot .acts form,.shot .acts form .btn{width:100%;min-width:0;margin:0}
+ .shot .acts .btn{display:flex;align-items:center;justify-content:center;white-space:normal;text-align:center}
+}
 ATMOVIO_CSS_EOF
   cat > "$1/atmovio.js" <<'ATMOVIO_JS_EOF'
 /* Atmovio – interakce (Alpine.js komponenty + pomocné funkce). */
