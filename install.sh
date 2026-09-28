@@ -476,7 +476,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "5.3.15"
+APP_VERSION = "5.3.16"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -11482,7 +11482,7 @@ main.page.settings-page { max-width: 1264px; }
 .film-thumbs small { display:block; font-size:11px; }
 @media(max-width:600px) { .film-card { flex-direction:column; } .film-card > img { width:100%; height:130px; } }
 
-.film-cards { max-height:420px; overflow-y:auto; }
+.film-cards { max-height:none; overflow:visible; }
 
 .clip-range-form { width:100%; min-width:0; }
 .clip-range-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
@@ -11710,7 +11710,6 @@ header.top nav.menu > a.active, header.top nav.menu .dd > button.active { backgr
 }
 @media(max-width:600px){
  .grid-2{grid-template-columns:minmax(0,1fr)}
- .film-cards{max-height:none;overflow:visible}
  .film-card{flex-direction:row;gap:12px;padding:12px;align-items:flex-start}
  .film-card>img{width:84px;height:63px;flex-shrink:0}
  .shot .acts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch}

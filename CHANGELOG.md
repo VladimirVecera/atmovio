@@ -2,6 +2,10 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 5.3.16 – 2026-09-28 – AI films scroll with the page
+
+- Remove the height limit and nested scrollbar from AI film cards on every screen size.
+
 ## 5.3.15 – 2026-09-28 – mobile layouts and trim track
 
 - Use one aligned trim track with independent accessible handles and concise time values.
