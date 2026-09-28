@@ -476,7 +476,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "5.3.16"
+APP_VERSION = "5.3.17"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -2265,9 +2265,12 @@ def collect_ai_film(cfg, cam, now):
             con.execute("UPDATE ai_films SET frames=? WHERE id=?", (json.dumps([{"ts": ts, "image": str(next_img.relative_to(cfg["snapshot_dir"]))}]), fid))
 
 
-def films_overview(cfg):
+def films_overview(cfg, pending_only=False):
     with db() as con:
-        rows = [dict(r) for r in con.execute("SELECT * FROM ai_films WHERE status IN ('collecting','ready','failed','incomplete') ORDER BY id DESC LIMIT 100")]
+        where = "status IN ('collecting','ready','failed','incomplete')"
+        if pending_only:
+            where += " AND evaluation_id IS NULL"
+        rows = [dict(r) for r in con.execute("SELECT * FROM ai_films WHERE " + where + " ORDER BY id DESC LIMIT 100")]
     out = []
     for r in rows:
         if r["camera"] not in cfg["ai"]["cameras"]:
@@ -4303,9 +4306,9 @@ TEMPLATES["film.html"] = """{% extends "base.html" %}{% block actions %}<a class
 {% endblock %}"""
 
 TEMPLATES["history.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small" href="/ai#kamery">⚙ Nastavení AI</a><form method="post" action="/history/delete" data-nobusy style="display:flex;gap:.4rem"><input type="hidden" name="camera" value="{{ f_cam }}"><button class="btn small sec" name="what" value="errors">Smazat chybná</button><button class="btn small danger" name="what" value="all" onclick="return confirm('Smazat celou historii{% if f_cam %} kamery {{ cam(f_cam) }}{% endif %} včetně snímků?')">Smazat vše{% if f_cam %} ({{ cam(f_cam) }}){% endif %}</button></form></div>{% endblock %}{% block content %}
-{% if batch or films %}<section class="card film-overview"><div class="section-head"><div><span class="eyebrow">Sběr → AI závěr → zajímavé video</span><h2>AI filmy z kamer</h2></div><a class="btn small sec" href="/ai#kdy">Časování filmů</a></div>
-<p class="hint">{% if not cfg.ai.enabled %}<strong>AI je vypnutá; sběr a vyhodnocení jsou pozastavené.</strong> {% endif %}{% if batch %}Snímek každých {{ cfg.ai.interval_min }} min · film nejvýše {{ film_minutes }} min. AI hodnotí až dokončený film. Při pokračujícím jevu se plánovaný klip prodlouží podle dalšího filmu.{% else %}Aktivní je průběžné vyhodnocení; dříve rozpracované filmy jsou pozastavené.{% endif %} Obnov stránku pro aktuální stav.</p>
-<div class="film-cards">{% for f in films %}<a class="film-card" href="/ai/films/{{ f.id }}">{% if f.thumb %}<img src="/snapshot/{{ f.thumb }}" alt="" loading="lazy">{% endif %}<div><b>{{ cam(f.camera) }}</b><span class="badge {{ 'err' if f.status=='failed' else 'info' }}">{{ {'collecting':'Sbírám snímky','ready':'Čeká na AI','failed':'Chyba AI','incomplete':'Neúplný film'}.get(f.status, f.status) }}</span><p>{{ f.start_h }} – {{ f.end_h }} · {{ f.count }} snímků</p><progress value="{{ f.progress }}" max="100" aria-label="Průběh sběru"></progress>{% if f.error %}<small>{{ f.error }}</small>{% endif %}<small>Otevřít AI film →</small></div></a>{% else %}<p class="hint">{% if cfg.ai.enabled and cfg.ai.cameras %}První film vznikne při nejbližším sběru v aktivní denní době.{% else %}Zapni AI a vyber kamery v nastavení.{% endif %}</p>{% endfor %}</div></section>{% endif %}
+{% if films %}<section class="card film-pending"><div class="section-head"><h2>Čeká na vyhodnocení</h2><a class="btn small sec" href="/ai#kdy">Časování</a></div>
+{% if not cfg.ai.enabled or not batch %}<p class="hint">Sběr AI filmů je pozastavený.</p>{% endif %}
+<div class="film-pending-list">{% for f in films %}<a href="/ai/films/{{ f.id }}" class="film-pending-item"><b>{{ cam(f.camera) }}</b><span class="badge {{ 'err' if f.status=='failed' else 'info' }}">{{ {'collecting':'Sbírám snímky','ready':'Čeká na AI','failed':'Chyba AI','incomplete':'Neúplný film'}.get(f.status, f.status) }}</span><span>{{ f.start_h }}–{{ f.end_h }} · {{ f.count }} snímků</span><span aria-hidden="true">→</span></a>{% endfor %}</div></section>{% endif %}
 
 {% macro link(cam_, min_, show_, page_=1) %}/history?camera={{ cam_|urlencode }}&min_score={{ min_ }}&show={{ show_ }}&phenomenon={{ f_phen|urlencode }}&since={{ f_since|urlencode }}&until={{ f_until|urlencode }}{% if page_ > 1 %}&page={{ page_ }}{% endif %}{% endmacro %}
 <form method="get" action="/history" class="detection-filters card">
@@ -4320,11 +4323,11 @@ TEMPLATES["history.html"] = """{% extends "base.html" %}{% block actions %}<div 
 {% set ns = namespace(day='') %}
 {% for e in rows %}{% set d = e.ts|czdate %}{% if d != ns.day %}{% set ns.day = d %}<h2 class="day">{{ d }}</h2>{% endif %}
 <article class="hrow {{ 'err' if e.error else ('hit' if e.notified else '') }}">
- {% if e.image %}<a class="pic" href="{% if not e.error %}/detection/{{ e.id }}{% else %}/snapshot/{{ e.image }}{% endif %}" {% if e.error %}data-lightbox="history"{% endif %}><img src="/snapshot/{{ e.image }}" alt="" loading="lazy"></a>{% endif %}
+ {% if e.image %}<a class="pic" href="/detection/{{ e.id }}"><img src="/snapshot/{{ e.image }}" alt="" loading="lazy"></a>{% endif %}
  <div class="tx">
   <div class="hd"><span class="score {{ 'err' if e.error else ('ok' if e.score >= rule(e.camera).threshold else ('mid' if e.score >= 5 else 'low')) }}">{% if e.error %}chyba{% else %}{{ e.score }}<small>/10</small>{% endif %}</span><span class="when">{{ e.ts|cztime }}</span><b>{{ cam(e.camera) }}</b>{% if e.phenomenon %}<span class="ph">{{ e.phenomenon }}</span>{% endif %}{% if e.trend %}<span class="badge {{ 'ok' if e.trend in ('nastupuje', 'vrcholí') else 'mut' }}" title="Vývoj podle filmového pásu">{{ {'nastupuje': '↗', 'vrcholí': '★', 'odeznívá': '↘', 'beze změny': '→'}.get(e.trend, '') }} {{ e.trend }}</span>{% endif %}{% if e.timelapse is not none and e.timelapse >= 7 %}<span class="badge info" title="Působivé pro časosběr (AI {{ e.timelapse }}/10)">🎞 {{ e.timelapse }}/10</span>{% endif %}
    {% if e.notified %}<span class="badge ok">upozorněno</span>{% elif not e.error and e.score >= rule(e.camera).threshold %}<span class="badge info">{{ "zajímavý film" if e.film and e.film.mode == "batch" else "v epizodě" }}</span>{% endif %}</div>
-  {% if e.film %}<div class="hint">{{ 'Dokončený AI film' if e.film.mode == 'batch' else 'Průběžný pohled' }} · {{ e.film.frames }} snímků · {{ e.film.range_h }}{% if e.film.film_id %} · <a href="/ai/films/{{ e.film.film_id }}">Přehrát podklady AI</a>{% endif %}</div>{% endif %}
+  {% if e.film %}<div class="hint">{{ 'Podklad detekce · AI film' if e.film.mode == 'batch' else 'Průběžný pohled' }} · {{ e.film.frames }} snímků · {{ e.film.range_h }}{% if e.film.film_id %} · <a href="/ai/films/{{ e.film.film_id }}">Přehrát podklady AI</a>{% endif %}</div>{% endif %}
   <p class="desc">{{ e.description or e.error or '–' }}</p>
   {% if not e.error %}<a class="detection-video-state {{ e.video_status.tone }}" href="/detection/{{ e.id }}"><strong>{{ e.video_status.title }}</strong><span>{{ e.video_status.detail }}</span></a>{% endif %}
   {% if e.note %}<div class="hint">{{ e.note }}</div>{% endif %}
@@ -6323,7 +6326,7 @@ def history(request: Request, camera: str = "", min_score: int = 0, show: str = 
     video_states = detection_video_statuses(cfg, rows)
     for row in rows:
         row["video_status"] = video_states[row["id"]]
-    return render(request, "history.html", "AI detekce", cfg=cfg, films=films_overview(cfg), batch=batch_mode(cfg["ai"]), rows=rows, cameras=frigate_cameras(cfg),
+    return render(request, "history.html", "AI detekce", cfg=cfg, films=[f for f in films_overview(cfg, pending_only=True) if not camera or f["camera"] == camera], batch=batch_mode(cfg["ai"]), rows=rows, cameras=frigate_cameras(cfg),
                   video_waiting=any(v["active"] for v in video_states.values()), total=total, pages=pages, page=page, per_page=per_page,
                   f_cam=camera, f_min=min_score, f_show=show, f_phen=phenomenon, f_since=since, f_until=until, phenomena=phenomena_catalog(cfg["ai"]), keep_days=cfg["ai"].get("keep_days", 14), threshold=int(cfg["ai"].get("threshold", 7)),
                   subtitle="Co AI na obloze viděla – s upozorněním, nebo úplně vše.")
@@ -11716,6 +11719,11 @@ header.top nav.menu > a.active, header.top nav.menu .dd > button.active { backgr
  .shot .acts>.btn,.shot .acts form,.shot .acts form .btn{width:100%;min-width:0;margin:0}
  .shot .acts .btn{display:flex;align-items:center;justify-content:center;white-space:normal;text-align:center}
 }
+
+.film-pending-list{display:grid;gap:8px}
+.film-pending-item{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;padding:10px 0;border-top:1px solid var(--at-line);text-decoration:none;color:var(--at-text);font-size:13px}
+.film-pending-item>span:last-child{margin-left:auto}
+.film-pending .section-head{margin-bottom:8px}
 ATMOVIO_CSS_EOF
   cat > "$1/atmovio.js" <<'ATMOVIO_JS_EOF'
 /* Atmovio – interakce (Alpine.js komponenty + pomocné funkce). */

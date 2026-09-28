@@ -245,6 +245,18 @@ try:
         assert retained.exists() and len(rows('exports'))==2
         assert not (Path(cfg['snapshot_dir'])/a.film_frames(first)[0]['image']).exists()
         ok('Film viewer renders all states; authentication/CSRF, retry, deletion and independent adjacent evidence')
+    # Failed evaluations belong to history; only films without a result stay above it.
+    overview_cfg = dict(cfg, ai=dict(cfg['ai'], cameras=list({f['camera'] for f in rows('ai_films')})))
+    candidates = a.films_overview(overview_cfg)
+    assert candidates
+    target = candidates[0]['id']
+    with a.db() as con:
+        con.execute("UPDATE ai_films SET status='failed',evaluation_id=999999 WHERE id=?", (target,))
+    assert target not in {f['id'] for f in a.films_overview(overview_cfg, pending_only=True)}
+    with a.db() as con:
+        con.execute("UPDATE ai_films SET evaluation_id=NULL WHERE id=?", (target,))
+    assert target in {f['id'] for f in a.films_overview(overview_cfg, pending_only=True)}
+    ok('Evaluated failures appear only in detection history; unassessed failed films stay accessible')
     print(json.dumps({'version':a.APP_VERSION,'checks':checks},ensure_ascii=False,indent=2))
 finally:
     shutil.rmtree(base,ignore_errors=True)

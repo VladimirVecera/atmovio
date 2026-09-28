@@ -1227,3 +1227,8 @@ header.top nav.menu > a.active, header.top nav.menu .dd > button.active { backgr
  .shot .acts>.btn,.shot .acts form,.shot .acts form .btn{width:100%;min-width:0;margin:0}
  .shot .acts .btn{display:flex;align-items:center;justify-content:center;white-space:normal;text-align:center}
 }
+
+.film-pending-list{display:grid;gap:8px}
+.film-pending-item{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;padding:10px 0;border-top:1px solid var(--at-line);text-decoration:none;color:var(--at-text);font-size:13px}
+.film-pending-item>span:last-child{margin-left:auto}
+.film-pending .section-head{margin-bottom:8px}

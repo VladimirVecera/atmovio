@@ -2,6 +2,12 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 5.3.17 – 2026-09-28 – AI films belong to detections
+
+- Show evaluated film evidence within its detection instead of duplicating failed films in a separate gallery.
+- Keep only compact links to films without an evaluation above history, including incomplete films, with camera filtering.
+- Open the full detection evidence from error thumbnails too.
+
 ## 5.3.16 – 2026-09-28 – AI films scroll with the page
 
 - Remove the height limit and nested scrollbar from AI film cards on every screen size.
