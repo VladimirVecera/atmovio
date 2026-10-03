@@ -117,7 +117,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "5.3.17"
+APP_VERSION = "5.3.18"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -3866,10 +3866,16 @@ TEMPLATES["youtube.html"] = """{% extends "base.html" %}{% block actions %}<a cl
 <div class="gallery videos">
 {% for s in studio %}<div class="shot video">
 {% if s.ready %}<a class="thumb" href="/studio/v/{{ s.id }}"><img src="{% if s.thumb %}/studio/v/{{ s.id }}/thumb.jpg{% endif %}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"><span class="play">▶</span><span class="dur">{{ s.duration_h }} · {{ s.speed }}×</span></a>
-{% else %}<a class="thumb wait" href="/studio/v/{{ s.id }}">{% if s.status == 'failed' %}<span>⚠️ nepodařilo se – {{ s.message }}</span>{% elif s.status == 'rendering' %}<span><span class="spin" style="display:inline-block;vertical-align:middle;width:18px;height:18px;margin-right:.4rem"></span>vytváří se… {{ s.progress }} %{% if s.eta_at %} · hotovo ~{{ s.eta_at }}{% endif %}</span>{% else %}<span>čeká ve frontě{% if s.eta_at %} · hotovo ~{{ s.eta_at }}{% endif %}</span>{% endif %}</a>{% endif %}
+{% else %}<a class="thumb wait" href="/studio/v/{{ s.id }}">
+{% if s.status == 'failed' %}<span>⚠️ nepodařilo se – {{ s.message }}</span>
+{% elif s.status == 'rendering' %}<span><span class="spin" style="display:inline-block;vertical-align:middle;width:18px;height:18px;margin-right:.4rem"></span>vytváří se… {{ s.progress }} %{% if s.eta_at %} · hotovo ~{{ s.eta_at }}{% endif %}</span>
+{% elif s.status == 'queued' %}<span>Čeká na vytvoření videa{% if s.eta_at %} · hotovo ~{{ s.eta_at }}{% endif %}</span>
+{% else %}<span>Video není dostupné</span>{% endif %}</a>{% endif %}
+{% if s.status == 'ready' and not s.ready %}<div class="media-reason" role="status">Soubor hotového videa se nepodařilo najít. <a href="/storage">Zkontroluj disk</a>. Pokud byl soubor smazán, vytvoř video znovu z původního klipu.</div>{% endif %}
 <div class="b"><div class="title">{{ s.title or s.name }}{% if s.auto %} <span class="badge ok">auto</span>{% endif %}{% if s.yt_status == 'done' %} <a class="badge info" href="{{ s.yt_url }}" target="_blank" rel="noopener">▶ YouTube</a>{% elif s.yt_status in ('queued', 'uploading') %} <span class="badge info">nahrává se na YouTube</span>{% elif s.yt_status == 'failed' %} <span class="badge err">YouTube selhalo</span>{% endif %}</div>
 <dl class="facts"><dt>Kamera</dt><dd>{{ s.camera_label }}</dd><dt>Úpravy</dt><dd>{{ s.speed }}×{% if s.intro %} · intro{% endif %}{% if s.music %} · hudba{% endif %}{% if s.text %} · text{% endif %}</dd><dt>Vytvořeno</dt><dd>{{ s.created|czdt }}</dd></dl>
 <div class="acts"><a class="btn small" href="/studio/v/{{ s.id }}">Otevřít</a>{% if s.ready %}<a class="btn small sec" href="/studio/v/{{ s.id }}/download">⬇ Stáhnout</a>{% endif %}
+{% if s.status == 'ready' and not s.ready %}<a class="btn small sec" href="/studio/new/{{ s.export_id }}?again={{ s.id }}">Vytvořit znovu</a>{% endif %}
 <form method="post" action="/studio/v/{{ s.id }}/delete" onsubmit="return confirm('Smazat video ze studia?')"><button class="btn small sec">Smazat</button></form></div></div></div>{% endfor %}
 </div>
 {% if studio|selectattr('status', 'in', ('queued','rendering'))|list or studio|selectattr('yt_status', 'in', ('queued','uploading'))|list %}<div x-data="autorefresh(20)"></div>{% endif %}
@@ -4069,7 +4075,11 @@ TEMPLATES["studio_video.html"] = """{% extends "base.html" %}{% block actions %}
  {% else %}<div class="studio-wait">
   {% if v.status == 'failed' %}<div class="badge err">nepodařilo se</div><p>{{ v.message or 'neznámá chyba' }}</p><a class="btn small" href="/studio/new/{{ v.export_id }}?again={{ v.id }}">Zkusit znovu</a>
   {% elif v.status == 'rendering' %}<div class="spin"></div><p><b>Vytváří se…</b> {{ v.progress }} %</p><div class="pbar"><i style="width:{{ v.progress }}%"></i></div>{% if v.eta_s %}<p class="eta">{% if v.eta_s >= 180 %}☕ {% endif %}<span x-data="countdown({{ v.eta_s }})" x-text="txt"></span> · hotovo asi v <b>{{ v.eta_at }}</b></p>{% endif %}<p class="hint">Zrychlení {{ v.speed }}× – odhad se zpřesňuje během práce. Stránka se sama obnovuje.</p>
-  {% else %}<div class="spin"></div><p><b>Čeká ve frontě</b>{% if queue_pos %} · před ním {{ queue_pos }}{% endif %}</p>{% if v.eta_s %}<p class="eta"><span x-data="countdown({{ v.eta_s }})" x-text="txt"></span> · hotovo asi v <b>{{ v.eta_at }}</b></p>{% endif %}<p class="hint">Videa se vyrábějí po jednom, aby RPi zvládalo nahrávat.</p>{% endif %}
+  {% elif v.status == 'queued' %}<div class="spin"></div><p><b>Čeká na vytvoření videa</b>{% if queue_pos %} · před ním {{ queue_pos }}{% endif %}</p>{% if v.eta_s %}<p class="eta"><span x-data="countdown({{ v.eta_s }})" x-text="txt"></span> · hotovo asi v <b>{{ v.eta_at }}</b></p>{% endif %}<p class="hint">Ve frontě na zpracování v Raspberry Pi. Zrychlení, intro, text a hudba se zpracovávají po jednom videu, aby RPi zvládalo nahrávat kamery.</p>
+  {% else %}<div class="badge warn">Video není dostupné</div>
+   {% if v.status == 'ready' %}<p>Soubor hotového videa se nepodařilo najít. Zkontroluj dostupnost disku. Pokud byl soubor smazán, můžeš video vytvořit znovu, pokud původní klip ještě existuje.</p>
+   {% else %}<p>Stav videa se nepodařilo rozpoznat. Zkontroluj původní klip a případně vytvoř video znovu.</p>{% endif %}
+   <div class="acts"><a class="btn small sec" href="/storage">Zkontrolovat disk</a><a class="btn small" href="/studio/new/{{ v.export_id }}?again={{ v.id }}">Vytvořit znovu</a></div>{% endif %}
  </div>{% endif %}</div>
  {% if v.message and v.status == 'ready' %}<div class="card warn"><b>Poznámka:</b> {{ v.message }}</div>{% endif %}
  <div class="card"><dl class="facts">
@@ -4114,7 +4124,7 @@ TEMPLATES["studio_video.html"] = """{% extends "base.html" %}{% block actions %}
  <form method="post" action="/studio/v/{{ v.id }}/youtube/reset" data-nobusy style="margin-top:.5rem" x-show="state.status==='queued' || state.status==='uploading'"><button class="btn small sec">Zrušit</button></form>
  </div>
  {% elif not yt_linked %}<p class="hint">YouTube ještě není propojený. Nastavíš to jednou v <a href="/studio/settings#youtube">Nastavení → Video studio → YouTube</a> (průvodce krok za krokem).</p>
- {% elif not v.ready %}<p class="hint">Až bude video hotové, půjde nahrát.</p>
+ {% elif not v.ready %}<p class="hint">{% if v.status in ('queued', 'rendering') %}Až bude video hotové, půjde nahrát.{% else %}K nahrání je potřeba dostupný soubor videa. Zkontroluj disk nebo video vytvoř znovu.{% endif %}</p>
  {% else %}{% if v.yt_status == 'failed' %}<p><span class="badge err">nepodařilo se</span> {{ v.yt_error }}</p>{% endif %}
   <form method="post" action="/studio/v/{{ v.id }}/youtube" x-data="{pl: '{{ yt.playlist_id or '' }}'}">
    <div class="hint">Kanál <b>{{ yt.channel_title }}</b>. Na YouTube jde titulek a popis z rámečku nahoře – pokud jsi je změnil, nejdřív je <b>Ulož</b>.</div>
@@ -6975,7 +6985,7 @@ def studio_source_status(row):
     if status == "rendering":
         label, tone = "Vytváří se YouTube video", "info"
     elif status == "queued":
-        label, tone = "YouTube video čeká ve frontě", "warn"
+        label, tone = "YouTube video čeká na vytvoření", "warn"
     elif yt == "uploading":
         label, tone = "Nahrává se na YouTube", "info"
     elif yt == "queued":

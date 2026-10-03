@@ -2,6 +2,12 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 5.3.18 – 2026-10-03 – distinguish missing Studio videos from queued work
+
+- Show a creation queue only for queued Studio jobs, in both the YouTube gallery and video detail.
+- Explain unavailable finished files and offer disk checks or explicit recreation from the original clip.
+- Clarify that the creation queue runs on the Raspberry Pi and avoid promising upload readiness for unavailable files.
+
 ## 5.3.17 – 2026-09-28 – AI films belong to detections
 
 - Show evaluated film evidence within its detection instead of duplicating failed films in a separate gallery.
