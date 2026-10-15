@@ -2,6 +2,13 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 5.3.19 – 2026-10-15 – finished video library and visible progress
+
+- Show only available, completed main event videos and manual clips in the AI video gallery; keep intermediate safety parts out of the library and export the complete event as one file.
+- Add a prominent live panel for recording/export, Studio rendering and YouTube upload, including confirmed progress, estimated completion and recoverable errors.
+- Delete all saved AI videos and hidden parts in the background with confirmation and a visible result; preserve active event parts, videos used by processing/upload, failed deletions, raw recordings and YouTube outputs.
+- Generate thumbnails lazily and reject empty files as finished videos.
+
 ## 5.3.18 – 2026-10-03 – distinguish missing Studio videos from queued work
 
 - Show a creation queue only for queued Studio jobs, in both the YouTube gallery and video detail.

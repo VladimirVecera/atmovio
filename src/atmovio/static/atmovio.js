@@ -38,6 +38,33 @@
         }
       };
     });
+    Alpine.data('videoActivity', function (revision) {
+      return {visible:true, offline:false, changed:false,
+        timer:null, controller:null, stopped:false,
+        init: function () { this.visible=!!this.$el.querySelector('[data-work-id]'); this.timer=setTimeout(()=>this.check(),4000); },
+        destroy: function () { this.stopped=true; clearTimeout(this.timer); if(this.controller)this.controller.abort(); },
+        check: async function () {
+          if(this.stopped)return;
+          const controller=new AbortController();this.controller=controller;
+          const timeout=setTimeout(()=>controller.abort(),12000);
+          try {
+            if(document.visibilityState!=='visible')return;
+            const response=await fetch('/videos/activity',{cache:'no-store',credentials:'same-origin',signal:controller.signal});
+            if(!response.ok || response.redirected)throw new Error('Status unavailable');
+            const state=await response.json();
+            if(typeof state.html!=='string' || !state.revision)throw new Error('Invalid status');
+            if(this.stopped)return;
+            // The fragment is rendered and escaped by our authenticated server, just like the initial page.
+            if(this.lastHtml!==state.html){this.$refs.items.innerHTML=state.html;this.lastHtml=state.html;}
+            this.visible=state.visible;this.offline=false;this.changed=state.revision!==revision;
+            const busy=document.querySelector('form:focus-within') || document.body.classList.contains('lb-open') ||
+              Array.from(document.querySelectorAll('video')).some(v=>!v.paused);
+            if(this.changed && !busy)location.reload();
+          } catch(error) { if(!this.stopped)this.offline=true; }
+          finally {clearTimeout(timeout);if(!this.stopped)this.timer=setTimeout(()=>this.check(),4000);}
+        }
+      };
+    });
     Alpine.data('youtubeUpload', function (id, initial) {
       return {state:initial, offline:false, timer:null, stopped:false,
         init: function () { this.check(); },

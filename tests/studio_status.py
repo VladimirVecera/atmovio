@@ -86,7 +86,8 @@ try:
                 con.execute("UPDATE studio_videos SET status=?,file=NULL,message='Fixture failure' WHERE id=?", (status, sid))
             gallery, detail = pages()
             assert label.lower() in gallery.lower() and label in detail
-            assert ('x-data="autorefresh(' in gallery) == (status in ("queued", "rendering"))
+            assert "videoActivity(" in gallery
+            assert (f'data-work-id="studio-{sid}"' in gallery) == (status in ("queued", "rendering", "failed"))
             assert ('x-data="autorefresh(' in detail) == (status in ("queued", "rendering"))
             assert ('class="spin"' in detail) == (status in ("queued", "rendering"))
             if status == "queued":

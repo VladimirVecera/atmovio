@@ -476,7 +476,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "5.3.18"
+APP_VERSION = "5.3.19"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -802,6 +802,7 @@ def cam_label(cfg, cam: str) -> str:
 _config_lock = threading.RLock()
 _frigate_lock = threading.RLock()
 _export_schedule_lock = threading.RLock()
+_export_use_lock = threading.RLock()  # Serialize deletion with new source consumers.
 _logger = logging.getLogger("atmovio")
 
 
@@ -4053,7 +4054,7 @@ TEMPLATES["recording_prepared.html"] = """{% extends "base.html" %}{% block acti
 <div class="workflow"><b>1 · Záznam</b><span>→</span><span>2 · Návrh AI</span><span>→</span><b>3 · AI videa</b></div>
 <section class="card recording-editor"><div class="section-head"><h2>{{ v.name }}</h2><span class="badge {{ 'ok' if v.ready else 'warn' }}">{{ 'Připraveno' if v.ready else 'Příprava souboru' }}</span></div><p>{{ v.range_h }} · vybraný rozsah {{ v.duration_h }}</p>
 {% if v.ready %}<div class="recording-preview"><video id="clip" controls playsinline preload="metadata" src="/videos/{{ v.id }}/play.mp4"></video>{% include "recording_speed.html" %}</div><p class="hint">Přehráváš hotový soubor. Případné výpadky kamery mohou záznam zkrátit.</p>
-{% elif v.stuck or v.expired %}<div class="flash warn">Export se nepodařilo dokončit. <a href="/videos#v{{ v.id }}">Otevřít stav a možnosti obnovy →</a></div>
+{% elif v.stuck or v.expired or v.missing %}<div class="flash warn">{{ 'Zdrojový záznam už není dostupný.' if v.expired else 'Soubor videa není dostupný nebo se export přerušil.' }}{% if not v.expired %}<form method="post" action="/videos/{{ v.id }}/retry"><button class="btn small" data-busy="Zadávám video znovu">Vytvořit znovu</button></form>{% endif %}<form method="post" action="/videos/{{ v.id }}/delete" onsubmit="return confirm('Smazat video a jeho pracovní části?')"><button class="btn small sec">Smazat</button></form></div>
 {% else %}<div class="media-state recording-wait"><b>Frigate připravuje celý klip</b><span>Stránka stav obnoví sama. Délku zpracování zatím neznáme.</span></div>{% endif %}
 <div class="recording-create"><h3>Nadpis a popis</h3>
 {% if v.metadata_status == 'ready' %}<p>Nadpis a popis jsou uložené u AI videa. Tady je můžeš upravit.</p>
@@ -4218,6 +4219,7 @@ TEMPLATES["camera.html"] = """{% extends "base.html" %}{% block actions %}<div c
 
 TEMPLATES["youtube.html"] = """{% extends "base.html" %}{% block actions %}<a class="btn small sec" href="/studio/settings">Nastavení YouTube videí</a>{% endblock %}{% block content %}
 <div class="workflow"><a href="/history">1 · AI detekce</a><span>→</span><a href="/videos">2 · AI videa</a><span>→</span><b>3 · YouTube videa</b></div>
+{% include "video_activity.html" %}
 <p class="hint">Zrychlená videa s intrem, hudbou, nadpisem a popisem. Stav YouTube u každého videa ukazuje, zda již bylo publikováno.</p>
 <div class="section-head" id="studio"><h2>YouTube videa</h2><span class="hint">s intrem, textem a hudbou · připravená ke stažení{% if studio_auto %} · automatika zapnutá{% endif %}</span></div>
 {% if not studio %}<div class="card"><p class="hint">Začni výběrem klipu v <a href="/videos">AI videích</a>.</p></div>{% endif %}
@@ -4237,38 +4239,51 @@ TEMPLATES["youtube.html"] = """{% extends "base.html" %}{% block actions %}<a cl
 {% if s.status == 'ready' and not s.ready %}<a class="btn small sec" href="/studio/new/{{ s.export_id }}?again={{ s.id }}">Vytvořit znovu</a>{% endif %}
 <form method="post" action="/studio/v/{{ s.id }}/delete" onsubmit="return confirm('Smazat video ze studia?')"><button class="btn small sec">Smazat</button></form></div></div></div>{% endfor %}
 </div>
-{% if studio|selectattr('status', 'in', ('queued','rendering'))|list or studio|selectattr('yt_status', 'in', ('queued','uploading'))|list %}<div x-data="autorefresh(20)"></div>{% endif %}
+
 {% endblock %}"""
+
+TEMPLATES["video_activity_rows.html"] = """{% for item in activity.items_list %}
+<article class="work-item {{ item.tone }}" data-work-id="{{ item.key }}">
+<div class="work-symbol" aria-hidden="true">{{ '↑' if item.kind == 'upload' else ('✓' if item.tone == 'ok' else ('!' if item.tone == 'err' else '◷')) }}</div>
+<div class="work-copy"><div class="work-heading"><strong>{{ item.label }}</strong>{% if item.progress is not none %}<b class="work-percent">{{ item.progress }} %</b>{% endif %}</div>
+<p class="work-name">{{ item.name }}</p>
+{% if item.active %}<progress max="100" {% if item.progress is not none %}value="{{ item.progress }}"{% endif %} aria-label="{{ item.label }}"></progress>{% endif %}
+<p class="work-detail">{{ item.detail }}</p>{% if item.eta %}<p class="work-eta">{{ item.eta }}</p>{% endif %}</div>
+{% if item.href %}<a class="btn small sec" href="{{ item.href }}">Detail →</a>{% endif %}</article>
+{% endfor %}"""
+
+TEMPLATES["video_activity.html"] = """<section class="video-work" x-data='videoActivity({{ activity.revision|tojson }})' aria-label="Zpracování videí">
+<div class="work-panel" x-show="visible" {% if not activity.items_list %}style="display:none"{% endif %}>
+<div class="section-head"><div><span class="eyebrow">Živý stav</span><h2>Zpracování a nahrávání</h2></div><span class="badge info">Automaticky aktualizováno</span></div>
+<div x-ref="items">{% include "video_activity_rows.html" %}</div></div>
+<p class="flash warn" x-show="offline" x-cloak role="status">Stav se nepodařilo obnovit. Zkouším spojení znovu.</p>
+<p class="flash info" x-show="changed" x-cloak>Seznam videí se změnil. <a href="">Obnovit přehled</a></p>
+</section>"""
 
 TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block actions %}<a class="btn small sec" href="/videos/settings">Nastavení AI videí</a>{% endblock %}{% block content %}
 <div class="workflow"><a href="/history">1 · AI detekce</a><span>→</span><b>2 · AI videa</b><span>→</span><a href="/youtube">3 · YouTube videa</a></div>
-{% if pending_auto %}<section class="card pending-videos"><div class="section-head"><h2>Rozpracovaná videa <span class="badge warn">{{ pending_auto|length }}</span></h2><span class="hint">Stav se obnovuje automaticky</span></div>{% for j in pending_auto %}<div class="video-status {{ j.video_status.tone }}"><div class="video-status-icon" aria-hidden="true">▣</div><div><strong>{{ j.video_status.title }}</strong><b class="video-status-name">{{ j.name }}</b><p>{{ j.video_status.detail }}</p>{% if j.part_error %}<p class="status-warning">Průběžná část: {{ j.part_error }}</p>{% endif %}</div>{% if j.ready_part_id %}<a class="btn small" href="/recording/{{ j.ready_part_id }}">Přehrát uloženou část · {{ j.parts_ready }}</a>{% endif %}{% if j.export_id %}<a class="btn small sec" href="/recording/{{ j.export_id }}">Detail videa →</a>{% elif j.detection_id %}<a class="btn small sec" href="/detection/{{ j.detection_id }}">Detekce →</a>{% endif %}</div>{% endfor %}</section>{% endif %}
-{% if failed_auto %}<details class="card" open><summary>Automatická videa, která se nepodařilo vytvořit</summary>{% for j in failed_auto %}<p><a href="/detection/{{ j.detection_id }}">{{ j.name }}</a> · {{ j.message }}</p>{% endfor %}<p class="hint">V detailu detekce lze ověřit dostupnost záznamu a zadat nový klip.</p></details>{% endif %}
-<div class="section-head" style="margin-top:1.2rem"><h2>AI videa</h2><span class="hint">zdrojové klipy z detekcí a ručních exportů</span></div>
-{% if not videos and pending_auto %}<p class="hint">Hotová videa se zde objeví po dokončení exportu. Rozpracované záznamy vidíš výše.</p>{% elif not videos %}<div class="card"><p>Zatím žádné video. Otevři detekci v <a href="/history">Historii</a> a klikni na <b>Vytvořit video</b> – vybereš, kolik minut před a po snímku se má vystřihnout.</p></div>{% endif %}
+{% include "video_activity.html" %}
+<div class="section-head video-library-head"><div><h2>Hotová videa <span class="badge ok">{{ videos|length }}</span></h2><p class="hint">Celá událost v jednom videu. Připravená k přehrání, stažení a dalším úpravám.</p></div>
+{% if total_exports %}<a class="btn danger" href="/videos/delete-all">{{ 'Průběh mazání' if deleting else 'Smazat všechna AI videa' }}</a>{% endif %}</div>
+{% if not videos %}<div class="card empty-videos"><h3>Zatím žádné hotové video</h3><p>Po dokončení se zde objeví celé video události. Nové video můžeš vytvořit z <a href="/history">AI detekce</a> nebo záznamu kamery.</p></div>{% endif %}
 <div class="gallery videos">
 {% for v in videos %}<div class="shot video" id="v{{ v.id }}">
-{% if v.ready %}<a class="thumb" href="/videos/{{ v.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ v.name }}"><img src="{% if v.thumb %}/videos/{{ v.id }}/thumb.jpg{% endif %}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"><span class="play">▶</span><span class="dur">{{ v.duration_h }}</span></a>
-{% else %}<div class="thumb media-state"><span class="media-state-icon" aria-hidden="true">{{ (icons['video'] if 'video' in icons else icons['camera'])|safe }}</span><b>{% if v.expired %}Záznam už není dostupný{% elif v.stuck %}Vytváření bylo přerušeno{% elif v.in_progress %}Připravujeme video{% elif v.missing %}Video není dostupné{% else %}Čekáme na nahrávání{% endif %}</b></div>{% endif %}
-{% if v.expired or v.stuck or v.missing %}<div class="media-reason" role="status">{% if v.expired %}Zdrojový záznam už byl odstraněn. Tento klip nelze znovu vytvořit.{% elif v.stuck %}Frigate export nedokončil, například po restartu. Pokud zdrojový záznam existuje, použij „Vytvořit znovu“.{% else %}Soubor se nepodařilo najít. Zkontroluj dostupnost disku a záznamů.{% endif %} <a href="/logs?src=frigate">Diagnostika</a></div>{% endif %}
-<div class="b">
-{% if v.video_kind == 'event' %}<div class="video-kind"><span class="badge ok">Souvislé video události</span><strong>{{ v.duration_h }} záznamu</strong></div>{% elif v.video_kind == 'part' %}<div class="video-kind"><span class="badge info">Průběžná část</span><span>{{ v.duration_h }} záznamu</span></div>{% elif v.video_kind == 'fixed' %}<div class="video-kind"><span class="badge">Pevná délka</span><span>{{ v.duration_h }} záznamu</span></div>{% endif %}
-{% if v.parts_count %}<a class="badge info" href="/events/{{ v.event_job_id }}/parts">Průběžné části · {{ v.parts_count }} →</a>{% endif %}
-{% for link in v.studio_links %}<a class="badge {{ link.tone }}" style="display:flex;margin:.35rem 0;padding:.5rem;white-space:normal" href="/studio/v/{{ link.id }}">▶ {{ link.label }} →</a>{% endfor %}
-<div class="title">{{ v.metadata_title or v.name }}{% if v.auto %} <span class="badge ok" title="Vytvořeno automaticky po upozornění">auto</span>{% endif %}</div>
+<a class="thumb" href="/videos/{{ v.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ v.name }}"><img src="{% if v.thumb %}/videos/{{ v.id }}/thumb.jpg{% endif %}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"><span class="play">▶</span><span class="dur">{{ v.duration_h }}</span></a>
+<div class="b"><div class="video-kind"><span class="badge ok">Hotové video</span><strong>{{ v.duration_h }} záznamu</strong></div>
+<div class="title">{{ v.metadata_title or v.name }}</div>
+{% for link in v.studio_links %}<a class="video-next-state {{ link.tone }}" href="/studio/v/{{ link.id }}">{{ link.label }} →</a>{% endfor %}
 {% if v.metadata_description %}<p class="desc2">{{ v.metadata_description }}</p>{% endif %}
-<dl class="facts">
-<dt>Kamera</dt><dd>{{ cam(v.camera) }}</dd>
-<dt>Úsek</dt><dd>{{ v.range_h }} <span class="hint">({{ v.duration_h }})</span></dd>
-<dt>Velikost</dt><dd>{% if v.size_h %}{{ v.size_h }}{% else %}–{% endif %}</dd>
-<dt>Vytvořeno</dt><dd>{{ v.created|czdt }}</dd>
-<dt>Smaže se</dt><dd>{% if v.days_left > 1 %}za {{ v.days_left }} dní{% elif v.days_left == 1 %}zítra{% else %}dnes{% endif %}</dd>
-</dl>
-<div class="acts"><a class="btn small sec" href="/recording/{{ v.id }}">Záznam a návrh AI</a>{% if v.ready %}<a class="btn small" href="/videos/{{ v.id }}/play.mp4" onclick="return swPlayVideo(this.href, this.dataset.title)" data-title="{{ v.name }}">▶ Přehrát</a><a class="btn small" href="/studio/new/{{ v.id }}" title="Zrychlit, přidat intro, text a hudbu">Vytvořit YouTube video</a><a class="btn small sec" href="/videos/{{ v.id }}/download">⬇ Stáhnout MP4</a>{% endif %}{% if (v.stuck or v.missing) and not v.expired %}<form method="post" action="/videos/{{ v.id }}/retry"><button class="btn small" data-busy="Zadávám video znovu">↻ Vytvořit znovu</button></form>{% endif %}{% if v.detection_id %}<a class="btn small sec" href="/detection/{{ v.detection_id }}">Detekce</a>{% endif %}
-<form method="post" action="/videos/{{ v.id }}/delete" onsubmit="return confirm('Smazat video{% if v.parts_count %} i všechny jeho průběžné části{% endif %}?')"><button class="btn small sec">Smazat</button></form></div></div></div>{% endfor %}
-</div>
-<p class="hint">Uchovávání klipů a výstupů: {{ keep_days }} dní. <a href="/videos/settings">Změnit nastavení</a></p>
-{% if pending_auto or videos|selectattr('in_progress')|list or studio|selectattr('status', 'in', ('queued','rendering'))|list or studio|selectattr('yt_status', 'in', ('queued','uploading'))|list %}<div x-data="autorefresh(20)"></div>{% endif %}
+<dl class="facts"><dt>Kamera</dt><dd>{{ cam(v.camera) }}</dd><dt>Úsek</dt><dd>{{ v.range_h }}</dd><dt>Velikost</dt><dd>{{ v.size_h or '–' }}</dd><dt>Smaže se</dt><dd>{% if v.days_left > 1 %}za {{ v.days_left }} dní{% elif v.days_left == 1 %}zítra{% else %}dnes{% endif %}</dd></dl>
+<div class="acts"><a class="btn small" href="/studio/new/{{ v.id }}">Vytvořit YouTube video</a><a class="btn small sec" href="/videos/{{ v.id }}/download">⬇ Stáhnout MP4</a><a class="btn small sec" href="/recording/{{ v.id }}">Detail a text AI</a>{% if v.detection_id %}<a class="btn small sec" href="/detection/{{ v.detection_id }}">Detekce</a>{% endif %}<form method="post" action="/videos/{{ v.id }}/delete" onsubmit="return confirm('Smazat celé AI video včetně jeho pracovních částí?')"><button class="btn small sec">Smazat</button></form></div></div></div>{% endfor %}
+</div><p class="hint">Uchovávání klipů a výstupů: {{ keep_days }} dní. <a href="/videos/settings">Změnit nastavení</a></p>
+{% endblock %}"""
+
+TEMPLATES["video_delete_all.html"] = """{% extends "base.html" %}{% block content %}
+<section class="card delete-videos-review"><h2>Smazat všechna uložená AI videa?</h2>
+<p>Smažou se uložená AI videa včetně jejich pracovních částí a nedostupných exportů. Počet evidovaných souborů: <strong>{{ total_exports }}</strong>.</p>
+<ul><li>Videa právě používaná při zpracování, nahrávání nebo pokračující události zůstanou zachovaná.</li><li>YouTube videa, detekce a původní kamerové záznamy zůstanou.</li><li>Mazání proběhne na pozadí. Výsledek uvidíš v přehledu videí.</li></ul>
+<p><strong>Tuto akci nelze vrátit.</strong></p>
+{% if deleting %}<p role="status">Mazání už probíhá.</p><a class="btn" href="/videos">Zobrazit průběh</a>{% else %}<form method="post" action="/videos/delete-all"><input type="hidden" name="confirm" value="delete-all"><div class="actions"><a class="btn sec" href="/videos">Zrušit</a><button class="btn danger" data-busy="Spouštím mazání" {% if not total_exports %}disabled{% endif %}>Smazat všechna uložená AI videa</button></div></form>{% endif %}</section>
 {% endblock %}"""
 
 TEMPLATES["event_parts.html"] = """{% extends "base.html" %}{% block content %}
@@ -4472,7 +4487,7 @@ TEMPLATES["studio_video.html"] = """{% extends "base.html" %}{% block actions %}
  {% if v.yt_status == 'done' and v.yt_url %}<p><span class="badge ok">nahráno</span> <a href="{{ v.yt_url }}" target="_blank" rel="noopener"><b>{{ v.yt_url }}</b></a></p><p class="hint">Titulek, popis, viditelnost i playlist můžeš dál upravit přímo na YouTube (YouTube Studio).</p>
   <p class="hint">Uvolnit místo na RPi můžeš v rámečku „Co dál“ – video na YouTube zůstane.</p>
  {% elif v.yt_status in ('queued', 'uploading') %}
- <div x-data='youtubeUpload({{ v.id }}, {{ v.yt_live|tojson }})' aria-live="polite">
+ <div class="upload-focus" x-data='youtubeUpload({{ v.id }}, {{ v.yt_live|tojson }})' aria-live="polite">
  <p><b x-text="state.label">{{ v.yt_live.label }}</b></p>
  <progress x-show="state.progress === null && state.status!=='failed'" aria-label="Přenos čeká na potvrzení"></progress>
  <progress x-show="state.progress !== null && state.status!=='failed'" max="100" :value="state.progress" {% if v.yt_live.progress is not none %}value="{{ v.yt_live.progress }}"{% endif %} aria-label="Potvrzený průběh nahrávání"></progress>
@@ -6559,7 +6574,7 @@ def list_videos(cfg, limit: int = -1, thumbnails: bool = True) -> list:
         in_progress = bool(fr and fr.get("in_progress"))
         stuck = bool(in_progress and age_days * 24 >= 2 or (fr is None and not video and age_days * 24 >= 2))
         rec.update(in_progress=in_progress, stuck=stuck, expired=bool(stuck and rec["start_ts"] < retain_cutoff),
-                   ready=bool(video and video.is_file() and not (fr or {}).get("in_progress")),
+                   ready=bool(size > 0 and not (fr or {}).get("in_progress")),
                    missing=fr is None, size_h=human_size(size) if size else "",
                    duration_min=round((rec["end_ts"] - rec["start_ts"]) / 60, 1),
                    duration_h=human_minutes(rec["end_ts"] - rec["start_ts"]),
@@ -6583,6 +6598,11 @@ def list_videos(cfg, limit: int = -1, thumbnails: bool = True) -> list:
 
 
 def delete_export(cfg, rec: dict):
+    with _export_use_lock:
+        return _delete_export_group(cfg, rec)
+
+
+def _delete_export_group(cfg, rec: dict):
     if not _event_video_lock.acquire(blocking=False):
         return False
     try:
@@ -6592,9 +6612,14 @@ def delete_export(cfg, rec: dict):
                 return True
             rec = dict(current)
             jid = rec.get("event_job_id")
+            parent = jid or rec.get("event_parent_id")
+            if parent and con.execute("SELECT 1 FROM auto_exports WHERE id=? AND status='pending'", (parent,)).fetchone():
+                return False
             parts = [dict(r) for r in con.execute("SELECT * FROM exports WHERE event_parent_id=?", (jid,))] if jid else []
             members = parts + [rec]
             for member in members:
+                if member.get("metadata_status") in ("queued", "working"):
+                    return False
                 if con.execute("SELECT 1 FROM studio_videos WHERE export_id=? AND (status IN ('queued','rendering') OR yt_status IN ('queued','uploading'))", (member["id"],)).fetchone():
                     return False
         # Keep the parent until all child deletions are acknowledged; failures remain retryable.
@@ -6625,6 +6650,7 @@ def _delete_single_export(cfg, rec: dict):
     own.unlink(missing_ok=True)
     with db() as con:
         con.execute("DELETE FROM exports WHERE id=?", (rec["id"],))
+        con.execute("DELETE FROM event_parts WHERE export_id=?", (rec["id"],))
     return True
 
 
@@ -6743,7 +6769,7 @@ def recording_text_save(request: Request, eid: int, title: str = Form(""), descr
 
 @app.post("/recording/{eid}/metadata")
 def recording_metadata_retry(request: Request, eid: int):
-    with db() as con:
+    with _export_use_lock, db() as con:
         con.execute("UPDATE exports SET metadata_status='queued',metadata_error='' WHERE id=? AND COALESCE(metadata_status,'') NOT IN ('queued','working')", (eid,))
     return RedirectResponse(f"/recording/{eid}", status_code=303)
 
@@ -7115,7 +7141,7 @@ def pending_video_status(cfg, job):
             detail = "Frigate neodpovídá. Po obnovení spojení automaticky zkusím export znovu. Původní časový rozsah zůstává zachovaný."
     elif job.get("film_open"):
         title = "Jev pokračuje · souvislé video se připravuje"
-        detail = f"Průběžné části se ukládají už během jevu. Na další AI film čeká do {due}; pokud nenaváže, uzavře dostupný rozsah."
+        detail = f"Po ukončení jevu vznikne jedno video celého úseku. Na pokračování čeká nejdéle do {due}."
     else:
         title = "Čeká na dokončení záznamu"
         detail = f"Export je naplánovaný na {due}, po doběhnutí záznamu a rezervy. Čas dokončení závisí na Frigate."
@@ -7327,7 +7353,7 @@ def detection_export(request: Request, rid: int, name: str = Form(""), before: i
 def preparing_video_exports(videos):
     rows = []
     for v in videos:
-        if not (v.get("auto") or v.get("event_parent_id")) or v["ready"]:
+        if v.get("event_parent_id") or v["ready"]:
             continue
         failed = v["expired"] or v["stuck"]
         rows.append(dict(name=v["name"], detection_id=v.get("detection_id"), ready_part_id=None,
@@ -7400,23 +7426,145 @@ def event_parts_page(request: Request, jid: int):
     return render(request, "event_parts.html", "Průběžné části události", group=group)
 
 
+def completed_ai_videos(videos):
+    with db() as con:
+        unfinished = {r[0] for r in con.execute("SELECT id FROM auto_exports WHERE status='pending'")}
+    return [v for v in videos if v["ready"] and not v.get("event_parent_id")
+            and v.get("video_kind") != "part" and v.get("event_job_id") not in unfinished]
+
+
+def video_activity(cfg, videos, studio):
+    items = []
+    def item(key, name, label, detail, href="", tone="info", active=True, progress=None, eta="", kind="export"):
+        items.append(dict(key=key, name=name, label=label, detail=detail, href=href, tone=tone,
+                          active=active, progress=progress, eta=eta, kind=kind))
+    for row in studio:
+        if row["status"] in ("queued", "rendering"):
+            rendering = row["status"] == "rendering"
+            item(f"studio-{row['id']}", row["title"] or row["name"], "Vytváří se YouTube video" if rendering else "YouTube video čeká na vytvoření",
+                 "Zpracovávám zrychlení, text, intro a hudbu." if rendering else "Ve frontě na zpracování v Raspberry Pi.",
+                 f"/studio/v/{row['id']}", progress=row["progress"] if rendering else None,
+                 eta=f"Odhad dokončení: {row['eta_at']}" if row.get("eta_at") else "", kind="render")
+        elif row["yt_status"] in ("queued", "uploading", "failed"):
+            yt = youtube_upload_state(row)
+            failed = row["yt_status"] == "failed"
+            label = ("Nahrávání na YouTube selhalo" if failed else "Čeká na nahrání na YouTube" if row["yt_status"] == "queued"
+                     else "YouTube převzal soubor · dokončuji" if yt["progress"] == 100 else "Nahrávám na YouTube")
+            item(f"youtube-{row['id']}", row["title"] or row["name"], label,
+                 yt["detail"], f"/studio/v/{row['id']}", tone="err" if failed else "info", active=not failed,
+                 progress=yt["progress"], eta=yt["eta"], kind="upload")
+        elif row["status"] == "failed":
+            item(f"studio-{row['id']}", row["title"] or row["name"], "Vytvoření YouTube videa selhalo",
+                 row.get("message") or "Otevři detail a zkus vytvoření znovu.", f"/studio/v/{row['id']}", tone="err", active=False)
+    for job in pending_auto_exports(cfg) + preparing_video_exports(videos):
+        state = job["video_status"]
+        href = f"/recording/{job['export_id']}" if job.get("export_id") else f"/detection/{job['detection_id']}"
+        item(f"export-{job.get('export_id') or 'job-' + str(job['id'])}", job["name"], state["title"], state["detail"], href,
+             tone="err" if state["tone"] == "failed" else "info", active=state["active"])
+    for job in failed_auto_exports():
+        item(f"failed-{job['id']}", job["name"], "Video se nepodařilo vytvořit", job["message"],
+             f"/detection/{job['detection_id']}", tone="err", active=False)
+    bulk = dict(_video_bulk_state)
+    if bulk:
+        item("delete-all", "Úklid AI videí", "Mažu uložená videa" if bulk["active"] else "Mazání dokončeno",
+             f"Smazáno: {bulk['deleted']}. Ponecháno: {bulk['remaining']}. " +
+             ("Videa používaná při zpracování nebo nepotvrzená Frigate zůstávají." if not bulk["active"] and bulk["remaining"] else ""),
+             tone="info" if bulk["active"] else ("warn" if bulk["remaining"] else "ok"), active=bulk["active"], progress=bulk["progress"])
+    # Trigger a safe gallery reload only when files/statuses change, never for every progress tick.
+    revision = hashlib.sha256(json.dumps([
+        [(v["id"], v["ready"], v.get("metadata_status")) for v in videos],
+        [(r["id"], r["status"], r["ready"], r["yt_status"]) for r in studio]
+    ], sort_keys=True).encode()).hexdigest()
+    return dict(items_list=items, revision=revision)
+
+
+@app.get("/videos/activity")
+def videos_activity(request: Request):
+    cfg = load_config()
+    activity = video_activity(cfg, list_videos(cfg, thumbnails=False), studio_rows(cfg))
+    return JSONResponse(dict(html=jenv.get_template("video_activity_rows.html").render(activity=activity),
+                             revision=activity["revision"], visible=bool(activity["items_list"])), headers={"Cache-Control": "no-store"})
+
+
 @app.get("/videos", response_class=HTMLResponse)
 def videos_page(request: Request):
     cfg = load_config()
-    all_videos = list_videos(cfg)
+    all_videos = list_videos(cfg, thumbnails=False)
     studio = studio_rows(cfg)
-    attach_studio_sources(all_videos, studio)
-    groups = group_event_videos(all_videos)
-    videos = [v for v in all_videos if not v.get("event_parent_id")]
-    return render(request, "videos.html", "AI videa", part_groups=[g for g in groups.values() if g["parts"] and not g["main"]], failed_auto=failed_auto_exports(), pending_auto=pending_auto_exports(cfg) + preparing_video_exports(videos), videos=videos, keep_days=int(cfg.get("export_keep_days", 30) or 30),
-                  ready=storage_ready(), studio=studio, studio_auto=bool(studio_cfg(cfg).get("auto")))
+    videos = completed_ai_videos(all_videos)
+    attach_studio_sources(videos, studio)
+    # Thumbnails are fetched lazily by their existing route, only for finished gallery cards.
+    for v in videos:
+        v["thumb"] = True
+    return render(request, "videos.html", "AI videa", videos=videos, total_exports=len(all_videos),
+                  keep_days=int(cfg.get("export_keep_days", 30) or 30), activity=video_activity(cfg, all_videos, studio),
+                  deleting=bool(_video_bulk_state.get("active")),
+                  subtitle="Hotová videa celých událostí pro další práci.")
 
 
 @app.get("/youtube", response_class=HTMLResponse)
 def youtube_videos(request: Request):
     cfg = load_config()
-    return render(request, "youtube.html", "YouTube videa", studio=studio_rows(cfg), studio_auto=bool(studio_cfg(cfg).get("auto")),
+    studio = studio_rows(cfg)
+    return render(request, "youtube.html", "YouTube videa", studio=studio, studio_auto=bool(studio_cfg(cfg).get("auto")),
+                  activity=video_activity(cfg, list_videos(cfg, thumbnails=False), studio),
                   subtitle="Příprava, náhled a publikování videí na jednom místě.")
+
+
+_video_bulk_lock = threading.Lock()
+_video_bulk_state = {}
+
+
+def delete_all_ai_videos(cfg, rows):
+    """Delete a fixed snapshot of saved exports, including hidden parts; never raw recordings or YouTube."""
+    global _video_bulk_state
+    ids = {r["id"] for r in rows}
+    # Parents first so the existing group-wide busy check protects all of their parts.
+    parents = {r["event_job_id"] for r in rows if r.get("event_job_id")}
+    targets = [r for r in rows if not r.get("event_parent_id") or r["event_parent_id"] not in parents]
+    try:
+        for index, row in enumerate(targets):
+            try:
+                delete_export(cfg, row)
+            except Exception as exc:
+                log(f"Hromadné mazání AI videa {row['id']}: {exc}")
+            with db() as con:
+                remaining = len(ids & {r[0] for r in con.execute("SELECT id FROM exports")})
+            _video_bulk_state = dict(active=True, deleted=len(ids)-remaining, remaining=remaining,
+                                     progress=round(100*(index+1)/len(targets)))
+    finally:
+        _video_bulk_state = dict(_video_bulk_state, active=False, progress=100)
+        _video_bulk_lock.release()
+
+
+@app.get("/videos/delete-all", response_class=HTMLResponse)
+def videos_delete_all_review(request: Request):
+    with db() as con:
+        total = con.execute("SELECT COUNT(*) FROM exports").fetchone()[0]
+    return render(request, "video_delete_all.html", "Smazání AI videí", total_exports=total,
+                  deleting=bool(_video_bulk_state.get("active")))
+
+
+@app.post("/videos/delete-all")
+def videos_delete_all(request: Request, confirm: str = Form("")):
+    if confirm != "delete-all":
+        return JSONResponse({"error": "Potvrď smazání všech uložených AI videí."}, status_code=400)
+    if not _video_bulk_lock.acquire(blocking=False):
+        flash(request, "Mazání už probíhá. Průběh najdeš nad videi.", "warn")
+        return RedirectResponse("/videos", status_code=303)
+    global _video_bulk_state
+    try:
+        cfg = load_config()
+        with db() as con:
+            rows = [dict(r) for r in con.execute("SELECT * FROM exports ORDER BY id")]
+        _video_bulk_state = dict(active=True, deleted=0, remaining=len(rows), progress=0)
+        threading.Thread(target=delete_all_ai_videos, args=(cfg, rows), name="delete-ai-videos", daemon=True).start()
+    except Exception:
+        _video_bulk_state = {}
+        _video_bulk_lock.release()
+        raise
+    flash(request, "Mazání uložených AI videí spuštěno. Používané zdroje a části pokračujících událostí zůstanou zachované.")
+    return RedirectResponse("/videos", status_code=303)
 
 
 @app.post("/videos/keep")
@@ -7776,7 +7924,9 @@ def studio_enqueue(cfg, export: dict, speed: int, intro: bool, music: str, text:
     credit = music_credit(music) if music else ""
     if credit and credit not in (description or ""):
         description = (description.rstrip() + "\n\n" + credit).strip()
-    with db() as con:
+    with _export_use_lock, db() as con:
+        if not con.execute("SELECT 1 FROM exports WHERE id=?", (export["id"],)).fetchone():
+            raise ValueError("Zdrojové AI video už bylo smazáno. Vyber jiné hotové video.")
         cur = con.execute("INSERT INTO studio_videos (export_id, camera, name, speed, intro, music, text, title, description, status, created, auto, trim_start, trim_end) "
                           "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                           (export["id"], export["camera"], export["name"], speed, 1 if intro else 0, music, text, title[:100], description[:5000],
@@ -8175,8 +8325,12 @@ def studio_new_post(request: Request, vid: int, speed: int = Form(20), intro: st
         trim_start, trim_end = studio_trim_bounds(info["duration"], trim_start, trim_end)
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
-    sid = studio_enqueue(cfg, export, speed, bool(intro), music.strip(), text.strip() if text_on else "", title.strip() or export["name"],
-                         description.strip(), trim_start=trim_start, trim_end=trim_end if trim_start or trim_end < info["duration"] - 0.11 else None)
+    try:
+        sid = studio_enqueue(cfg, export, speed, bool(intro), music.strip(), text.strip() if text_on else "", title.strip() or export["name"],
+                             description.strip(), trim_start=trim_start, trim_end=trim_end if trim_start or trim_end < info["duration"] - 0.11 else None)
+    except ValueError as exc:
+        flash(request, str(exc), "err")
+        return RedirectResponse("/videos", status_code=303)
     flash(request, "Video se vytváří – podle délky záznamu to trvá od pár sekund do několika minut. Stránka se sama obnoví.")
     return RedirectResponse(f"/studio/v/{sid}", status_code=303)
 
@@ -11734,6 +11888,25 @@ header.top nav.menu > a.active, header.top nav.menu .dd > button.active { backgr
 .film-pending-item{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;padding:10px 0;border-top:1px solid var(--at-line);text-decoration:none;color:var(--at-text);font-size:13px}
 .film-pending-item>span:last-child{margin-left:auto}
 .film-pending .section-head{margin-bottom:8px}
+
+/* Finished video library and a prominent live work panel. */
+.video-work{margin:1.25rem 0 1.75rem}
+.work-panel{border:2px solid var(--pico-primary);border-radius:16px;padding:1.3rem;background:var(--pico-card-background-color);box-shadow:0 5px 24px rgba(37,99,235,.1)}
+.work-panel>.section-head{margin:0 0 1rem}.work-panel h2{margin:0;font-size:1.35rem}.work-panel .eyebrow{color:var(--pico-primary);font-weight:700}
+.work-item{display:flex;align-items:center;gap:1rem;border:1px solid var(--pico-muted-border-color);border-left:5px solid var(--pico-primary);border-radius:12px;padding:1.1rem;margin:0 0 .75rem;background:var(--pico-background-color);box-shadow:none}
+.work-item:last-child{margin-bottom:0}.work-symbol{display:grid;place-items:center;flex:0 0 44px;height:44px;border-radius:12px;background:var(--sw-info-bg);color:var(--sw-info);font-size:1.8rem;font-weight:700}
+.work-copy{flex:1;min-width:0}.work-heading{display:flex;align-items:center;justify-content:space-between;gap:1rem}.work-heading strong{font-size:1.15rem;line-height:1.4}.work-percent{font-size:1.65rem;white-space:nowrap;color:var(--pico-primary)}
+.work-name{font-weight:600;margin:.3rem 0 .65rem;overflow-wrap:anywhere}.work-item progress,.upload-focus progress{display:block;width:100%;height:12px;margin:.7rem 0;accent-color:var(--pico-primary)}
+.work-detail,.work-eta{font-size:.87rem;margin:.3rem 0 0;line-height:1.5;color:var(--pico-muted-color)}.work-eta{font-weight:600}.work-item>.btn{flex-shrink:0}
+.work-item.err{border-left-color:var(--sw-err)}.work-item.err .work-symbol{background:var(--sw-err-bg);color:var(--sw-err)}
+.work-item.ok{border-left-color:var(--sw-ok)}.work-item.ok .work-symbol{background:var(--sw-ok-bg);color:var(--sw-ok)}
+.work-item.warn{border-left-color:var(--sw-warn)}.work-item.warn .work-symbol{background:var(--sw-warn-bg);color:var(--sw-warn)}
+.video-library-head{align-items:center;gap:1rem;flex-wrap:wrap}.video-library-head h2{margin:0}.video-library-head p{margin:.35rem 0 0}.video-library-head form{margin:0}
+.video-next-state{display:block;padding:.7rem .8rem;margin:.65rem 0;border-radius:8px;background:var(--sw-info-bg);color:var(--sw-info);font-weight:700;font-size:.88rem;text-decoration:none;overflow-wrap:anywhere}
+.video-next-state.ok{background:var(--sw-ok-bg);color:var(--sw-ok)}.video-next-state.err{background:var(--sw-err-bg);color:var(--sw-err)}.video-next-state.warn{background:var(--sw-warn-bg);color:var(--sw-warn)}
+.upload-focus{border:2px solid var(--pico-primary);border-radius:12px;padding:1.2rem;background:var(--sw-info-bg)}.upload-focus>p:first-child{font-size:1.35rem}.studio-wait>.pbar{height:14px}.studio-wait>p>b{font-size:1.3rem}
+.empty-videos{text-align:center;padding:2rem}
+@media(max-width:650px){.work-panel{padding:.8rem}.work-panel>.section-head{align-items:flex-start;gap:.7rem;flex-direction:column}.work-item{padding:.9rem;gap:.7rem;flex-wrap:wrap}.work-symbol{flex-basis:34px;height:34px;font-size:1.4rem}.work-copy{flex-basis:75%}.work-heading{align-items:flex-start;gap:.4rem}.work-heading strong{font-size:1rem}.work-percent{font-size:1.2rem}.work-item>.btn{margin-left:auto}.video-library-head form,.video-library-head form .btn{width:100%}}
 ATMOVIO_CSS_EOF
   cat > "$1/atmovio.js" <<'ATMOVIO_JS_EOF'
 /* Atmovio – interakce (Alpine.js komponenty + pomocné funkce). */
@@ -11773,6 +11946,33 @@ ATMOVIO_CSS_EOF
           } catch(error) {
             if(error.name!=='AbortError'){this.message=error.message;this.$refs.charts.replaceChildren();}
           } finally {if(controller===this.controller)this.busy=false;}
+        }
+      };
+    });
+    Alpine.data('videoActivity', function (revision) {
+      return {visible:true, offline:false, changed:false,
+        timer:null, controller:null, stopped:false,
+        init: function () { this.visible=!!this.$el.querySelector('[data-work-id]'); this.timer=setTimeout(()=>this.check(),4000); },
+        destroy: function () { this.stopped=true; clearTimeout(this.timer); if(this.controller)this.controller.abort(); },
+        check: async function () {
+          if(this.stopped)return;
+          const controller=new AbortController();this.controller=controller;
+          const timeout=setTimeout(()=>controller.abort(),12000);
+          try {
+            if(document.visibilityState!=='visible')return;
+            const response=await fetch('/videos/activity',{cache:'no-store',credentials:'same-origin',signal:controller.signal});
+            if(!response.ok || response.redirected)throw new Error('Status unavailable');
+            const state=await response.json();
+            if(typeof state.html!=='string' || !state.revision)throw new Error('Invalid status');
+            if(this.stopped)return;
+            // The fragment is rendered and escaped by our authenticated server, just like the initial page.
+            if(this.lastHtml!==state.html){this.$refs.items.innerHTML=state.html;this.lastHtml=state.html;}
+            this.visible=state.visible;this.offline=false;this.changed=state.revision!==revision;
+            const busy=document.querySelector('form:focus-within') || document.body.classList.contains('lb-open') ||
+              Array.from(document.querySelectorAll('video')).some(v=>!v.paused);
+            if(this.changed && !busy)location.reload();
+          } catch(error) { if(!this.stopped)this.offline=true; }
+          finally {clearTimeout(timeout);if(!this.stopped)this.timer=setTimeout(()=>this.check(),4000);}
         }
       };
     });
