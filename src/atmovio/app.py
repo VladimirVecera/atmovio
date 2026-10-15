@@ -57,7 +57,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "5.3.19"
+APP_VERSION = "5.3.20"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -3991,16 +3991,23 @@ TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<d
   <template x-if="music"><div><audio controls preload="none" style="width:100%;margin-top:.5rem" :src="'/studio/asset/music/' + encodeURIComponent(music)" @play="solo($event.target)" @error="previewError = 'Skladbu nelze přehrát. Zkontroluj soubor v knihovně hudby.'"></audio><p class="hint" role="status" x-show="previewError" x-text="previewError"></p></div></template>
   <p class="hint">Hudba začne po intru. Autor se doplní do popisu.</p><details class="inline-help"><summary>Průběh hudby</summary><p class="hint" style="margin:.4rem 0 .6rem">Hudba začne až po intru, plynule zesílí a na konci ztichne ({{ sc.fade_in }} s / {{ sc.fade_out }} s); kratší skladba se opakuje. Do popisu videa se automaticky přidá autor skladby.</p></details>
   <details class="finder" :open="open" @toggle="open = $el.open"><summary>🔎 Najít hudbu k tomuto videu (Openverse – volně použitelná, CC0 / CC BY)</summary>
-   <div class="row" style="margin-top:.5rem;align-items:end"><div><input type="text" x-model="q" @keydown.enter.prevent="search()" placeholder="např. calm piano, sunset, ambient…"></div>
-    <div style="flex:0 0 auto;min-width:0"><select x-model="len" style="width:auto"><option value="">libovolná délka</option><option value="short">do 2 min</option><option value="medium">2–10 min</option><option value="long">nad 10 min</option></select></div>
-    <button type="button" class="btn small" style="flex:0 0 auto" @click="search()" :disabled="busy">Hledat</button></div>
+   <fieldset class="music-search-fields" :disabled="busy" :aria-busy="busy">
+   <div class="music-search-row"><div><label for="music-query" x-text="searchIn === 'title' ? 'Název skladby' : 'Téma / nálada'"></label><input id="music-query" type="text" x-model="q" maxlength="100" @keydown.enter.prevent="search()" :placeholder="searchIn === 'title' ? 'např. run (lze nechat prázdné)' : 'např. calm, sunset, ambient…'"></div>
+    <div><label for="music-length">Délka</label><select id="music-length" x-model="len"><option value="">Libovolná délka</option><option value="short">do 2 min</option><option value="medium">2–10 min</option><option value="long">nad 10 min</option></select></div>
+    <button type="button" class="btn small" @click="search()" x-text="busy ? 'Hledám…' : 'Hledat'"></button></div>
+   <fieldset class="music-instruments"><legend>Nástroje a obsazení</legend>
+    <div class="chips">{% for key, label in instruments %}<label class="chip"><input type="checkbox" value="{{ key }}" x-model="instruments">{{ label }}</label>{% endfor %}</div>
+    <div class="music-filter-note"><span class="hint">Vybrat můžeš více možností. Skladba musí mít všechny vybrané nástroje ve štítcích autora.</span><button type="button" class="btn small sec" @click="instruments = []" x-show="instruments.length" x-cloak>Zrušit výběr</button></div>
+   </fieldset>
    <details class="inline-help"><summary>Další filtry</summary><div class="row" style="margin-top:.5rem">
+    <div><label>Hledat text v</label><select x-model="searchIn"><option value="title">Názvu skladby</option><option value="tags">Tématu / náladě (štítky)</option></select></div>
     <div><label>Licence</label><select x-model="license"><option value="">CC0 a CC BY</option><option value="cc0">CC0</option><option value="by">CC BY</option></select></div>
-    <div><label>Autor</label><input type="text" x-model="creator" placeholder="Jméno autora" @keydown.enter.prevent="search()"></div>
+    <div><label>Autor / interpret</label><input type="text" x-model="creator" maxlength="100" placeholder="Jméno autora nebo interpreta" @keydown.enter.prevent="search()"></div>
     <div><label>Formát</label><select x-model="extension"><option value="">Všechny</option><option value="mp3">MP3</option><option value="ogg">OGG</option><option value="wav">WAV</option><option value="flac">FLAC</option></select></div>
    </div></details>
-   <div class="chips">{% for lbl, qq in quick %}<span class="chip" @click="q = '{{ qq }}'; search()">{{ lbl }}</span>{% endfor %}</div>
-   <p class="hint" x-show="msg" x-text="msg"></p>
+   <div class="music-moods"><span class="hint">Rychlé hledání podle nálady</span><div class="chips">{% for lbl, qq in quick %}<button type="button" class="chip" @click="searchIn = 'tags'; q = '{{ qq }}'; $nextTick(() => search())">{{ lbl }}</button>{% endfor %}</div></div>
+   </fieldset>
+   <p class="hint" role="status" aria-live="polite" x-show="msg" x-text="msg"></p>
    <div class="tracks" x-show="items.length">
     <template x-for="t in items" :key="t.id"><div class="track">
      <audio controls preload="none" :src="t.url" @play="solo($event.target)"></audio>
@@ -7885,7 +7892,7 @@ def studio_new(request: Request, vid: int, again: int = 0):
                 values.update(title=proposal["title"], description=proposal["description"])
         except (ValueError, TypeError):
             pass
-    return render(request, "studio_new.html", "Studio – nové video", export=export, values=values, quick=MUSIC_QUICK,
+    return render(request, "studio_new.html", "Studio – nové video", export=export, values=values, quick=MUSIC_QUICK, instruments=MUSIC_INSTRUMENTS,
                   subtitle="Zrychlení, intro, text a hudba k vystřiženému videu. Než se nahraje kamkoli, uvidíš výsledek.", **ctx)
 
 
@@ -8158,8 +8165,10 @@ def studio_music_delete(request: Request, name: str = Form(...)):
 
 # ---------- Hledání hudby (Openverse – Creative Commons, CC0 / CC BY) ----------
 OPENVERSE_API = "https://api.openverse.org/v1"
-MUSIC_QUICK = [("klidná", "calm ambient"), ("klavír", "piano"), ("kytara", "acoustic guitar"), ("západ slunce", "sunset chill"),
-               ("epická", "epic cinematic"), ("elektronika", "electronic ambient"), ("příroda", "nature ambient"), ("lo-fi", "lofi chill")]
+MUSIC_QUICK = [("klidná", "calm"), ("ambientní", "ambient"), ("epická", "epic"), ("elektronická", "electronic"), ("lo-fi", "lofi")]
+MUSIC_INSTRUMENTS = [("piano", "Klavír / piáno"), ("orchestra", "Orchestr"), ("guitar", "Kytara"), ("strings", "Smyčce"),
+                     ("violin", "Housle"), ("cello", "Violoncello"), ("flute", "Flétna"), ("harp", "Harfa"),
+                     ("drums", "Bicí"), ("synthesizer", "Syntezátor"), ("choir", "Sbor")]
 _ov_token: dict = {"token": "", "until": 0.0}
 
 
@@ -8186,15 +8195,38 @@ def openverse_headers(cfg) -> dict:
     return h
 
 
-def music_search(cfg, q: str, length: str = "", license: str = "", creator: str = "", extension: str = "") -> dict:
+def music_search(cfg, q: str, length: str = "", license: str = "", creator: str = "", extension: str = "",
+                 instruments: str = "", search_in: str = "") -> dict:
     """Vrátí {'items': [...], 'error': ''}; jen hudba pod CC0 / CC BY."""
-    params = {"q": q[:100], "license": "cc0,by", "category": "music", "page_size": 20, "mature": "false"}
+    params = {"license": "cc0,by", "category": "music", "page_size": 20, "mature": "false"}
+    selected = set(instruments.split(","))
+    if selected - {key for key, _ in MUSIC_INSTRUMENTS} - {""} or search_in not in ("", "title", "tags"):
+        return {"items": [], "error": "Neplatný filtr hudby. Obnov stránku a vyber nástroje z nabídky."}
+    selected = [key for key, _ in MUSIC_INSTRUMENTS if key in selected]
+    q, creator = q.strip()[:100], creator.strip()[:100]
+    if (q and len(q) < 2) or (not q and not selected and len(creator) < 2):
+        return {"items": [], "error": "Zadej alespoň dvě písmena názvu nebo autora, případně vyber nástroj."}
+    # Openverse ignores title/tags/creator whenever q is sent. Field searches
+    # combine correctly; explicit + requires every selected instrument/word.
+    # https://docs.openverse.org/api/reference/search_algorithm.html#individual-field-querying
+    def terms(value):
+        return " +".join('"' + word + '"' for word in re.findall(r"\w+", value, flags=re.UNICODE))
+    if search_in or selected or creator:
+        if q:
+            params[search_in or "title"] = terms(q)
+        tags = [params.get("tags", "")] + ['"' + key + '"' for key in selected]
+        if any(tags):
+            params["tags"] = " +".join(t for t in tags if t)
+        if creator:
+            params["creator"] = terms(creator)
+        if not any(params.get(field) for field in ("title", "tags", "creator")):
+            return {"items": [], "error": "Zadej název nebo autora obsahující písmena, případně vyber nástroj."}
+    else:
+        params["q"] = q
     if length in ("short", "medium", "long"):
         params["length"] = length
     if license in ("cc0", "by"):
         params["license"] = license
-    if creator.strip():
-        params["creator"] = creator.strip()[:100]
     if extension in ("mp3", "ogg", "wav", "flac"):
         params["extension"] = extension
     try:
@@ -8215,7 +8247,7 @@ def music_search(cfg, q: str, length: str = "", license: str = "", creator: str 
                       "license": (x.get("license") or "").upper() + (" " + x["license_version"] if x.get("license_version") else ""),
                       "attribution": x.get("attribution") or "", "page": x.get("foreign_landing_url") or "", "genres": ", ".join(x.get("genres") or [])[:60],
                       "filetype": (x.get("filetype") or "").lower(), "size": int(x.get("filesize") or 0)})
-    return {"items": items, "error": "" if items else "Nic nenalezeno – zkus jiné slovo (anglicky funguje nejlépe: calm, piano, sunset…)."}
+    return {"items": items, "error": "" if items else "Žádná skladba neodpovídá výběru. Zkus ubrat nástroj, změnit název nebo autora. Nástroje se hledají podle štítků skladeb."}
 
 
 def music_meta_path(name: str) -> Path:
@@ -8277,11 +8309,9 @@ def music_download(cfg, item: dict) -> str:
 
 
 @app.get("/studio/music/search")
-def studio_music_search(request: Request, q: str = "", length: str = "", license: str = "", creator: str = "", extension: str = ""):
-    q = q.strip()
-    if len(q) < 2:
-        return JSONResponse({"items": [], "error": "Zadej aspoň dvě písmena."})
-    return JSONResponse(music_search(load_config(), q, length, license, creator, extension))
+def studio_music_search(request: Request, q: str = "", length: str = "", license: str = "", creator: str = "", extension: str = "",
+                        instruments: str = "", search_in: str = ""):
+    return JSONResponse(music_search(load_config(), q, length, license, creator, extension, instruments, search_in))
 
 
 @app.post("/studio/music/fetch")

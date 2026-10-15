@@ -2,6 +2,12 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 5.3.20 – 2026-10-15 – music instrument and performer filters
+
+- Add visible multi-select instrument and ensemble filters, including piano and orchestra; combine them with a song title or search by instruments alone.
+- Search titles, mood tags and creators through Openverse's field queries so performer filters are honored; require every selected instrument and retain CC0 / CC BY restrictions.
+- Preserve the typed title when selecting instruments, clear outdated results after filter changes, and explain that instrument matches depend on the track's tags.
+
 ## 5.3.19 – 2026-10-15 – finished video library and visible progress
 
 - Show only available, completed main event videos and manual clips in the AI video gallery; keep intermediate safety parts out of the library and export the complete event as one file.

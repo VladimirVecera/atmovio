@@ -105,7 +105,8 @@ with contextlib.ExitStack() as stack:
   search.return_value.status_code=200;search.return_value.ok=True;search.return_value.json.return_value={'results':[]}
   a.music_search(cfg,'piano','medium','cc0','A & B','mp3')
   params=search.call_args.kwargs['params']
-  assert params['length']=='medium' and params['license']=='cc0' and params['creator']=='A & B' and params['extension']=='mp3'
+  assert params['length']=='medium' and params['license']=='cc0' and params['creator']=='"A" +"B"' and params['extension']=='mp3'
+  assert params['title']=='"piano"' and 'q' not in params  # q would silently disable creator filtering in Openverse
   a.music_search(cfg,'piano',license='by-nc',extension='exe')
   assert search.call_args.kwargs['params']['license']=='cc0,by' and 'extension' not in search.call_args.kwargs['params']
  ok('Openverse filters preserve license restrictions and forward supported length, creator and format values')

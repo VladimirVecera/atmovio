@@ -390,15 +390,25 @@
     // ---------- Hledání hudby (Openverse) přímo u videa ----------
     Alpine.data('musicFinder', function (initial) {
       return {
-        q: '', len: '', license: '', creator: '', extension: '', previewError: '', items: [], msg: '', busy: false, open: false, music: initial || '',
-        init: function () { this.$watch('music', () => { this.previewError = ''; }); },
+        q: '', searchIn: 'title', instruments: [], len: '', license: '', creator: '', extension: '', previewError: '', items: [], msg: '', busy: false, open: false, music: initial || '',
+        init: function () {
+          this.$watch('music', () => { this.previewError = ''; });
+          ['q', 'searchIn', 'instruments', 'len', 'license', 'creator', 'extension'].forEach(key => {
+            this.$watch(key, () => { this.items = []; this.msg = ''; });
+          });
+        },
         solo: function (current) { this.$root.querySelectorAll('audio').forEach(a => { if (a !== current) a.pause(); }); },
         search: function () {
           var self = this;
-          if (self.q.trim().length < 2) { self.msg = 'Zadej aspoň dvě písmena.'; return; }
+          if (self.busy) return;
+          var query = self.q.trim();
+          if ((query && query.length < 2) || (!query && !self.instruments.length && self.creator.trim().length < 2)) {
+            self.msg = 'Zadej alespoň dvě písmena názvu nebo autora, případně vyber nástroj.'; return;
+          }
           self.busy = true; self.msg = 'Hledám…'; self.items = [];
-          fetch('/studio/music/search?q=' + encodeURIComponent(self.q.trim()) + '&length=' + encodeURIComponent(self.len) + '&license=' + encodeURIComponent(self.license) + '&creator=' + encodeURIComponent(self.creator) + '&extension=' + encodeURIComponent(self.extension), { credentials: 'same-origin' })
-            .then(function (r) { return r.json(); })
+          var params = new URLSearchParams({ q: query, search_in: self.searchIn, instruments: self.instruments.join(','), length: self.len, license: self.license, creator: self.creator.trim(), extension: self.extension });
+          return fetch('/studio/music/search?' + params, { credentials: 'same-origin' })
+            .then(function (r) { if (!r.ok) throw new Error('search'); return r.json(); })
             .then(function (d) { self.items = d.items || []; self.msg = d.error || (self.items.length + ' skladeb – přehraj si je a klikni Použít'); })
             .catch(function () { self.msg = 'Hledání selhalo – RPi nejspíš nemá přístup na internet.'; })
             .finally(function () { self.busy = false; });

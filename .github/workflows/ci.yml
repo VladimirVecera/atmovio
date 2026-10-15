@@ -35,6 +35,7 @@ jobs:
         run: |
           python3 -m pip install -q httpx
           python3 tests/regression.py
+          python3 tests/music_search.py
           python3 tests/ai_films.py
           python3 tests/video_ranges.py
           python3 tests/studio_status.py
@@ -42,6 +43,8 @@ jobs:
           python3 tests/event_groups.py
           python3 tests/event_video_delivery.py
           python3 tests/storage_guard.py
+      - name: Music finder interaction checks
+        run: node tests/music_finder.js
       - name: No personal data in sources
         run: |
           # heslo zapsané natvrdo (ne odkaz na proměnnou jako PASSWORD="$ADMIN_PW")
