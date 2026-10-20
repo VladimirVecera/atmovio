@@ -390,13 +390,14 @@
     // ---------- Hledání hudby (Openverse) přímo u videa ----------
     Alpine.data('musicFinder', function (initial) {
       return {
-        q: '', searchIn: 'title', instruments: [], len: '', license: '', creator: '', extension: '', previewError: '', items: [], msg: '', busy: false, open: false, music: initial || '',
+        q: '', searchIn: 'title', instruments: [], len: '', license: '', creator: '', extension: '', previewError: '', items: [], msg: '', busy: false, retryable: false, searchController: null, open: false, music: initial || '',
         init: function () {
           this.$watch('music', () => { this.previewError = ''; });
           ['q', 'searchIn', 'instruments', 'len', 'license', 'creator', 'extension'].forEach(key => {
-            this.$watch(key, () => { this.items = []; this.msg = ''; });
+            this.$watch(key, () => { this.items = []; this.msg = ''; this.retryable = false; });
           });
         },
+        destroy: function () { var controller = this.searchController; this.searchController = null; if (controller) controller.abort(); },
         solo: function (current) { this.$root.querySelectorAll('audio').forEach(a => { if (a !== current) a.pause(); }); },
         search: function () {
           var self = this;
@@ -405,20 +406,36 @@
           if ((query && query.length < 2) || (!query && !self.instruments.length && self.creator.trim().length < 2)) {
             self.msg = 'Zadej alespoň dvě písmena názvu nebo autora, případně vyber nástroj.'; return;
           }
-          self.busy = true; self.msg = 'Hledám…'; self.items = [];
+          self.busy = true; self.retryable = false; self.msg = 'Hledám v Openverse…'; self.items = [];
+          var controller = new AbortController();
+          self.searchController = controller;
+          var slow = setTimeout(function () { self.msg = 'Openverse odpovídá pomaleji. Čekám na výsledky; při výpadku dotaz jednou zopakuji…'; }, 10000);
+          // Covers token retrieval and both server attempts, then releases the form.
+          var deadline = setTimeout(function () { controller.abort(); }, 95000);
           var params = new URLSearchParams({ q: query, search_in: self.searchIn, instruments: self.instruments.join(','), length: self.len, license: self.license, creator: self.creator.trim(), extension: self.extension });
-          return fetch('/studio/music/search?' + params, { credentials: 'same-origin' })
+          return fetch('/studio/music/search?' + params, { credentials: 'same-origin', signal: controller.signal })
             .then(function (r) { if (!r.ok) throw new Error('search'); return r.json(); })
-            .then(function (d) { self.items = d.items || []; self.msg = d.error || (self.items.length + ' skladeb – přehraj si je a klikni Použít'); })
-            .catch(function () { self.msg = 'Hledání selhalo – RPi nejspíš nemá přístup na internet.'; })
-            .finally(function () { self.busy = false; });
+            .then(function (d) {
+              if (self.searchController !== controller) return;
+              self.items = d.items || []; self.retryable = !!d.retryable;
+              self.msg = d.error || (self.items.length + ' skladeb – přehraj si je a klikni Použít');
+            })
+            .catch(function (error) {
+              if (self.searchController !== controller) return;
+              self.retryable = true;
+              self.msg = error.name === 'AbortError' ? 'Hledání trvá příliš dlouho. Zkus to za chvíli znovu; vybrané filtry zůstaly zachované.' : 'Nepodařilo se získat odpověď od Atmovia. Obnov stránku nebo zkus hledání znovu.';
+            })
+            .finally(function () {
+              clearTimeout(slow); clearTimeout(deadline);
+              if (self.searchController === controller) { self.searchController = null; self.busy = false; }
+            });
         },
         use: function (t) {
           var self = this, fd = new FormData();
           var csrf = document.querySelector('input[name=csrf_token]');
           fd.append('csrf_token', csrf ? csrf.value : '');
           ['id', 'url', 'title', 'creator', 'license', 'attribution', 'page', 'filetype'].forEach(function (k) { fd.append(k, t[k] || ''); });
-          self.busy = true; self.msg = 'Stahuji „' + t.title + '“ na RPi…';
+          self.busy = true; self.retryable = false; self.msg = 'Stahuji „' + t.title + '“ na RPi…';
           fetch('/studio/music/fetch', { method: 'POST', body: fd, credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (d) {

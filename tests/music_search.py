@@ -23,7 +23,8 @@ with tempfile.TemporaryDirectory(prefix="atmovio-music-") as tmp:
         "genres": ["classical"], "tags": [{"name": "piano"}, {"name": "orchestra"}],
         "foreign_landing_url": "https://example.org/run", "attribution": "Test credit",
     }, {"id": "no-playable-url"}]}
-    with patch.object(a, "openverse_headers", return_value={}), patch.object(a.requests, "get", return_value=response) as remote:
+    with patch.object(a, "openverse_headers", return_value={}) as auth, \
+         patch.object(a.requests, "get", return_value=response) as remote, patch.object(a.time, "sleep") as pause:
         client = TestClient(a.app)
         assert client.get("/studio/music/search?q=run", follow_redirects=False).status_code == 303
         token = re.search(r'name="csrf_token" value="([^"]+)"', client.get("/login").text)[1]
@@ -66,12 +67,53 @@ with tempfile.TemporaryDirectory(prefix="atmovio-music-") as tmp:
         assert sent["license"] == "cc0,by" and "extension" not in sent
         response.json.return_value = {"results": []}
         assert "Žádná skladba" in a.music_search(cfg, "run", instruments="piano,orchestra")["error"]
-        response.status_code = 429
-        assert "limit" in a.music_search(cfg, "run")["error"]
-        response.status_code, response.ok = 503, False
-        assert "HTTP 503" in a.music_search(cfg, "run")["error"]
-        remote.side_effect = a.requests.Timeout("fixture")
-        assert "neodpovídá" in a.music_search(cfg, "run")["error"]
+        response.json.return_value = {"results": [{"id": "recovered", "url": "https://example.org/run.mp3", "title": "Run"}]}
+        for failure in [a.requests.ReadTimeout("raw exception must stay hidden"), a.requests.ConnectTimeout("fixture"),
+                        a.requests.ConnectionError("fixture"), Mock(status_code=502, ok=False),
+                        Mock(status_code=503, ok=False), Mock(status_code=504, ok=False)]:
+            remote.reset_mock(); pause.reset_mock(); auth.reset_mock()
+            remote.side_effect = [failure, response]
+            recovered = a.music_search(cfg, "run", instruments="piano,orchestra", creator="Test Artist", license="by")
+            assert remote.call_count == 2 and pause.call_count == 1 and auth.call_count == 1
+            first, second = [call.kwargs for call in remote.call_args_list]
+            assert first == second  # Retry never relaxes filters or license.
+            assert first["timeout"] == (5, 30)
+            assert first["params"]["title"] == '"run"' and first["params"]["tags"] == '"piano" +"orchestra"'
+            assert not recovered["error"] and not recovered.get("retryable") and recovered["items"][0]["title"] == "Run"
+
+        for failure, expected in [(a.requests.ReadTimeout("raw exception must stay hidden"), "neodpovědělo včas"),
+                                  (a.requests.ConnectionError("fixture"), "DNS"),
+                                  (Mock(status_code=503, ok=False), "HTTP 503")]:
+            remote.reset_mock(); pause.reset_mock()
+            remote.side_effect = [failure, failure]
+            failed = a.music_search(cfg, "run")
+            assert remote.call_count == 2 and pause.call_count == 1
+            assert failed["retryable"] and expected in failed["error"] and not failed["items"]
+            assert "raw exception" not in failed["error"] and "fixture" not in failed["error"]
+
+        for code in [400, 401, 403, 429]:
+            remote.reset_mock(); pause.reset_mock()
+            remote.side_effect = None; remote.return_value = Mock(status_code=code, ok=False)
+            failed = a.music_search(cfg, "run")
+            assert failed["error"] and not failed.get("retryable")
+            assert remote.call_count == 1 and pause.call_count == 0
+            if code == 429:
+                assert "Vyšší limit" in failed["error"]
+                auth.return_value = {"Authorization": "Bearer fixture"}
+                assert "registrací" not in a.music_search(cfg, "run")["error"]
+                auth.return_value = {}
+
+        remote.reset_mock(); pause.reset_mock()
+        remote.side_effect = a.requests.exceptions.SSLError("fixture")
+        assert "certifikáty" in a.music_search(cfg, "run")["error"]
+        assert remote.call_count == 1 and pause.call_count == 0
+        remote.side_effect = None; remote.return_value = response
+        for body in [None, [], {"results": None}, {"results": "invalid"}]:
+            response.json.return_value = body
+            assert "neplatnou odpověď" in a.music_search(cfg, "run")["error"]
+        response.json.side_effect = ValueError("invalid JSON")
+        failed = client.get("/studio/music/search?q=run").json()
+        assert failed["retryable"] and "neplatnou odpověď" in failed["error"]
 
     # Render the actual Studio page to cover its instrument list and labels.
     eid = a.record_export(cfg, "fixture", None, "east", "Fixture", 0, 1000)
@@ -88,5 +130,6 @@ with tempfile.TemporaryDirectory(prefix="atmovio-music-") as tmp:
             assert f'value="{key}" x-model="instruments">{label}' in page.text
         assert 'for="music-query"' in page.text and "Autor / interpret" in page.text
         assert 'type="button" class="chip"' in page.text
+        assert "Zkusit hledání znovu" in page.text
 
-print("PASS: combined Openverse filters, instruments-only, creator-only, legacy search, validation, errors, auth and Studio form")
+print("PASS: combined filters, bounded retry/recovery, timeout/connection/HTTP/JSON errors, auth and Studio form")

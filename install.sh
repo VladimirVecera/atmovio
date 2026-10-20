@@ -476,7 +476,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "5.3.20"
+APP_VERSION = "5.3.21"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -4427,6 +4427,7 @@ TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<d
    <div class="music-moods"><span class="hint">Rychlé hledání podle nálady</span><div class="chips">{% for lbl, qq in quick %}<button type="button" class="chip" @click="searchIn = 'tags'; q = '{{ qq }}'; $nextTick(() => search())">{{ lbl }}</button>{% endfor %}</div></div>
    </fieldset>
    <p class="hint" role="status" aria-live="polite" x-show="msg" x-text="msg"></p>
+   <button type="button" class="btn small sec" x-show="retryable && !busy" x-cloak @click="search()">Zkusit hledání znovu</button>
    <div class="tracks" x-show="items.length">
     <template x-for="t in items" :key="t.id"><div class="track">
      <audio controls preload="none" :src="t.url" @play="solo($event.target)"></audio>
@@ -8589,6 +8590,7 @@ MUSIC_INSTRUMENTS = [("piano", "Klavír / piáno"), ("orchestra", "Orchestr"), (
                      ("violin", "Housle"), ("cello", "Violoncello"), ("flute", "Flétna"), ("harp", "Harfa"),
                      ("drums", "Bicí"), ("synthesizer", "Syntezátor"), ("choir", "Sbor")]
 _ov_token: dict = {"token": "", "until": 0.0}
+OPENVERSE_SEARCH_TIMEOUT = (5, 30)  # connect/read; retry transient failures at most once
 
 
 def openverse_cfg(cfg) -> dict:
@@ -8648,17 +8650,45 @@ def music_search(cfg, q: str, length: str = "", license: str = "", creator: str 
         params["license"] = license
     if extension in ("mp3", "ogg", "wav", "flac"):
         params["extension"] = extension
-    try:
-        r = requests.get(f"{OPENVERSE_API}/audio/", params=params, headers=openverse_headers(cfg), timeout=20)
-    except Exception as e:
-        return {"items": [], "error": f"Openverse neodpovídá ({e}). Zkontroluj, že RPi má přístup na internet."}
-    if r.status_code == 429:
-        return {"items": [], "error": "Vyčerpaný limit anonymního hledání (Openverse). Zaregistruj Atmovio v Nastavení → Video studio – je to zdarma a limit je pak prakticky neomezený."}
-    if not r.ok:
-        return {"items": [], "error": f"Openverse vrátil chybu HTTP {r.status_code}."}
+    headers = openverse_headers(cfg)
+    for attempt in range(2):
+        try:
+            r = requests.get(f"{OPENVERSE_API}/audio/", params=params, headers=headers, timeout=OPENVERSE_SEARCH_TIMEOUT)
+        except requests.exceptions.SSLError:
+            return {"items": [], "error": "Nepodařilo se ověřit zabezpečené spojení s Openverse. Zkontroluj datum a čas RPi a systémové certifikáty."}
+        except requests.Timeout:
+            error = "Openverse neodpovědělo včas ani po opakování. Zkus hledání za chvíli znovu. Vybrané filtry zůstaly zachované."
+            reason = "timeout"
+        except requests.ConnectionError:
+            error = "Spojení s Openverse se nepodařilo navázat nebo bylo přerušeno. Zkus to za chvíli; pokud potíže trvají, zkontroluj internet a DNS na RPi."
+            reason = "connection"
+        except requests.RequestException:
+            return {"items": [], "error": "Hledání v Openverse se nepodařilo dokončit. Zkus to za chvíli znovu.", "retryable": True}
+        else:
+            if r.status_code == 429:
+                hint = "" if headers.get("Authorization") else " Vyšší limit získáš registrací v Nastavení YouTube videí."
+                return {"items": [], "error": "Openverse dočasně omezilo počet hledání. Zkus to později." + hint}
+            if r.status_code in (500, 502, 503, 504):
+                error = f"Openverse je dočasně nedostupné (HTTP {r.status_code}). Zkus hledání za chvíli znovu."
+                reason = f"HTTP {r.status_code}"
+            elif not r.ok:
+                return {"items": [], "error": f"Openverse vrátilo chybu HTTP {r.status_code}."}
+            else:
+                try:
+                    data = r.json()
+                except ValueError:
+                    data = None
+                if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+                    return {"items": [], "error": "Openverse vrátilo neplatnou odpověď. Zkus hledání za chvíli znovu.", "retryable": True}
+                break
+        log(f"Openverse: hledání selhalo ({reason}), pokus {attempt + 1}/2.")
+        if attempt == 0:
+            time.sleep(1)
+        else:
+            return {"items": [], "error": error, "retryable": True}
     items = []
-    for x in (r.json().get("results") or []):
-        if not x.get("url"):
+    for x in data["results"]:
+        if not isinstance(x, dict) or not x.get("url"):
             continue
         dur = int((x.get("duration") or 0) / 1000)
         items.append({"id": x.get("id"), "title": (x.get("title") or "bez názvu")[:120], "creator": (x.get("creator") or "")[:80],
@@ -12350,13 +12380,14 @@ ATMOVIO_CSS_EOF
     // ---------- Hledání hudby (Openverse) přímo u videa ----------
     Alpine.data('musicFinder', function (initial) {
       return {
-        q: '', searchIn: 'title', instruments: [], len: '', license: '', creator: '', extension: '', previewError: '', items: [], msg: '', busy: false, open: false, music: initial || '',
+        q: '', searchIn: 'title', instruments: [], len: '', license: '', creator: '', extension: '', previewError: '', items: [], msg: '', busy: false, retryable: false, searchController: null, open: false, music: initial || '',
         init: function () {
           this.$watch('music', () => { this.previewError = ''; });
           ['q', 'searchIn', 'instruments', 'len', 'license', 'creator', 'extension'].forEach(key => {
-            this.$watch(key, () => { this.items = []; this.msg = ''; });
+            this.$watch(key, () => { this.items = []; this.msg = ''; this.retryable = false; });
           });
         },
+        destroy: function () { var controller = this.searchController; this.searchController = null; if (controller) controller.abort(); },
         solo: function (current) { this.$root.querySelectorAll('audio').forEach(a => { if (a !== current) a.pause(); }); },
         search: function () {
           var self = this;
@@ -12365,20 +12396,36 @@ ATMOVIO_CSS_EOF
           if ((query && query.length < 2) || (!query && !self.instruments.length && self.creator.trim().length < 2)) {
             self.msg = 'Zadej alespoň dvě písmena názvu nebo autora, případně vyber nástroj.'; return;
           }
-          self.busy = true; self.msg = 'Hledám…'; self.items = [];
+          self.busy = true; self.retryable = false; self.msg = 'Hledám v Openverse…'; self.items = [];
+          var controller = new AbortController();
+          self.searchController = controller;
+          var slow = setTimeout(function () { self.msg = 'Openverse odpovídá pomaleji. Čekám na výsledky; při výpadku dotaz jednou zopakuji…'; }, 10000);
+          // Covers token retrieval and both server attempts, then releases the form.
+          var deadline = setTimeout(function () { controller.abort(); }, 95000);
           var params = new URLSearchParams({ q: query, search_in: self.searchIn, instruments: self.instruments.join(','), length: self.len, license: self.license, creator: self.creator.trim(), extension: self.extension });
-          return fetch('/studio/music/search?' + params, { credentials: 'same-origin' })
+          return fetch('/studio/music/search?' + params, { credentials: 'same-origin', signal: controller.signal })
             .then(function (r) { if (!r.ok) throw new Error('search'); return r.json(); })
-            .then(function (d) { self.items = d.items || []; self.msg = d.error || (self.items.length + ' skladeb – přehraj si je a klikni Použít'); })
-            .catch(function () { self.msg = 'Hledání selhalo – RPi nejspíš nemá přístup na internet.'; })
-            .finally(function () { self.busy = false; });
+            .then(function (d) {
+              if (self.searchController !== controller) return;
+              self.items = d.items || []; self.retryable = !!d.retryable;
+              self.msg = d.error || (self.items.length + ' skladeb – přehraj si je a klikni Použít');
+            })
+            .catch(function (error) {
+              if (self.searchController !== controller) return;
+              self.retryable = true;
+              self.msg = error.name === 'AbortError' ? 'Hledání trvá příliš dlouho. Zkus to za chvíli znovu; vybrané filtry zůstaly zachované.' : 'Nepodařilo se získat odpověď od Atmovia. Obnov stránku nebo zkus hledání znovu.';
+            })
+            .finally(function () {
+              clearTimeout(slow); clearTimeout(deadline);
+              if (self.searchController === controller) { self.searchController = null; self.busy = false; }
+            });
         },
         use: function (t) {
           var self = this, fd = new FormData();
           var csrf = document.querySelector('input[name=csrf_token]');
           fd.append('csrf_token', csrf ? csrf.value : '');
           ['id', 'url', 'title', 'creator', 'license', 'attribution', 'page', 'filetype'].forEach(function (k) { fd.append(k, t[k] || ''); });
-          self.busy = true; self.msg = 'Stahuji „' + t.title + '“ na RPi…';
+          self.busy = true; self.retryable = false; self.msg = 'Stahuji „' + t.title + '“ na RPi…';
           fetch('/studio/music/fetch', { method: 'POST', body: fd, credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (d) {

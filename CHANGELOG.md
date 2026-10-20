@@ -2,6 +2,12 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 5.3.21 – 2026-10-20 – resilient Openverse music search
+
+- Allow 30 seconds for Openverse responses and retry timeouts, connection failures and temporary server errors once, preserving all search filters.
+- Explain slow searches and distinguish timeouts, connection problems, rate limits and invalid responses without exposing Python exceptions or assuming the RPi is offline.
+- Offer a retry after temporary failures and release the search form if the browser has waited too long.
+
 ## 5.3.20 – 2026-10-15 – music instrument and performer filters
 
 - Add visible multi-select instrument and ensemble filters, including piano and orchestra; combine them with a song title or search by instruments alone.
