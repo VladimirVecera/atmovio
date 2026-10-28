@@ -2,6 +2,12 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 6.0.7 – 2026-10-28 – camera playback aspect ratio
+
+- Keep the live and archive player frame at the stream's actual aspect ratio, including when switching recordings or changing stream dimensions.
+- Fit width and height together so the recording timeline stays directly under the complete image without artificial side bars.
+- Preserve intrinsic video proportions in the all-cameras live view.
+
 ## 6.0.6 – 2026-10-28 – reusable Studio settings and animation library
 
 - Remember speed, music, intro and effect settings (including X/Y) for new videos with one explicit action. Keep trim, titles and existing projects independent.

@@ -1,6 +1,8 @@
-# Atmovio 6.0.6
+# Atmovio 6.0.7
 
 Hlavní nabídka má čtyři místa: **Kamery, AI detekce, Moje videa a Studio**. Hudba, nastavení a diagnostika jsou ve spodní části nabídky. Technické podklady AI zůstávají v rozbalitelných detailech.
+
+Živý přenos i záznam zachovávají skutečný poměr stran kamery. Velikost obrazu se přizpůsobuje společně s časovou osou výšce obrazovky.
 
 ## Kamera a záznam
 
@@ -26,7 +28,7 @@ Hudební knihovna nabízí **Smazat skladbu** i **Smazat vše**. Skladby se pře
 
 ## Aktualizace a diagnostika
 
-Ve starší instalaci otevřete **Nastavení → Systém → Aktualizace**, klikněte na **Zkontrolovat teď** a potom **Nainstalovat verzi 6.0.6**. Aktualizátor stáhne instalační soubor z GitHub Releases a ověří kontrolní součet. Stejnou cestou budou dostupné další vydané opravy.
+Ve starší instalaci otevřete **Nastavení → Systém → Aktualizace**, klikněte na **Zkontrolovat teď** a potom **Nainstalovat verzi 6.0.7**. Aktualizátor stáhne instalační soubor z GitHub Releases a ověří kontrolní součet. Stejnou cestou budou dostupné další vydané opravy.
 
 Aktualizátor stáhne Frigate 0.18.2 a ověří kopii konfigurace za běhu staré verze. Před přepnutím zálohuje konfiguraci i zastavenou databázi. Během restartu vznikne krátká mezera v nahrávání. Nová verze musí potvrdit API a obraz dříve dostupných kamer; při selhání se obnoví původní Frigate i jeho databáze. Záznamy na datovém disku se nepřesouvají.
 

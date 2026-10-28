@@ -35,6 +35,12 @@ events['alpine:init']();
   const size={};p.$el={getBoundingClientRect:()=>({top:180}),style:{setProperty:(k,v)=>size[k]=v}};
   p.$refs.transport={offsetHeight:200};context.window.innerHeight=720;context.window.scrollY=0;p.fitPlayer();
   assert.equal(size['--player-height'],'322px');
+  video.videoWidth=1920;video.videoHeight=1080;p.fitPlayer();assert.equal(Number(size['--player-aspect']),16/9);
+  // A recording may have a different resolution/ratio from the live stream.
+  video.videoWidth=1440;video.videoHeight=1080;p.fitPlayer();assert.equal(Number(size['--player-aspect']),4/3);
+  video.videoWidth=0;video.videoHeight=0;p.fitPlayer();assert.equal(Number(size['--player-aspect']),4/3);
+  video.videoWidth=1280;video.videoHeight=720;p.fitPlayer();assert.equal(Number(size['--player-aspect']),16/9);
+
   context.window.innerHeight=600;p.fitPlayer();assert.equal(size['--player-height'],'202px');
   p.$el.getBoundingClientRect=()=>({top:80});context.window.scrollY=100;p.fitPlayer();assert.equal(size['--player-height'],'202px');
   p.destroy();
