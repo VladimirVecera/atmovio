@@ -11,8 +11,10 @@ class AudioEngine {
   async resume(){this.state='running';}
   async close(){closed++;}
 }
+let pendingPreview;
 const window = {AudioContext:AudioEngine,addEventListener(){}};
 vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname,'../src/atmovio/static/atmovio.js'),'utf8'),{
+  FormData,fetch:()=>new Promise(resolve=>{pendingPreview=resolve;}),
   document:{readyState:'loading',addEventListener:(name,fn)=>events[name]=fn}, window,
   Alpine:{data:(name,factory)=>components[name]=factory}
 });
@@ -48,5 +50,17 @@ events['alpine:init']();
   effect.effect='';effect.playEffect(10);assert.equal(animations.length,3);
   effect.effect='both';effect.playEffect(0);assert.match(effect.effectMessage,/délku/);
   effect.destroy();
+  const uploaded=components.effectPreview('video',99,4,{vid:1,asset:'clip.mp4',items:[{asset:'clip.mp4',duration:5}],timing:'auto'});
+  assert.equal(uploaded.effectTime(60),'0:15');assert.equal(uploaded.effectTime(3),'0:00');
+  uploaded.timing='manual';assert.equal(uploaded.effectTime(10),'0:05');
+  let plays=0;
+  uploaded.$refs={effectVideo:{pause(){},async play(){plays++;},currentTime:0}};
+  uploaded.$el={closest:()=>({querySelector:()=>({value:'fixture-csrf'})})};uploaded.$nextTick=async()=>{};
+  let request=uploaded.playVideoEffect();uploaded.stopEffect();
+  pendingPreview({ok:true,json:async()=>({url:'/stale.mp4'})});await request;
+  assert.equal(plays,0);assert.equal(uploaded.previewUrl,'');assert.equal(uploaded.busy,false);
+  request=uploaded.playVideoEffect();pendingPreview({ok:true,json:async()=>({url:'/ready.mp4'})});await request;
+  assert.equal(plays,1);assert.equal(uploaded.previewUrl,'/ready.mp4');
+  uploaded.resetVideoPreview();assert.equal(uploaded.previewUrl,'');
   console.log('Studio preview: gain, seek, replay, fallback, fade and cleanup OK');
 })().catch(error=>{console.error(error);process.exitCode=1;});

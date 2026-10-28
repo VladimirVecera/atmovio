@@ -2,6 +2,13 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 6.0.4 – 2026-10-28 – reusable video effects and music library removal
+
+- Upload and reuse MP4/MOV/WebM animations, automatically remove green or black backgrounds and crop the empty margins. Preview the actual animation over a source thumbnail, including sound.
+- Place video effects automatically within the accelerated footage, or choose the time manually. Save size, background and sound choices with the editable project; mix effect audio at the correct time after the intro.
+- Add single and bulk music removal, a recoverable trash and permanent removal of unused tracks. Preserve tracks required by saved projects and skip tracks currently used for rendering.
+- Accept full-size project intro/effect uploads while retaining authentication, CSRF and upload size limits.
+
 ## 6.0.3 – 2026-10-28 – effect playback and audible music volume
 
 - Preview subscribe/share effects over a source thumbnail, including their fade and selected duration.

@@ -55,15 +55,49 @@
         destroy(){this.$refs.track.pause();if(source)source.disconnect();if(gain)gain.disconnect();if(context)context.close().catch(()=>{});}
       };
     });
-    Alpine.data('effectPreview', function(effect, at, seconds) {
-      let animation=null;
+    Alpine.data('effectPreview', function(effect, at, seconds, options={}) {
+      let animation=null, generation=0;
       return {
-        effect, at, seconds, playing:false, effectMessage:'',
+        effect, at, seconds, playing:false, effectMessage:'', busy:false, previewUrl:'',
+        items:options.items||[],asset:options.asset||'',timing:options.timing||'manual',background:options.background||'auto',size:options.size||.4,sound:options.sound!==false,
+        selectedDuration(){return this.items.find(item=>item.asset===this.asset)?.duration||0;},
+        effectTime(mainDuration){
+          const item=this.items.find(item=>item.asset===this.asset),length=this.effect==='video' ? (item?.duration||0) : Number(this.seconds)||4;
+          const at=Math.min(this.timing==='auto'?Math.min(30,Math.max(2,mainDuration*.25)):Math.max(0,Number(this.at)||0),Math.max(0,mainDuration-length));
+          return Math.floor(at/60)+':'+String(Math.floor(at%60)).padStart(2,'0');
+        },
+        resetVideoPreview(){this.stopEffect();this.previewUrl='';},
+        async uploadEffect(event){
+          const file=event.target.files[0];if(!file)return;
+          if(file.size>100*1024*1024){this.effectMessage='Soubor je větší než 100 MB.';return;}
+          this.resetVideoPreview();this.busy=true;this.$dispatch('effect-upload',{busy:true});this.effectMessage='Nahrávám a kontroluji animaci…';
+          try{
+            const body=new FormData();body.append('file',file);body.append('csrf_token',this.$el.closest('form').querySelector('[name=csrf_token]').value);
+            const response=await fetch('/studio/effects/upload',{method:'POST',body,credentials:'same-origin'}),data=await response.json();
+            if(!response.ok)throw Error(data.error||'Animaci nelze nahrát.');
+            this.items.push(data);this.asset=data.asset;this.effect='video';this.timing='auto';this.background='auto';
+            this.effectMessage='Animace je uložená. Klikněte na Přehrát efekt.';
+          }catch(error){this.effectMessage=error.message;}finally{this.busy=false;this.$dispatch('effect-upload',{busy:false});event.target.value='';}
+        },
+        async playVideoEffect(){
+          if(!this.asset||this.busy)return;
+          const current=++generation;this.busy=true;this.effectMessage='Připravuji ukázku s vaším záběrem…';
+          try{
+            const body=new FormData();Object.entries({asset:this.asset,vid:options.vid,background:this.background,size:this.size,sound:this.sound?'1':'',csrf_token:this.$el.closest('form').querySelector('[name=csrf_token]').value}).forEach(([key,value])=>body.append(key,value));
+            const response=await fetch('/studio/effects/preview',{method:'POST',body,credentials:'same-origin'}),data=await response.json();
+            if(current!==generation)return;
+            if(!response.ok)throw Error(data.error||'Ukázku nelze připravit.');
+            this.previewUrl=data.url;this.effectMessage='';await this.$nextTick();
+            if(current!==generation)return;
+            const video=this.$refs.effectVideo;video.currentTime=0;
+            await video.play().catch(()=>{this.effectMessage='Ukázka je připravená. Spusťte ji v přehrávači.';});
+          }catch(error){if(current===generation)this.effectMessage=error.message;}finally{this.busy=false;}
+        },
         get caption(){return {subscribe:'Odebírejte další videa',share:'Sdílejte tento okamžik',both:'Sdílejte a odebírejte'}[this.effect]||'';},
-        stopEffect(){if(animation){animation.onfinish=null;animation.cancel();animation=null;}this.playing=false;this.effectMessage='';},
+        stopEffect(){generation++;if(this.$refs.effectVideo)this.$refs.effectVideo.pause();if(animation){animation.onfinish=null;animation.cancel();animation=null;}this.playing=false;this.effectMessage='';},
         playEffect(mainDuration){
-          this.stopEffect();if(!this.effect)return;
-          const begin=Math.min(Math.max(0,Number(this.at)||0),Math.max(0,mainDuration-1));
+          this.stopEffect();if(!this.effect)return;if(this.effect==='video'){this.playVideoEffect();return;}
+          const begin=this.timing==='auto' ? Math.min(Math.min(30,Math.max(2,mainDuration*.25)),Math.max(0,mainDuration-Number(this.seconds))) : Math.min(Math.max(0,Number(this.at)||0),Math.max(0,mainDuration-1));
           const duration=Math.min(Math.max(1,Math.min(30,Number(this.seconds)||1)),mainDuration-begin);
           if(!Number.isFinite(duration)||duration<=0){this.effectMessage='Nejdříve vyberte délku videa ve střihu.';return;}
           // Same 0.3 s fade and clip-end truncation as the FFmpeg callout.

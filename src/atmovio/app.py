@@ -58,7 +58,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "6.0.3"
+APP_VERSION = "6.0.4"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -3723,7 +3723,7 @@ TEMPLATES["history.html"] = """{% extends "base.html" %}{% block actions %}<div 
 {% endblock %}"""
 
 TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<a class="btn sec" href="/youtube">← Moje videa</a>{% endblock %}{% block content %}
-<form method="post" class="studio-project" x-data="{tab:'trim',uploading:false,intro:{{ 'true' if values.intro and intro else 'false' }},textOn:{{ 'true' if values.text_on else 'false' }}}" @intro-upload="uploading=$event.detail.busy" @studio-tab="$el.querySelectorAll('video,audio').forEach(function(media){media.pause()})">
+<form method="post" class="studio-project" x-data="{tab:'trim',introUploading:false,effectUploading:false,get uploading(){return this.introUploading||this.effectUploading},intro:{{ 'true' if values.intro and intro else 'false' }},textOn:{{ 'true' if values.text_on else 'false' }}}" @intro-upload="introUploading=$event.detail.busy" @effect-upload="effectUploading=$event.detail.busy" @studio-tab="$el.querySelectorAll('video,audio').forEach(function(media){media.pause()})">
 <input type="hidden" name="project_id" value="{{ values.project_id }}">
 <nav class="editor-tools" aria-label="Vyberte, co chcete upravit">{% for key,label in [('trim','Střih a rychlost'),('music','Hudba'),('intro','Intro'),('text','Text v obraze'),('effects','Efekty'),('title','Název a popis')] %}<button type="button" :class="{active:tab==='{{ key }}'}" :aria-pressed="tab==='{{ key }}'" aria-controls="studio-{{ key }}" @click="tab='{{ key }}';$dispatch('studio-tab')"><span class="tool-number" aria-hidden="true">{{ loop.index }}</span><span>{{ label }}</span></button>{% endfor %}</nav>
 <div class="studio-layout" :class="{'studio-layout--focused':tab!=='trim'}" x-data="speedPreview('/videos/{{ export.id }}/play.mp4', {{ values.speed }}, {{ src.duration }}, {{ values.trim_start|round(1) }}, {{ values.trim_end|round(1, 'floor') }})">
@@ -3731,7 +3731,7 @@ TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<a
 <div class="editor-timeline"><div class="section-head"><b>{{ short_title(export.name,export.camera) }}</b><span class="hint">{{ cam(export.camera) }}</span></div><div class="trim-rail" :style="'--start-ratio:'+(trimStart/duration)+';--end-ratio:'+(trimEnd/duration)"><div class="trim-selection"></div><input type="range" aria-label="Začátek ořezu" min="0" :max="duration" step=".1" x-model.number="trimStart" @input="adjustTrim('start')"><input type="range" aria-label="Konec ořezu" min="0" :max="duration" step=".1" x-model.number="trimEnd" @input="adjustTrim('end')"></div><div class="timeline-labels"><span x-text="stamp(trimStart)"></span><span x-text="'Výběr '+stamp(trimEnd-trimStart)"></span><span x-text="stamp(trimEnd)"></span></div><p class="hint">Náhled zdroje · výsledek s hudbou, intrem a efekty uvidíte po přípravě videa.</p><p class="hint" role="status" x-text="trimError"></p></div></div>
 <aside class="studio-inspector">
 <section id="studio-trim" x-show="tab==='trim'"><h2>Vyberte nejlepší část</h2><p class="hint">Posuňte video a označte začátek i konec.</p><div class="actions"><button type="button" class="btn small sec" @click="trimStart=$refs.trimVideo.currentTime;adjustTrim('start')">Označit OD</button><button type="button" class="btn small sec" @click="trimEnd=$refs.trimVideo.currentTime;adjustTrim('end')">Označit DO</button></div><div class="row"><label>OD · sekundy<input name="trim_start" type="number" step=".1" min="0" :max="trimEnd-.1" x-model.number="trimStart" @change="adjustTrim('start')"></label><label>DO · sekundy<input name="trim_end" type="number" step=".1" :min="trimStart+.1" :max="duration" x-model.number="trimEnd" @change="adjustTrim('end')"></label></div><button type="button" class="btn sec" @click="previewTrim()">Přehrát výběr</button><hr><label>Rychlost <b x-text="speed+'×'"></b><select name="speed" x-model.number="speed"><option value="1">Běžná rychlost · 1×</option>{% for n in range(10,241,10) %}<option value="{{ n }}">Časosběr · {{ n }}×</option>{% endfor %}</select></label><p>Výsledná délka <b x-text="fmt((trimEnd-trimStart)/speed)"></b><small class="hint"> bez intra</small></p><p class="hint">Původní klip zůstane zachovaný.</p></section>
-<section id="studio-music" x-show="tab==='music'" x-cloak x-data="musicFinder({{ values.music|tojson|forceescape }})" x-init="open=true"><h2>Hudba k videu</h2><p class="hint">Pusťte si skladbu, posuňte přehrávač a vyberte místo, odkud má hudba začít.</p><div class="music-workspace"><div class="music-selection"><label>Skladba<select name="music" x-model="music" x-ref="sel"><option value="">Bez hudby</option>{% for m in music %}<option value="{{ m.name }}">{{ m.name }}</option>{% endfor %}</select></label><div x-data="musicPreview({{ values.edit.music_volume }})"><audio x-ref="track" controls preload="metadata" :src="music ? '/studio/asset/music/'+encodeURIComponent(music) : null" x-show="music" @loadedmetadata="seekStart();applyVolume()" @play="solo($event.target);startAudio()" @volumechange="nativeVolumeChanged()" @error="audioMessage='Skladbu nelze přehrát. Vyberte ji znovu nebo zkuste jinou.'"></audio>
+<section id="studio-music" x-show="tab==='music'" x-cloak x-data="musicFinder({{ values.music|tojson|forceescape }})" x-init="open=true"><h2>Hudba k videu</h2><p class="hint">Pusťte si skladbu, posuňte přehrávač a vyberte místo, odkud má hudba začít.</p><div class="music-workspace"><div class="music-selection"><label>Skladba<select name="music" x-model="music" x-ref="sel"><option value="">Bez hudby</option>{% for m in music %}<option value="{{ m.name }}">{{ m.name }}{{ " · z uloženého projektu" if m.archived is defined else "" }}</option>{% endfor %}</select></label><div x-data="musicPreview({{ values.edit.music_volume }})"><audio x-ref="track" controls preload="metadata" :src="music ? '/studio/asset/music/'+encodeURIComponent(music) : null" x-show="music" @loadedmetadata="seekStart();applyVolume()" @play="solo($event.target);startAudio()" @volumechange="nativeVolumeChanged()" @error="audioMessage='Skladbu nelze přehrát. Vyberte ji znovu nebo zkuste jinou.'"></audio>
 <div class="music-offset-row"><label>Začátek skladby · sekundy<input x-ref="offset" name="music_start" type="number" min="0" max="86400" step=".1" value="{{ values.edit.music_start }}" @input="seekStart()"></label><button type="button" class="btn small sec" :disabled="!music" @click="$refs.offset.value=Math.floor($refs.track.currentTime)">Použít aktuální místo</button></div>
 <label class="music-volume-label" for="studio-music-volume">Hlasitost <output for="studio-music-volume" x-text="Math.round(level*100)+' %'"></output></label><input id="studio-music-volume" name="music_volume" type="range" min="0" max="2" step=".05" x-model.number="level" @input="applyVolume()" :aria-valuetext="Math.round(level*100)+' procent'">
 <p class="hint">100 % = původní hlasitost. Posuvník mění i poslech.</p><button type="button" class="btn sec" :disabled="!music" @click="playSelection()">▶ Přehrát od vybraného začátku</button><p class="hint" role="status" x-text="audioMessage"></p>
@@ -3764,10 +3764,14 @@ TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<a
   </details></div></section>
 <section id="studio-intro" x-show="tab==='intro'" x-cloak x-data="introPicker({{ (values.edit.intro_asset or '')|tojson|forceescape }}, {{ values.intro_url|tojson|forceescape }}, {{ (intro.suffix|lower if intro else '')|tojson|forceescape }})"><h2>Úvod videa</h2><p class="hint">Tady si přehrajete intro a můžete ho vyměnit.</p><input type="hidden" name="intro_asset" :value="asset"><div class="intro-edit-grid"><div class="intro-canvas"><img x-show="url && isImage" class="intro-preview" :src="isImage ? url : null" alt="Náhled intra"><video x-show="url && !isImage" class="intro-preview" controls playsinline preload="metadata" :src="url && !isImage ? url : null"></video><p x-show="!url">Vyberte video nebo obrázek pro začátek videa.</p></div><div><label class="check"><input type="checkbox" name="intro" value="1" x-model="intro" :disabled="!url">Přidat intro na začátek</label><label>Vybrat nebo změnit intro<input type="file" accept=".mp4,.mov,.m4v,.png,.jpg,.jpeg" @change="upload($event)" :disabled="busy"></label><p class="hint" role="status" x-text="message"></p><p class="hint">Video nebo obrázek · do 100 MB. Změna platí pro tento projekt.</p></div></div></section>
 <section id="studio-text" x-show="tab==='text'" x-cloak><h2>Text v obraze</h2><label class="check"><input type="checkbox" name="text_on" value="1" x-model="textOn">Přidat text</label><label x-show="textOn">Váš text<input name="text" value="{{ values.text }}" maxlength="200" placeholder="Například: Ranní mlha nad údolím"></label><label>Poloha<select name="text_pos">{% for key,label in [('bl','Dole vlevo'),('bc','Dole uprostřed'),('br','Dole vpravo'),('tl','Nahoře vlevo'),('tr','Nahoře vpravo')] %}<option value="{{ key }}" {{ 'selected' if values.edit.text_pos==key }}>{{ label }}</option>{% endfor %}</select></label><p class="hint">Napište běžný text. Kamera, datum a čas patří do popisu, pokud je nechcete v obraze.</p></section>
-<section id="studio-effects" x-show="tab==='effects'" x-cloak x-data="effectPreview({{ values.edit.effect|tojson|forceescape }}, {{ values.edit.effect_at }}, {{ values.edit.effect_duration }})" @studio-tab.window="stopEffect()"><h2>Výzva divákům</h2><div class="effect-workspace"><div class="effect-settings"><label>Efekt<select name="effect" x-model="effect" @change="stopEffect()">{% for key,label in [('','Bez efektu'),('subscribe','Odebírejte další videa'),('share','Sdílejte tento okamžik'),('both','Sdílejte a odebírejte')] %}<option value="{{ key }}" {{ 'selected' if values.edit.effect==key }}>{{ label }}</option>{% endfor %}</select></label><div class="row"><label>Začátek · sekundy hotového záběru<input type="number" min="0" max="21600" name="effect_at" x-model.number="at" @input="stopEffect()"></label><label>Délka zobrazení · s<input type="number" min="1" max="30" name="effect_duration" x-model.number="seconds" @input="stopEffect()"></label></div>
-<div class="effect-preview-actions"><button type="button" class="btn" :disabled="!effect" @click="playEffect((trimEnd-trimStart)/speed)" x-text="playing ? '↻ Přehrát znovu' : '▶ Přehrát efekt'"></button><span class="hint" role="status" x-text="effectMessage"></span></div>
-</div><div class="effect-demo">{% set effect_width = [src.width or 1920,1920]|min %}{% set effect_size = [24,effect_width//45]|max %}
-<div class="effect-preview" style="--effect-font:{{ effect_size/effect_width*100 }}cqw;--effect-bottom:{{ 24/effect_width*100 }}cqw;--effect-padding:{{ 10/effect_width*100 }}cqw;--effect-stroke:{{ 2/effect_width*100 }}cqw"><img src="/videos/{{ export.id }}/thumb.jpg" alt="Snímek zdrojového videa"><span class="effect-caption" x-ref="caption" x-show="effect" x-text="caption"></span></div><p class="hint">Ukázka efektu na snímku z videa, od okamžiku jeho zobrazení. Efekt se objeví dole uprostřed a plynule zmizí. Začátek se počítá od zrychleného záběru za intrem.</p></div></div></section>
+<section id="studio-effects" x-show="tab==='effects'" x-cloak x-data="effectPreview({{ values.edit.effect|tojson|forceescape }}, {{ values.edit.effect_at }}, {{ values.edit.effect_duration }}, {items:{{ effects|tojson|forceescape }},asset:{{ values.edit.effect_asset|tojson|forceescape }},timing:{{ values.edit.effect_timing|tojson|forceescape }},background:{{ values.edit.effect_background|tojson|forceescape }},size:{{ values.edit.effect_size }},sound:{{ 'true' if values.edit.effect_sound else 'false' }},vid:{{ export.id }}})" @studio-tab.window="stopEffect()"><h2>Animace a výzvy</h2><div class="effect-workspace"><div class="effect-settings"><label>Co vložit<select name="effect" x-model="effect" @change="resetVideoPreview()"><option value="">Bez efektu</option><option value="video">Vlastní videoanimace</option><optgroup label="Jednoduchá textová výzva">{% for key,label in [('subscribe','Odebírejte další videa'),('share','Sdílejte tento okamžik'),('both','Sdílejte a odebírejte')] %}<option value="{{ key }}" {{ 'selected' if values.edit.effect==key }}>{{ label }}</option>{% endfor %}</optgroup></select></label>
+<div x-show="effect==='video'"><label>Uložená animace<select name="effect_asset" x-model="asset" @change="resetVideoPreview()"><option value="">Vyberte animaci</option><template x-for="item in items" :key="item.asset"><option :value="item.asset" x-text="item.name+' · '+item.duration.toFixed(1)+' s'"></option></template></select></label><label class="effect-upload">Nahrát vlastní animaci<input type="file" accept=".mp4,.mov,.m4v,.webm" @change="uploadEffect($event)" :disabled="busy"></label><p class="hint">MP4, MOV nebo WebM · do 30 s a 100 MB.</p>
+<details class="inline-help"><summary>Vzhled a zvuk animace</summary><label>Pozadí<select name="effect_background" x-model="background" @change="resetVideoPreview()"><option value="auto">Odstranit automaticky</option><option value="green">Odstranit zelené</option><option value="black">Odstranit černé</option><option value="none">Ponechat původní</option></select></label><label>Velikost<select name="effect_size" x-model.number="size" @change="resetVideoPreview()"><option value="0.25">Malá</option><option value="0.4">Střední</option><option value="0.6">Velká</option><option value="0.8">Největší</option></select></label><label class="check"><input type="checkbox" name="effect_sound" value="1" x-model="sound" @change="resetVideoPreview()">Přehrát i zvuk animace</label></details></div>
+<div x-show="effect"><label>Kdy spustit<select name="effect_timing" x-model="timing" @change="stopEffect()"><option value="auto">Vybrat čas automaticky</option><option value="manual">Zadat čas ručně</option></select></label><p class="hint" x-show="timing==='auto'" x-text="'Spustí se v '+effectTime((trimEnd-trimStart)/speed)+' záběru, za případným intrem.'"></p><label x-show="timing==='manual'">Začátek · sekundy hotového záběru<input type="number" min="0" max="21600" name="effect_at" x-model.number="at" @input="stopEffect()"></label><label x-show="effect!=='video'">Délka zobrazení · s<input type="number" min="1" max="30" name="effect_duration" x-model.number="seconds" @input="stopEffect()"></label></div>
+<p class="hint" x-show="effect==='video' && selectedDuration()>(trimEnd-trimStart)/speed">Záběr je kratší než animace. Použije se jen část, která se do videa vejde.</p><div class="effect-preview-actions"><button type="button" class="btn" :disabled="!effect || busy || (effect==='video' && !asset)" @click="playEffect((trimEnd-trimStart)/speed)" x-text="busy ? 'Připravuji ukázku…' : playing ? '↻ Přehrát znovu' : '▶ Přehrát efekt'"></button><span class="hint" role="status" x-text="effectMessage"></span></div></div><div class="effect-demo">
+<div x-show="effect==='video'" class="effect-video-preview"><video x-ref="effectVideo" x-show="previewUrl" :src="previewUrl || null" controls playsinline preload="metadata" @ended="playing=false" @pause="playing=false" @play="playing=true"></video><div x-show="!previewUrl" class="effect-placeholder"><img src="/videos/{{ export.id }}/thumb.jpg" alt="Snímek zdrojového videa"><p>Vyberte animaci a klikněte na Přehrát efekt.</p></div><p class="hint">Skutečná animace přes snímek z vašeho videa. Ukázka začíná rovnou efektem; ve výsledném videu se spustí ve zvoleném čase.</p></div>
+{% set effect_width = [src.width or 1920,1920]|min %}{% set effect_size = [24,effect_width//45]|max %}
+<div x-show="effect!=='video'"><div class="effect-preview" style="--effect-font:{{ effect_size/effect_width*100 }}cqw;--effect-bottom:{{ 24/effect_width*100 }}cqw;--effect-padding:{{ 10/effect_width*100 }}cqw;--effect-stroke:{{ 2/effect_width*100 }}cqw"><img src="/videos/{{ export.id }}/thumb.jpg" alt="Snímek zdrojového videa"><span class="effect-caption" x-ref="caption" x-show="effect" x-text="caption"></span></div><p class="hint">Ukázka textového efektu na snímku z videa.</p></div></div></div></section>
 <section id="studio-title" x-show="tab==='title'" x-cloak x-data="titleIdeas({vid:{{ export.id }}})"><h2>Název a popis</h2><label>Název<input name="title" value="{{ short_title(values.title,export.camera) }}" maxlength="100" x-ref="title"></label><label>Popis<textarea name="description" rows="6" x-ref="description">{{ values.description }}</textarea></label><button type="button" class="btn sec" @click="askMetadata()" :disabled="busy">Navrhnout texty</button><p class="hint" x-text="metaMsg"></p><div x-show="proposal"><strong x-text="proposal?.title"></strong><p x-text="proposal?.description"></p><button class="btn small" type="button" @click="applyMetadata()">Použít návrh</button></div></section>
 </aside></div><div class="editor-footer"><span>Úpravy můžete později znovu otevřít.</span><div class="actions"><button class="btn sec" name="action" value="draft" :disabled="uploading">Uložit projekt</button><button class="btn" name="action" value="render" :disabled="uploading">Připravit video →</button></div></div></form>{% endblock %}"""
 
@@ -3952,7 +3956,9 @@ TEMPLATES["moments_discover.html"] = """{% extends "base.html" %}{% block action
 
 TEMPLATES["settings_home.html"] = """{% extends "base.html" %}{% block content %}<div class="settings-grid">{% for href,name,icon,desc in [('/cameras','Kamery','camera','Připojení kamer a jejich názvy.'),('/storage','Záznamy a místo','disk','Délka uchování a připojený disk.'),('/ai','Hlídání oblohy','sun','Co má AI hledat a kdy uložit okamžik.'),('/studio/settings','Videa a YouTube','video','Výchozí vzhled videa a propojení kanálu.'),('/email','Upozornění','mail','Kam posílat důležité zprávy.'),('/system','Systém a aktualizace','cog','Verze, stav Raspberry Pi a aktualizace.')] %}<a class="setting-card" href="{{ href }}"><span class="setting-icon">{{ icons.get(icon,icons.cog)|safe }}</span><h2>{{ name }}</h2><p>{{ desc }}</p><span class="setting-arrow">→</span></a>{% endfor %}</div><details class="advanced-panel"><summary>Pokročilé nastavení</summary><div class="quiet-links"><a href="/vpn">Síť a VPN</a><a href="/videos/settings">Automatické ukládání klipů</a><a href="/logs">Diagnostika a JSON export</a><a href="/history">Technická historie AI</a></div></details>{% endblock %}"""
 
-TEMPLATES["music_library.html"] = """{% extends "base.html" %}{% block actions %}<a href="/studio/settings#library" class="btn">Přidat hudbu</a>{% endblock %}{% block content %}<div class="music-library">{% for m in music %}<article class="card music-card"><div class="section-head"><h2>{{ m.name }}</h2><span class="hint">{{ m.duration_h if m.duration_h is defined else '' }}</span></div><audio controls preload="metadata" src="/studio/asset/music/{{ m.name|urlencode }}" onplay="document.querySelectorAll('audio').forEach(a=>{if(a!==this)a.pause()})"></audio><details><summary>Použití ve videích</summary>{% for v in used if v.music==m.name %}<a class="overview-row" href="/studio/v/{{ v.id }}">{{ v.title or v.name }} →</a>{% else %}<p class="hint">Zatím nepoužito.</p>{% endfor %}</details></article>{% else %}<div class="empty-state"><h2>Vaše hudební knihovna</h2><p>Přidejte skladbu nebo ji vyhledejte při tvorbě videa ve Studiu.</p></div>{% endfor %}</div>{% endblock %}"""
+TEMPLATES["music_library.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a href="/studio/settings#library" class="btn">Přidat hudbu</a>{% if music %}<form method="post" action="/studio/upload/music/delete" onsubmit="return confirm('Přesunout všechny skladby do koše? Uložené projekty je budou moci dál používat.')" data-nobusy><input type="hidden" name="all_tracks" value="1"><button class="btn sec danger">Smazat vše ({{ music|length }})</button></form>{% endif %}</div>{% endblock %}{% block content %}<div class="music-library">{% for m in music %}<article class="card music-card"><div class="section-head"><h2>{{ m.name }}</h2><span class="hint">{{ m.size_h }}</span></div><audio controls preload="metadata" src="/studio/asset/music/{{ m.name|urlencode }}" onplay="document.querySelectorAll('audio').forEach(a=>{if(a!==this)a.pause()})"></audio><details><summary>Použití ve videích</summary>{% for v in used if v.music==m.name %}<a class="overview-row" href="/studio/v/{{ v.id }}">{{ v.title or v.name }} →</a>{% else %}<p class="hint">Zatím nepoužito.</p>{% endfor %}</details><form method="post" action="/studio/upload/music/delete" data-nobusy onsubmit="return confirm('Přesunout skladbu do koše?')"><input type="hidden" name="name" value="{{ m.name }}"><button class="btn small sec danger">Smazat skladbu</button></form></article>{% else %}<div class="empty-state"><h2>Vaše hudební knihovna</h2><p>Přidejte skladbu nebo ji vyhledejte při tvorbě videa ve Studiu.</p></div>{% endfor %}</div>
+{% if trash %}<details class="advanced-panel music-trash"><summary>Koš · {{ trash|length }} skladeb</summary><p class="hint">Skladby lze obnovit. Při vysypání koše zůstanou zachované skladby, které potřebují uložené projekty.</p>{% for m in trash %}<div class="overview-row"><span>{{ m.name }} <small>{{ m.size_h }}</small></span><form method="post" action="/studio/music/restore" data-nobusy><input type="hidden" name="name" value="{{ m.name }}"><button class="btn small sec">Obnovit</button></form></div>{% endfor %}<form method="post" action="/studio/music/trash/empty" onsubmit="return confirm('Trvale odstranit nepoužívané skladby z koše? Tento krok nelze vrátit.')"><button class="btn sec danger">Vysypat nepoužívané skladby</button></form></details>{% endif %}{% endblock %}"""
+
 
 # Všechny POST formuláře, včetně přihlášení, dostanou stejnou ochranu.
 for _name, _template in TEMPLATES.items():
@@ -4272,7 +4278,7 @@ async def auth_middleware(request: Request, call_next):
     if request.method not in ("GET", "HEAD", "OPTIONS"):
         # body() zajistí opětovné přečtení formuláře samotným endpointem.
         body = await request.body()
-        if len(body) > (120 * 1024 * 1024 if path.startswith("/studio/upload/") else 65_536):
+        if len(body) > (120 * 1024 * 1024 if path.startswith("/studio/upload/") or path in ("/studio/project/intro", "/studio/effects/upload") else 65_536):
             return JSONResponse({"error": "Formulář je příliš velký."}, status_code=413)
         form = await request.form()
         expected = request.session.get("csrf", "")
@@ -7339,9 +7345,182 @@ def studio_intro() -> Path | None:
     return None
 
 
-def studio_music_files() -> list:
+def studio_effect_dir():
+    path = studio_assets_dir() / 'effects'
+    path.mkdir(exist_ok=True)
+    return path
+
+
+def studio_effect_meta(asset):
+    if not re.fullmatch(r'[a-f0-9]{24}\.(mp4|mov|m4v|webm)', str(asset or '')):
+        return None
+    path = studio_effect_dir() / asset
+    try:
+        meta = json.loads(path.with_suffix(path.suffix + '.json').read_text())
+        return meta if path.is_file() and meta.get('asset') == asset else None
+    except (OSError, ValueError):
+        return None
+
+
+def studio_effects():
+    return sorted((m for p in studio_effect_dir().glob('*.json') if (m := studio_effect_meta(p.name[:-5]))),
+                  key=lambda m: m.get('created', ''), reverse=True)
+
+
+def analyze_studio_effect(path, name):
+    info = ffprobe_info(path)
+    duration = float(info.get('duration') or 0)
+    if not 0 < duration <= 30 or not 16 <= info.get('width', 0) <= 4096 or not 16 <= info.get('height', 0) <= 4096:
+        raise ValueError('Vyberte video do 30 sekund, nejvýše v rozlišení 4K.')
+    ratio=min(320/info['width'],180/info['height'])
+    width,height=max(4,round(info['width']*ratio/2)*2),max(4,round(info['height']*ratio/2)*2)
+    samples = subprocess.run(['ffmpeg','-v','error','-nostdin','-threads','2','-i',str(path),'-an',
+                             '-vf',f'fps=4,scale={width}:{height}', '-frames:v','120','-f','rawvideo','-pix_fmt','rgb24','pipe:1'],
+                            capture_output=True, timeout=90)
+    frame_bytes = width * height * 3
+    if samples.returncode or len(samples.stdout) < frame_bytes:
+        raise ValueError('Animaci nelze přečíst. Zkuste MP4 s obrazem H.264.')
+    images = [Image.frombytes('RGB',(width,height),samples.stdout[i:i+frame_bytes])
+              for i in range(0,len(samples.stdout)-frame_bytes+1,frame_bytes)]
+    # Corners across the clip distinguish the supplied green-screen and black-screen assets.
+    corners = [im.getpixel(p) for im in images for p in [(2,2),(width-3,2),(2,height-3),(width-3,height-3)]]
+    color = tuple(sorted(c[i] for c in corners)[len(corners)//2] for i in range(3))
+    green = sum(g > 100 and g > r*1.4 and g > b*1.4 for r,g,b in corners) / len(corners)
+    black = sum(max(c) < 40 for c in corners) / len(corners)
+    background = 'green' if green > .9 else 'black' if black > .9 else 'none'
+    bounds = []
+    if background != 'none':
+        for im in images:
+            red, grn, blue = im.split()
+            if background == 'black':
+                mask = ImageChops.lighter(ImageChops.lighter(red,grn),blue).point(lambda p: 255 if p > 45 else 0)
+            else:
+                difference = ImageChops.subtract(grn,ImageChops.lighter(red,blue))
+                mask = difference.point(lambda p: 0 if p > 60 else 255)
+            if (box := mask.getbbox()):
+                bounds.append(box)
+    if bounds:
+        # A small margin includes soft edges and motion between sampled frames.
+        box = (max(0,min(b[0] for b in bounds)-6),max(0,min(b[1] for b in bounds)-6),
+               min(width,max(b[2] for b in bounds)+6),min(height,max(b[3] for b in bounds)+6))
+        crop = [box[0]/width,box[1]/height,box[2]/width,box[3]/height]
+    else:
+        crop = [0,0,1,1]
+    return dict(asset=path.name,name=Path(name).stem[:100] or 'Animace',duration=duration,width=info['width'],height=info['height'],
+                audio=bool(info.get('audio')),background=background,color=''.join(f'{c:02x}' for c in color),crop=crop,
+                created=dt.datetime.now().isoformat(timespec='seconds'))
+
+
+def studio_effect_start(main_seconds, duration, timing='auto', at=0):
+    """Keep the whole effect inside the accelerated camera part, before its closing fade."""
+    last = max(0,main_seconds-duration)
+    desired = min(30,max(2,main_seconds*.25)) if timing == 'auto' else max(0,at)
+    return min(desired,last)
+
+
+def studio_effect_filter(meta, edit, width, height, start=0):
+    mode = edit.get('effect_background', 'auto')
+    mode = meta['background'] if mode == 'auto' else mode
+    box = meta.get('crop', [0,0,1,1]) if mode == meta['background'] and mode != 'none' else [0,0,1,1]
+    x, y = int(box[0]*meta['width'])//2*2, int(box[1]*meta['height'])//2*2
+    cw = max(2,min(meta['width']-x,int((box[2]-box[0])*meta['width'])//2*2))
+    ch = max(2,min(meta['height']-y,int((box[3]-box[1])*meta['height'])//2*2))
+    target = min(width*edit.get('effect_size',.4),(height-32)*cw/ch)
+    target = max(2,int(target)//2*2)
+    chain = f'crop={cw}:{ch}:{x}:{y},scale={target}:-2,setsar=1,format=rgba'
+    if mode in ('green','black'):
+        key = meta['color'] if mode == meta['background'] else '00ff00' if mode == 'green' else '000000'
+        chain += f',colorkey=0x{key}:{.2 if mode == "green" else .12}:0.08'
+    return chain + f',setpts=PTS-STARTPTS+{start:.6f}/TB'
+
+
+@app.post('/studio/effects/upload')
+async def studio_effect_upload(request: Request, file: UploadFile):
+    ext = Path(file.filename or '').suffix.lower()
+    if ext not in ('.mp4','.mov','.m4v','.webm'):
+        return JSONResponse({'error':'Vyberte MP4, MOV nebo WebM animaci.'},status_code=400)
+    path = studio_effect_dir() / (secrets.token_hex(12)+ext)
+    try:
+        await _save_upload(file,path,100*1024*1024)
+        meta = await run_in_threadpool(analyze_studio_effect,path,file.filename or 'Animace')
+        path.with_suffix(path.suffix+'.json').write_text(json.dumps(meta,ensure_ascii=False))
+        return JSONResponse(meta)
+    except Exception as exc:
+        path.unlink(missing_ok=True)
+        return JSONResponse({'error':str(exc) if isinstance(exc,ValueError) else 'Animaci se nepodařilo načíst. Zkuste video do 30 s a 100 MB.'},status_code=400)
+
+
+@app.get('/studio/effects/asset/{asset}')
+def studio_effect_asset(request: Request, asset: str):
+    if not studio_effect_meta(asset):
+        return Response(status_code=404)
+    return _range_file(request,studio_effect_dir()/asset)
+
+
+_effect_preview_lock = threading.Lock()
+
+@app.post('/studio/effects/preview')
+def studio_effect_preview(request: Request, asset: str = Form(...), vid: int = Form(...), background: str = Form('auto'),
+                          size: float = Form(.4), sound: str = Form('1')):
+    meta = studio_effect_meta(asset)
+    if not meta or background not in ('auto','green','black','none') or not math.isfinite(size) or not .2 <= size <= .8:
+        return JSONResponse({'error':'Vyberte dostupnou animaci a její nastavení.'},status_code=400)
+    cfg = load_config()
+    with db() as con:
+        rec = con.execute('SELECT * FROM exports WHERE id=?',(vid,)).fetchone()
+    if not rec:
+        return JSONResponse({'error':'Zdrojové video už není dostupné.'},status_code=404)
+    poster = export_thumb_path(cfg,dict(rec),frigate_exports(cfg).get(rec['frigate_id']))
+    if not poster:
+        return JSONResponse({'error':'Náhled zdrojového videa není dostupný.'},status_code=404)
+    token = hashlib.sha256(f'{asset}:{vid}:{poster.stat().st_mtime_ns}:{background}:{size}:{bool(sound)}'.encode()).hexdigest()[:32]
+    folder = studio_effect_dir()/'previews';folder.mkdir(exist_ok=True)
+    target = folder/(token+'.mp4')
+    with _effect_preview_lock:
+        if not target.is_file():
+            with Image.open(poster) as im:
+                w,h=640,max(2,round(im.height*640/im.width/2)*2)
+            chain=studio_effect_filter(meta,{'effect_background':background,'effect_size':size},w,h)
+            filters=f'[0:v]scale={w}:{h},setsar=1[bg];[1:v]{chain}[fx];[bg][fx]overlay=(W-w)/2:H-h-16:eof_action=pass:repeatlast=0,format=yuv420p[v]'
+            temp=folder/(token+'.part.mp4')
+            cmd=['ffmpeg','-v','error','-nostdin','-y','-filter_complex_threads','1','-loop','1','-i',str(poster),
+                 '-threads','2','-i',str(studio_effect_dir()/asset),'-filter_complex',filters,'-map','[v]']
+            cmd+=['-map','1:a:0','-c:a','aac'] if sound and meta.get('audio') else ['-an']
+            cmd+=['-t',str(meta['duration']),'-r','24','-c:v','libx264','-threads','2','-preset','veryfast','-pix_fmt','yuv420p','-movflags','+faststart',str(temp)]
+            rc,_=run(cmd,timeout=120)
+            if rc or not temp.is_file():
+                temp.unlink(missing_ok=True)
+                return JSONResponse({'error':'Ukázku se nepodařilo připravit. Zkuste jinou animaci nebo vypněte odstranění pozadí.'},status_code=400)
+            temp.replace(target)
+            # Derived previews are reproducible; bound their disk use independently of saved assets.
+            for old in sorted(folder.glob('*.mp4'),key=lambda p:p.stat().st_mtime,reverse=True)[30:]:
+                old.unlink(missing_ok=True)
+    return JSONResponse({'url':'/studio/effects/preview/'+token+'.mp4'})
+
+
+@app.get('/studio/effects/preview/{name}')
+def studio_effect_preview_file(request: Request, name: str):
+    if not re.fullmatch(r'[a-f0-9]{32}\.mp4',name):
+        return Response(status_code=404)
+    path=studio_effect_dir()/'previews'/name
+    return _range_file(request,path) if path.is_file() else Response(status_code=404)
+
+
+def studio_music_path(name):
+    if Path(name).name != name or Path(name).suffix.lower() not in STUDIO_MUSIC_EXT:
+        return None
+    folder=studio_assets_dir()/'music'
+    for path in (folder/name,folder/'trash'/name):
+        if path.is_file():
+            return path
+    return None
+
+
+def studio_music_files(trash=False) -> list:
     out = []
-    for p in sorted(studio_assets_dir().joinpath("music").iterdir()):
+    folder = studio_assets_dir()/"music"/("trash" if trash else "")
+    folder.mkdir(exist_ok=True)
+    for p in sorted(folder.iterdir()):
         if p.is_file() and p.suffix.lower() in STUDIO_MUSIC_EXT:
             out.append({"name": p.name, "size_h": human_size(p.stat().st_size), "duration": ffprobe_info(p).get("duration", 0), "meta": music_meta(p.name)})
     return out
@@ -7515,12 +7694,16 @@ def normalize_studio_edit(edit, sc):
     result = {}
     for key, default, low, high in [('music_start', 0, 0, 86400), ('music_volume', sc.get('music_volume', .8), 0, 2),
                                   ('fade_in', sc.get('fade_in', 2), 0, 30), ('fade_out', sc.get('fade_out', 4), 0, 30),
-                                  ('effect_at', 5, 0, 21600), ('effect_duration', 4, 1, 30)]:
+                                  ('effect_at', 5, 0, 21600), ('effect_duration', 4, 1, 30), ('effect_size', .4, .2, .8)]:
         value = float(edit.get(key, default))
         if not math.isfinite(value) or not low <= value <= high:
             raise ValueError('Neplatné nastavení zvuku nebo efektu.')
         result[key] = value
-    result['effect'] = edit.get('effect') if edit.get('effect') in ('subscribe', 'share', 'both') else ''
+    result['effect'] = edit.get('effect') if edit.get('effect') in ('subscribe', 'share', 'both', 'video') else ''
+    result['effect_timing'] = 'auto' if edit.get('effect_timing') == 'auto' else 'manual'
+    result['effect_background'] = edit.get('effect_background') if edit.get('effect_background') in ('green','black','none') else 'auto'
+    result['effect_sound'] = bool(edit.get('effect_sound', True))
+    result['effect_asset'] = str(edit.get('effect_asset') or '') if re.fullmatch(r'[a-f0-9]{24}\.(mp4|mov|m4v|webm)', str(edit.get('effect_asset') or '')) else ''
     result['text_pos'] = edit.get('text_pos') if edit.get('text_pos') in STUDIO_TEXT_POS else sc.get('text_pos', 'bl')
     asset = str(edit.get('intro_asset', ''))
     if asset and re.fullmatch(r'[a-f0-9]{24}\.(mp4|mov|m4v|png|jpg|jpeg)', asset):
@@ -7531,11 +7714,13 @@ def normalize_studio_edit(edit, sc):
 def studio_enqueue(cfg, export: dict, speed: int, intro: bool, music: str, text: str, title: str, description: str, auto: int = 0, trim_start: float = 0, trim_end: float | None = None, edit: dict | None = None, draft: bool = False, project_id: int = 0) -> int:
     sc = studio_cfg(cfg)
     speed = 1 if speed == 1 else int(round(speed / 10) * 10) if 10 <= speed <= 240 else int(sc.get("speed", 20) or 20)
-    if music and (Path(music).name != music or not (studio_assets_dir() / "music" / music).is_file()):
+    if music and not studio_music_path(music):
         raise ValueError('Vybraná hudba chybí. Vyber jinou skladbu.')
     edit = normalize_studio_edit(edit or {}, sc)
+    if edit['effect'] == 'video' and not studio_effect_meta(edit['effect_asset']):
+        raise ValueError('Vyberte animaci pro videoefekt.')
     if music:
-        music_duration = float(ffprobe_info(studio_assets_dir() / 'music' / music).get('duration') or 0)
+        music_duration = float(ffprobe_info(studio_music_path(music)).get('duration') or 0)
         if music_duration <= edit['music_start']:
             raise ValueError('Začátek hudby musí být před koncem skladby.')
     if intro:
@@ -7661,15 +7846,28 @@ def studio_render(cfg, job: dict):
             main += "," + _drawtext(font, tf, int(sc.get("text_size", 36) or 36), edit["text_pos"])
         else:
             notes.append("text do obrazu nepřidán – na RPi chybí font (nainstaluj balíček fonts-dejavu-core)")
-    if edit['effect'] and font:
+    if edit['effect'] in ('subscribe','share','both') and font:
         effect_file = out_dir / f"{job['id']}.effect.txt"
         effect_file.write_text({'subscribe': 'Odebírejte další videa', 'share': 'Sdílejte tento okamžik',
                                'both': 'Sdílejte a odebírejte'}[edit['effect']], encoding='utf-8')
-        begin = min(edit['effect_at'], max(0, main_sec - 1))
+        begin = studio_effect_start(main_sec, edit['effect_duration'], 'auto') if edit['effect_timing']=='auto' else min(edit['effect_at'], max(0, main_sec - 1))
         finish = min(main_sec, begin + edit['effect_duration'])
         main += ',' + _drawtext(font, effect_file, max(24, w // 45), 'bc') + f":enable='between(t,{begin:.3f},{finish:.3f})':alpha='min(1,min((t-{begin:.3f})/0.3,({finish:.3f}-t)/0.3))'"
-    main += "[main]"
-    filters.append(main)
+    effect_in, effect_begin, effect_length, effect_audio = None, 0.0, 0.0, False
+    if edit['effect'] == 'video':
+        effect_meta = studio_effect_meta(edit['effect_asset'])
+        if not effect_meta:
+            raise RuntimeError('Animace tohoto projektu chybí. Vyberte ji znovu ve Studiu.')
+        effect_length = min(main_sec,effect_meta['duration'])
+        effect_begin = studio_effect_start(main_sec,effect_length,edit['effect_timing'],edit['effect_at'])
+        effect_in = inputs;inputs += 1
+        effect_audio = effect_meta.get('audio') and edit['effect_sound']
+        cmd += ['-threads','2','-t',str(effect_length),'-i',str(studio_effect_dir()/edit['effect_asset'])]
+        filters.append(main+'[plain]')
+        filters.append(f'[{effect_in}:v]'+studio_effect_filter(effect_meta,edit,w,h,effect_begin)+'[effect]')
+        filters.append(f"[plain][effect]overlay=(W-w)/2:H-h-16:eof_action=pass:repeatlast=0:enable='between(t,{effect_begin:.6f},{effect_begin+effect_length:.6f})'[main]")
+    else:
+        filters.append(main+'[main]')
     intro_sec = 0.0
     intro_audio, intro_in = False, 0
     intro = studio_intro() if job.get("intro") else None
@@ -7701,10 +7899,10 @@ def studio_render(cfg, job: dict):
     else:
         filters.append("[main]null[v]")
     total = intro_sec + main_sec
-    music = (studio_assets_dir() / "music" / job["music"]) if job.get("music") else None
+    music = studio_music_path(job["music"]) if job.get("music") else None
     music = music if music and music.is_file() else None
     afmt = "aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo"
-    if music or intro_audio:
+    if music or intro_audio or effect_audio:
         # Zvuk: intro si nechá svůj (když ho má), hudba začne až za intrem a plynule zesílí; na konci plynule ztichne.
         parts = []
         if intro_sec > 0:
@@ -7727,13 +7925,19 @@ def studio_render(cfg, job: dict):
             filters.append(f"anullsrc=r=44100:cl=stereo,atrim=0:{main_sec:.3f},{afmt}[ma]")
         parts.append("[ma]")
         if len(parts) > 1:
-            filters.append("".join(parts) + f"concat=n={len(parts)}:v=0:a=1[a]")
+            filters.append("".join(parts) + f"concat=n={len(parts)}:v=0:a=1[bed]")
         else:
-            filters.append("[ma]anull[a]")
+            filters.append("[ma]anull[bed]")
+        if effect_audio:
+            delay=round((intro_sec+effect_begin)*1000)
+            filters.append(f'[{effect_in}:a]atrim=0:{effect_length:.6f},asetpts=PTS-STARTPTS,{afmt},adelay={delay}:all=1,apad,atrim=0:{total:.6f}[effectaudio]')
+            filters.append('[bed][effectaudio]amix=inputs=2:duration=first:normalize=0[a]')
+        else:
+            filters.append('[bed]anull[a]')
         maps = ["-map", "[v]", "-map", "[a]", "-c:a", "aac", "-b:a", "160k"]
     else:
         maps = ["-map", "[v]", "-an"]
-    cmd += ["-filter_complex", ";".join(filters)] + maps + ["-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
+    cmd += ["-filter_complex_threads", "1", "-filter_complex", ";".join(filters)] + maps + ["-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
                                                           "-movflags", "+faststart", "-t", f"{total:.3f}", "-f", "mp4", str(tmp)]
     log(f"Studio: vytvářím „{job['name']}“ – {speed}×, {main_sec:.0f} s{' + intro' if intro else ''}{' + hudba' if music else ''}")
     started = time.time()
@@ -7941,6 +8145,8 @@ def studio_new(request: Request, vid: int, again: int = 0):
               "title": prev["title"] if prev else generated_video_title(short_video_title(export['name'], export['camera'])),
               "description": prev["description"] if prev else studio_fill(sc.get("description", ""), v),
               "edit": normalize_studio_edit(json.loads(prev.get("edit_json") or "{}") if prev else {}, sc)}
+    if prev and prev['music'] and studio_music_path(prev['music']) and not any(m['name']==prev['music'] for m in ctx['music']):
+        ctx['music'].append({'name':prev['music'],'archived':True})
     if values["text_on"]:
         values["text"] = studio_fill(values["text"], v)
     if prev and values['edit'].get('intro_asset'):
@@ -7948,6 +8154,8 @@ def studio_new(request: Request, vid: int, again: int = 0):
         if saved_intro.is_file():
             ctx['intro'] = saved_intro
     values['intro_url'] = ('/studio/asset/intro' + ('/' + values['edit']['intro_asset'] if values['edit'].get('intro_asset') else '')) if ctx['intro'] else ''
+    if not prev:
+        values['edit']['effect_timing']='auto'
     values['project_id'] = prev['id'] if prev and prev['status'] == 'draft' else 0
     if not prev and export.get("metadata_status") == "ready":
         try:
@@ -7956,7 +8164,7 @@ def studio_new(request: Request, vid: int, again: int = 0):
                 values.update(title=generated_video_title(proposal["title"]), description=proposal["description"])
         except (ValueError, TypeError):
             pass
-    return render(request, "studio_new.html", "Studio – nové video", export=export, values=values, quick=MUSIC_QUICK, instruments=MUSIC_INSTRUMENTS,
+    return render(request, "studio_new.html", "Studio – nové video", export=export, values=values, effects=studio_effects(), quick=MUSIC_QUICK, instruments=MUSIC_INSTRUMENTS,
                   subtitle="Zrychlení, intro, text a hudba k vystřiženému videu. Než se nahraje kamkoli, uvidíš výsledek.", **ctx)
 
 
@@ -7966,7 +8174,8 @@ def studio_new_post(request: Request, vid: int, speed: int = Form(20), intro: st
                     trim_start: float = Form(0), trim_end: float | None = Form(None), action: str = Form('render'),
                     music_start: float = Form(0), music_volume: float = Form(.8), fade_in: float = Form(2), fade_out: float = Form(4),
                     effect: str = Form(''), effect_at: float = Form(5), effect_duration: float = Form(4), text_pos: str = Form('bl'),
-                    intro_asset: str = Form(''), project_id: int = Form(0)):
+                    intro_asset: str = Form(''), project_id: int = Form(0), effect_asset: str = Form(''), effect_timing: str = Form('manual'),
+                    effect_background: str = Form('auto'), effect_size: float = Form(.4), effect_sound: str = Form('')):
     cfg = load_config()
     export = _studio_export(cfg, vid)
     if not export:
@@ -7984,7 +8193,8 @@ def studio_new_post(request: Request, vid: int, speed: int = Form(20), intro: st
         sid = studio_enqueue(cfg, export, speed, bool(intro), music.strip(), text.strip() if text_on else "", title.strip() or export["name"],
                              description.strip(), trim_start=trim_start, trim_end=trim_end if trim_start or trim_end < info["duration"] - 0.11 else None,
                              draft=action == 'draft', project_id=project_id, edit=dict(music_start=music_start, music_volume=music_volume, fade_in=fade_in,
-                             fade_out=fade_out, effect=effect, effect_at=effect_at, effect_duration=effect_duration, text_pos=text_pos, intro_asset=intro_asset))
+                             fade_out=fade_out, effect=effect, effect_at=effect_at, effect_duration=effect_duration, text_pos=text_pos, intro_asset=intro_asset, effect_asset=effect_asset, effect_timing=effect_timing,
+                             effect_background=effect_background, effect_size=effect_size, effect_sound=bool(effect_sound)))
     except ValueError as exc:
         flash(request, str(exc), "err")
         return RedirectResponse("/videos", status_code=303)
@@ -8087,8 +8297,8 @@ def studio_saved_intro(request: Request, asset: str):
 
 @app.get("/studio/asset/music/{name}")
 def studio_asset_music(request: Request, name: str):
-    p = studio_assets_dir() / "music" / Path(name).name
-    if not p.is_file():
+    p = studio_music_path(name)
+    if not p:
         return JSONResponse({"error": "not found"}, status_code=404)
     return FileResponse(str(p))
 
@@ -8237,7 +8447,7 @@ async def studio_upload_music(request: Request, file: UploadFile):
     safe = re.sub(r"[^\w\-. ]+", "_", unicodedata.normalize("NFKD", Path(name).stem).encode("ascii", "ignore").decode()).strip("_ .") or "hudba"
     dest = studio_assets_dir() / "music" / f"{safe[:60]}{ext}"
     n = 1
-    while dest.exists():
+    while studio_music_path(dest.name):
         n += 1
         dest = dest.with_name(f"{safe[:60]}-{n}{ext}")
     try:
@@ -8255,17 +8465,70 @@ async def studio_upload_music(request: Request, file: UploadFile):
     return RedirectResponse("/studio/settings", status_code=303)
 
 
-@app.post("/studio/upload/music/delete")
-def studio_music_delete(request: Request, name: str = Form(...)):
-    p = studio_assets_dir() / "music" / Path(name).name
-    if p.is_file():
-        p.unlink()
-    music_meta_path(p.name).unlink(missing_ok=True)
-    with edit_config() as cfg:
-        if studio_cfg(cfg).get("music_default") == Path(name).name:
-            cfg.setdefault("studio", {})["music_default"] = ""
-    flash(request, "Hudba odstraněna.")
-    return RedirectResponse("/studio/settings", status_code=303)
+@app.post('/studio/upload/music/delete')
+def studio_music_delete(request: Request, name: str = Form(''), all_tracks: str = Form(''), back: str = Form('/studio/music')):
+    folder=studio_assets_dir()/'music';trash=folder/'trash';trash.mkdir(exist_ok=True)
+    moved=busy=failed=0
+    with _export_use_lock:
+        names=[p.name for p in folder.iterdir() if p.is_file() and p.suffix.lower() in STUDIO_MUSIC_EXT] if all_tracks == '1' else [name]
+        with db() as con:
+            active={r['music'] for r in con.execute("SELECT music FROM studio_videos WHERE status IN ('queued','rendering')")}
+        for item in names:
+            if Path(item).name != item or Path(item).suffix.lower() not in STUDIO_MUSIC_EXT:
+                continue
+            if item in active:
+                busy+=1;continue
+            source=folder/item
+            if not source.is_file():continue
+            try:
+                source.replace(trash/item)
+                meta=music_meta_path(item)
+                if meta.is_file():meta.replace(trash/meta.name)
+                moved+=1
+            except OSError:
+                failed+=1
+        with edit_config() as cfg:
+            default=studio_cfg(cfg).get('music_default','')
+            if default in names and not (folder/default).is_file():
+                cfg.setdefault('studio',{})['music_default']=''
+    message=f'V koši: {moved} skladeb. Uložené projekty je mohou dál používat.'
+    if busy:message+=f' Právě používané při přípravě videa: {busy}, ponecháno.'
+    if failed:message+=f' Nepodařilo se přesunout: {failed}.'
+    flash(request,message,'warn' if busy or failed else 'ok')
+    return RedirectResponse(back if back in ('/studio/music','/studio/settings') else '/studio/music',status_code=303)
+
+
+@app.post('/studio/music/restore')
+def studio_music_restore(request: Request, name: str = Form(...)):
+    folder=studio_assets_dir()/'music';source=folder/'trash'/name
+    with _export_use_lock:
+        if Path(name).name == name and Path(name).suffix.lower() in STUDIO_MUSIC_EXT and source.is_file() and not (folder/name).exists():
+            source.replace(folder/name)
+            meta=source.with_suffix(source.suffix+'.json')
+            if meta.is_file():meta.replace(music_meta_path(name))
+            flash(request,'Skladba je zpět v knihovně.')
+        else:
+            flash(request,'Skladbu nelze obnovit; ověřte, zda už není v knihovně.','warn')
+    return RedirectResponse('/studio/music',status_code=303)
+
+
+@app.post('/studio/music/trash/empty')
+def studio_music_empty_trash(request: Request):
+    folder=studio_assets_dir()/'music'/'trash';removed=kept=failed=0
+    with _export_use_lock,db() as con:
+        used={r['music'] for r in con.execute("SELECT music FROM studio_videos WHERE music!=''")}
+        for path in list(folder.iterdir()) if folder.is_dir() else []:
+            if not path.is_file() or path.suffix.lower() not in STUDIO_MUSIC_EXT:continue
+            if path.name in used:
+                kept+=1;continue
+            try:
+                path.unlink();path.with_suffix(path.suffix+'.json').unlink(missing_ok=True);removed+=1
+            except OSError:failed+=1
+    message=f'Trvale odstraněno: {removed} skladeb.'
+    if kept:message+=f' Ponecháno pro uložené projekty: {kept}.'
+    if failed:message+=f' Nepodařilo se odstranit: {failed}.'
+    flash(request,message,'warn' if failed else 'ok')
+    return RedirectResponse('/studio/music',status_code=303)
 
 
 # ---------- Hledání hudby (Openverse – Creative Commons, CC0 / CC BY) ----------
@@ -8389,7 +8652,8 @@ def music_meta_path(name: str) -> Path:
 
 
 def music_meta(name: str) -> dict:
-    p = music_meta_path(name)
+    music = studio_music_path(name)
+    p = music.with_suffix(music.suffix+'.json') if music else music_meta_path(name)
     try:
         return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
     except (OSError, ValueError):
@@ -8417,7 +8681,13 @@ def music_download(cfg, item: dict) -> str:
     if ext not in STUDIO_MUSIC_EXT:
         ext = ".mp3"
     dest = studio_assets_dir() / "music" / f"{base}{ext}"
-    if dest.is_file():
+    if studio_music_path(dest.name):
+        archived=studio_music_path(dest.name)
+        if archived != dest:
+            with _export_use_lock:
+                archived.replace(dest)
+                old_meta=archived.with_suffix(archived.suffix+'.json')
+                if old_meta.is_file():old_meta.replace(music_meta_path(dest.name))
         return dest.name
     tmp = dest.with_suffix(dest.suffix + ".part")
     size = 0
@@ -9738,7 +10008,7 @@ def music_library(request: Request):
     cfg = load_config()
     with db() as con:
         used = [dict(r) for r in con.execute("SELECT id,title,name,music FROM studio_videos WHERE music!='' ORDER BY id DESC")]
-    return render(request, 'music_library.html', 'Hudba', music=studio_music_files(), used=used,
+    return render(request, 'music_library.html', 'Hudba', music=studio_music_files(), trash=studio_music_files(trash=True), used=used,
                   subtitle='Poslechněte si skladby a podívejte se, kde je používáte.')
 
 
