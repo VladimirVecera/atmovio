@@ -118,7 +118,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "6.0.1"
+APP_VERSION = "6.0.2"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -2914,7 +2914,7 @@ LOGO_SVG = """<svg class="logo" viewBox="0 0 64 64" width="34" height="34" aria-
 
 BASE_CSS = ""  # vzhled je v static/atmovio.css (nad Pico CSS)
 
-NAV_PRIMARY = [("/live", "Kamery", "camera"), ("/moments", "Okamžiky", "sun"), ("/youtube", "Moje videa", "video"), ("/studio", "Studio", "play")]
+NAV_PRIMARY = [("/live", "Kamery", "camera"), ("/moments", "AI detekce", "sun"), ("/youtube", "Moje videa", "video"), ("/studio", "Studio", "play")]
 NAV_SETTINGS = [("/cameras", "Kamery", "🎥"), ("/ai", "AI detekce", "☁"),
                 ("/videos/settings", "AI videa", "🎬"), ("/studio/settings", "YouTube videa", "⏩"),
                 ("/storage", "Úložiště a záznamy", "💾"), ("/email", "Upozornění", "✉"),
@@ -3035,7 +3035,7 @@ TEMPLATES["login.html"] = """<!doctype html><html lang="cs" data-theme="light"><
 <label>Heslo administrátora</label><input type="password" name="password" autofocus autocomplete="current-password"><button class="btn block" style="margin-top:.9rem">Přihlásit</button></form></body></html>"""
 
 TEMPLATES["dashboard.html"] = """{% extends "base.html" %}{% block actions %}<a class="btn sec" href="/discover">{{ icons.plus|safe }} Přidat kameru</a>{% endblock %}{% block content %}{% include "camera_cards.html" %}
-<div class="section-head"><h2>Pokračovat v tvorbě</h2><a href="/youtube">Všechna videa →</a></div><div class="continue-grid">{% for v in recent_studio %}<a class="continue-card" href="/studio/v/{{ v.id }}"><span>{{ icons.video|safe }}</span><div><b>{{ short_title(v.title or v.name,v.camera) }}</b><small>{{ cam(v.camera) }} · {{ v.created|czdate }}</small></div><span>→</span></a>{% else %}<div class="empty-state"><h3>Vytvořte první video</h3><p>Vyberte úsek záznamu nebo zajímavý okamžik.</p><a href="/moments" class="btn sec">Prohlédnout okamžiky</a></div>{% endfor %}</div>{% endblock %}"""
+<div class="section-head"><h2>Pokračovat v tvorbě</h2><a href="/youtube">Všechna videa →</a></div><div class="continue-grid">{% for v in recent_studio %}<a class="continue-card" href="/studio/v/{{ v.id }}"><span>{{ icons.video|safe }}</span><div><b>{{ short_title(v.title or v.name,v.camera) }}</b><small>{{ cam(v.camera) }} · {{ v.created|czdate }}</small></div><span>→</span></a>{% else %}<div class="empty-state"><h3>Vytvořte první video</h3><p>Vyberte úsek záznamu nebo zajímavý okamžik.</p><a href="/moments" class="btn sec">Prohlédnout AI detekce</a></div>{% endfor %}</div>{% endblock %}"""
 
 TEMPLATES["cameras.html"] = """{% extends "base.html" %}{% block actions %}{% if pre.replace %}<a class="btn small sec" href="/cameras">Zpět na kamery</a>{% endif %}{% endblock %}{% block content %}
 {% if not cams and not pre.main %}<div class="card" style="border-color:var(--ac)"><h2>Krok 1 · Najdi kamery v síti</h2>
@@ -3604,11 +3604,11 @@ TEMPLATES["recording_prepared.html"] = """{% extends "base.html" %}{% block acti
 {% else %}<p class="hint">Text můžeš doplnit níže nebo nechat AI vyhodnotit 9 snímků videa.</p>{% endif %}
 {% if v.metadata_status not in ('queued','working','ready') %}<form method="post" action="/recording/{{ v.id }}/metadata"><button class="btn small sec">Navrhnout text z 9 snímků pomocí AI</button></form>{% endif %}
 {% if v.ready and v.metadata_status not in ('queued','working') %}<form method="post" action="/recording/{{ v.id }}/text"><label>Nadpis</label><input name="title" value="{{ v.metadata_title or v.name }}" maxlength="100" required><label>Popis</label><textarea name="description" rows="4" maxlength="4500">{{ v.metadata_description or '' }}</textarea><button class="btn">Uložit text</button></form>{% endif %}
-<div class="actions"><a class="btn sec" href="/videos#v{{ v.id }}">Zpět na okamžiky</a>{% if v.ready %}<a class="btn sec" href="/videos/{{ v.id }}/download">Stáhnout MP4</a><a class="btn sec" href="/studio/new/{{ v.id }}">Otevřít ve Studiu</a>{% endif %}</div></div></section>
+<div class="actions"><a class="btn sec" href="/videos#v{{ v.id }}">Zpět na AI detekce</a>{% if v.ready %}<a class="btn sec" href="/videos/{{ v.id }}/download">Stáhnout MP4</a><a class="btn sec" href="/studio/new/{{ v.id }}">Otevřít ve Studiu</a>{% endif %}</div></div></section>
 {% if (not v.ready and not v.stuck and not v.expired) or v.metadata_status in ('queued','working') %}<div x-data="autorefresh(15)"></div>{% endif %}
 {% if merge_sources %}<details class="advanced-panel" id="sources"><summary>Původní klipy před spojením · {{ merge_sources|length }}</summary><p class="hint">Spojené video obsahuje dostupný záznam. Původní klipy zůstávají zde.</p>{% for source in merge_sources %}<a class="overview-row" href="/recording/{{ source.id }}">{{ short_title(source.name,source.camera) }} · {{ source.range_h }}</a>{% endfor %}</details>{% endif %}{% endblock %}"""
 
-TEMPLATES["detection.html"] = """{% extends "base.html" %}{% block actions %}<a class="btn sec" href="/moments/discover">← Okamžiky</a>{% endblock %}{% block content %}
+TEMPLATES["detection.html"] = """{% extends "base.html" %}{% block actions %}<a class="btn sec" href="/moments/discover">← AI detekce</a>{% endblock %}{% block content %}
 <div class="grid-2 media-editor-grid"><div><div class="editor-preview">
 {% if use_export %}<video controls playsinline preload="metadata" poster="{% if e.image %}/snapshot/{{ e.image }}{% endif %}" src="/videos/{{ use_export.id }}/play.mp4"></video>
 {% elif clip_state=='ok' %}<video controls playsinline preload="metadata" poster="{% if e.image %}/snapshot/{{ e.image }}{% endif %}" x-data='archivePreview({{ e.camera|tojson }}, {{ clip_start|int }}, {{ clip_end|int }})'></video>
@@ -3618,7 +3618,7 @@ TEMPLATES["detection.html"] = """{% extends "base.html" %}{% block actions %}<a 
 
 TEMPLATES["live.html"] = """{% extends "base.html" %}{% block actions %}<a class="btn sec" href="/discover">{{ icons.plus|safe }} Přidat kameru</a>{% endblock %}{% block content %}
 {% if mode == 'all' %}<div class="camera-grid">{% for c in cameras %}<article class="camera-card"><video x-data='livePreview({{ c|tojson }})' controls autoplay muted playsinline poster="/live/{{ c }}.jpg?h=720"></video><div class="camera-caption"><h2><a href="/camera/{{ c }}">{{ cam(c) }}</a></h2></div></article>{% endfor %}</div>{% else %}{% include "camera_cards.html" %}{% endif %}
-<div class="quiet-links"><a href="/live/all">Všechny kamery živě</a><a href="/moments">Prohlédnout zajímavé okamžiky →</a></div>{% endblock %}"""
+<div class="quiet-links"><a href="/live/all">Všechny kamery živě</a><a href="/moments">Prohlédnout AI detekce →</a></div>{% endblock %}"""
 
 TEMPLATES["camera.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a href="/live" class="btn sec">← Kamery</a><a class="ico-btn" href="/cameras/edit/{{ camera }}" aria-label="Nastavení kamery">{{ icons.cog|safe }}</a></div>{% endblock %}{% block content %}
 <section class="camera-player" x-data='cameraPlayer({{ camera|tojson }})'>
@@ -3678,9 +3678,9 @@ TEMPLATES["video_activity.html"] = """<section class="video-work" x-data='videoA
 </section>"""
 
 TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block actions %}<a class="btn small sec" href="/videos/settings">Nastavení ukládání</a>{% endblock %}{% block content %}
-<nav class="tabs"><a class="active" href="/moments">Uložené okamžiky</a><a href="/moments/discover">Další zajímavé nálezy</a></nav>
+<nav class="tabs"><a class="active" href="/moments">Uložená videa</a><a href="/moments/discover">Další nálezy AI</a></nav>
 {% include "video_activity.html" %}
-<div class="section-head video-library-head"><div><h2>Okamžiky <span class="badge ok">{{ videos|length }}</span></h2><p class="hint">Celá událost v jednom videu. Připravená k přehrání, stažení a dalším úpravám.</p></div>
+<div class="section-head video-library-head"><div><h2>Videa událostí <span class="badge ok">{{ videos|length }}</span></h2><p class="hint">Od nejnovějšího záznamu. Celá událost v jednom videu.</p></div>
 {% if total_exports %}<details class="more-menu"><summary>Další možnosti</summary><a href="/videos/delete-all">{{ 'Průběh mazání' if deleting else 'Smazat uložené klipy' }}</a></details>{% endif %}</div>
 {% if not videos %}<div class="card empty-videos"><h3>Zatím žádné hotové video</h3><p>Po dokončení se zde objeví celé video události. Vyberte <a href="/live">kameru a část záznamu</a>, nebo zapněte <a href="/ai#kamery">hlídání oblohy</a>.</p></div>{% endif %}
 <div class="gallery videos">
@@ -4001,7 +4001,7 @@ TEMPLATES["camera_cards.html"] = """<div class="camera-grid">
 
 TEMPLATES["studio_start.html"] = """{% extends "base.html" %}{% block actions %}<a href="/live" class="btn sec">Vybrat úsek z kamery</a>{% endblock %}{% block content %}<div class="gallery videos">{% for v in videos %}<article class="shot video"><a class="thumb" href="/studio/new/{{ v.id }}"><img src="/videos/{{ v.id }}/thumb.jpg" alt="" loading="lazy"><span class="play">+</span><span class="dur">{{ v.duration_h }}</span></a><div class="b"><h3>{{ short_title(v.metadata_title or v.name,v.camera) }}</h3><p class="hint">{{ cam(v.camera) }} · {{ v.range_h }}</p><a class="btn" href="/studio/new/{{ v.id }}">Upravit ve Studiu</a></div></article>{% else %}<div class="empty-state"><h2>Začněte záznamem z kamery</h2><p>Označte OD a DO a uložte klip. Potom přidejte hudbu nebo vytvořte časosběr.</p><a class="btn" href="/live">Otevřít kamery</a></div>{% endfor %}</div>{% endblock %}"""
 
-TEMPLATES["moments_discover.html"] = """{% extends "base.html" %}{% block actions %}<a href="/moments" class="btn sec">Uložené okamžiky</a>{% endblock %}{% block content %}<details class="advanced-panel"><summary>Filtr podle kamery</summary><form method="get"><label>Kamera<select name="camera"><option value="">Všechny kamery</option>{% for c in cameras %}<option value="{{ c }}" {{ 'selected' if camera==c }}>{{ cam(c) }}</option>{% endfor %}</select></label><button class="btn small">Použít</button></form></details><div class="gallery videos">{% for e in moments %}<article class="shot video"><a class="thumb" href="/detection/{{ e.id }}"><img src="/snapshot/{{ e.image }}" alt="" loading="lazy"><span class="play">▶</span></a><div class="b"><h3>{{ e.phenomenon }}</h3><p class="hint">{{ cam(e.camera) }} · {{ e.ts|czdt }}</p><p class="desc2">{{ e.description }}</p><a class="btn small" href="/detection/{{ e.id }}">Prohlédnout okamžik</a></div></article>{% else %}<div class="empty-state"><h2>Zatím žádný zajímavý okamžik</h2><p>Až kamera zachytí něco zajímavého, objeví se to tady.</p></div>{% endfor %}</div><div class="quiet-links">{% if page>1 %}<a href="?page={{ page-1 }}&camera={{ camera }}">← Novější</a>{% endif %}{% if more %}<a href="?page={{ page+1 }}&camera={{ camera }}">Starší →</a>{% endif %}<a href="/history">Technická historie vyhodnocování</a></div>{% endblock %}"""
+TEMPLATES["moments_discover.html"] = """{% extends "base.html" %}{% block actions %}<a href="/moments" class="btn sec">Uložená videa</a>{% endblock %}{% block content %}<details class="advanced-panel"><summary>Filtr podle kamery</summary><form method="get"><label>Kamera<select name="camera"><option value="">Všechny kamery</option>{% for c in cameras %}<option value="{{ c }}" {{ 'selected' if camera==c }}>{{ cam(c) }}</option>{% endfor %}</select></label><button class="btn small">Použít</button></form></details><div class="gallery videos">{% for e in moments %}<article class="shot video"><a class="thumb" href="/detection/{{ e.id }}"><img src="/snapshot/{{ e.image }}" alt="" loading="lazy"><span class="play">▶</span></a><div class="b"><h3>{{ e.phenomenon }}</h3><p class="hint">{{ cam(e.camera) }} · {{ e.ts|czdt }}</p><p class="desc2">{{ e.description }}</p><a class="btn small" href="/detection/{{ e.id }}">Prohlédnout okamžik</a></div></article>{% else %}<div class="empty-state"><h2>Zatím žádný zajímavý okamžik</h2><p>Až kamera zachytí něco zajímavého, objeví se to tady.</p></div>{% endfor %}</div><div class="quiet-links">{% if page>1 %}<a href="?page={{ page-1 }}&camera={{ camera }}">← Novější</a>{% endif %}{% if more %}<a href="?page={{ page+1 }}&camera={{ camera }}">Starší →</a>{% endif %}<a href="/history">Technická historie vyhodnocování</a></div>{% endblock %}"""
 
 TEMPLATES["settings_home.html"] = """{% extends "base.html" %}{% block content %}<div class="settings-grid">{% for href,name,icon,desc in [('/cameras','Kamery','camera','Připojení kamer a jejich názvy.'),('/storage','Záznamy a místo','disk','Délka uchování a připojený disk.'),('/ai','Hlídání oblohy','sun','Co má AI hledat a kdy uložit okamžik.'),('/studio/settings','Videa a YouTube','video','Výchozí vzhled videa a propojení kanálu.'),('/email','Upozornění','mail','Kam posílat důležité zprávy.'),('/system','Systém a aktualizace','cog','Verze, stav Raspberry Pi a aktualizace.')] %}<a class="setting-card" href="{{ href }}"><span class="setting-icon">{{ icons.get(icon,icons.cog)|safe }}</span><h2>{{ name }}</h2><p>{{ desc }}</p><span class="setting-arrow">→</span></a>{% endfor %}</div><details class="advanced-panel"><summary>Pokročilé nastavení</summary><div class="quiet-links"><a href="/vpn">Síť a VPN</a><a href="/videos/settings">Automatické ukládání klipů</a><a href="/logs">Diagnostika a JSON export</a><a href="/history">Technická historie AI</a></div></details>{% endblock %}"""
 
@@ -6094,7 +6094,7 @@ def export_thumb_path(cfg, rec: dict, fr: dict | None) -> Path | None:
 
 
 def list_videos(cfg, limit: int = -1, thumbnails: bool = True) -> list:
-    """Seznam exportů pro stránku Videa (stav, velikost, náhled)."""
+    """Exporty od nejnovějšího záznamu, nezávisle na pořadí vytvoření či spojení."""
     fr_all = frigate_exports(cfg)
     keep = int(cfg.get("export_keep_days", 30) or 30)
     try:
@@ -6102,7 +6102,7 @@ def list_videos(cfg, limit: int = -1, thumbnails: bool = True) -> list:
     except Exception:
         retain_cutoff = 0
     with db() as con:
-        rows = [dict(r) for r in con.execute("SELECT * FROM exports ORDER BY id DESC LIMIT ?", (limit,))]
+        rows = [dict(r) for r in con.execute("SELECT * FROM exports ORDER BY start_ts DESC, id DESC LIMIT ?", (limit,))]
     out = []
     for rec in rows:
         fr = fr_all.get(rec["frigate_id"])
@@ -7136,7 +7136,7 @@ def videos_page(request: Request):
     # Thumbnails are fetched lazily by their existing route, only for finished gallery cards.
     for v in videos:
         v["thumb"] = True
-    return render(request, "videos.html", "Okamžiky", videos=videos, total_exports=len(all_videos),
+    return render(request, "videos.html", "AI detekce", videos=videos, total_exports=len(all_videos),
                   keep_days=int(cfg.get("export_keep_days", 30) or 30), activity=video_activity(cfg, all_videos, studio),
                   deleting=bool(_video_bulk_state.get("active")),
                   subtitle="Zajímavé události z vašich kamer, připravené k přehrání.")
@@ -9771,7 +9771,7 @@ def moments_discover(request: Request, camera: str = '', page: int = 1):
         else:
             groups.append(dict(row, start=a, end=b, count=1))
     page = max(1, page)
-    return render(request, 'moments_discover.html', 'Zajímavé nálezy', moments=groups[(page-1)*24:page*24],
+    return render(request, 'moments_discover.html', 'Další nálezy AI', moments=groups[(page-1)*24:page*24],
                   more=len(groups)>page*24, page=page, camera=camera, cameras=frigate_cameras(cfg),
                   subtitle='Jedna karta pro související pozorování. Vyberte, co chcete uchovat.')
 

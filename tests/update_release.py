@@ -16,16 +16,17 @@ import app as a
 
 try:
     script = (root / "update-atmovio.sh").read_bytes()
-    script_url = "https://github.com/VladimirVecera/atmovio/releases/download/v6.0.1/update-atmovio.sh"
+    version = a.APP_VERSION
+    script_url = f"https://github.com/VladimirVecera/atmovio/releases/download/v{version}/update-atmovio.sh"
     sums_url = script_url.rsplit("/", 1)[0] + "/SHA256SUMS"
     release = Mock(status_code=200)
-    release.json.return_value = dict(tag_name="v6.0.1", assets=[
+    release.json.return_value = dict(tag_name="v" + version, assets=[
         dict(name="update-atmovio.sh", browser_download_url=script_url),
         dict(name="SHA256SUMS", browser_download_url=sums_url)])
-    for installed in ("5.3.21", "6.0.0", "6.0.1"):
+    for installed in ("5.3.21", "6.0.0", "6.0.1", version):
         with patch.object(a, "APP_VERSION", installed), patch.object(a.requests, "get", return_value=release):
             state = a.check_for_update()
-            assert state["available"] == (installed != "6.0.1")
+            assert state["available"] == (installed != version)
             assert state["script_url"] == script_url and state["sums_url"] == sums_url
     body = Mock(content=script)
     checksum = Mock(text=hashlib.sha256(script).hexdigest() + "  update-atmovio.sh\n")
@@ -37,6 +38,6 @@ try:
             assert a.start_update() == ""
             assert (base / ".update-dl/update-atmovio.sh").read_bytes() == script
             assert any(call.args[0][0] == "systemd-run" for call in run.call_args_list)
-    print("PASS: 5.3.21 and 6.0.0 discover 6.0.1, current release is not reinstalled, bad checksum blocks execution, verified updater runs independently of the web service")
+    print("PASS: older installations discover the current release, current release is not reinstalled, bad checksum blocks execution, verified updater runs independently of the web service")
 finally:
     shutil.rmtree(base)

@@ -43,6 +43,9 @@ try:
     zero = export('empty')
     open_part = export('open-part', parent=pending)
     orphan_part = export('orphan-part', parent=999)
+    # A newer database ID can be an older recording exported/merged later.
+    with a.db() as con:
+        con.execute('UPDATE exports SET start_ts=200,end_ts=3800 WHERE id=?', (main,))
     fr = {fid:dict(video_path=str(media),in_progress=False) for fid in ['final-event','hidden-part','manual-ready','working','open-part','orphan-part']}
     fr['working']['in_progress'] = True
     fr['empty'] = dict(video_path=str(empty),in_progress=False)
@@ -64,9 +67,19 @@ try:
         token=re.search(r'name="csrf_token" value="([^"]+)"',client.get('/login').text)[1]
         assert client.post('/login',data={'password':os.environ['ATMOVIO_ADMIN_PASSWORD'],'csrf_token':token},follow_redirects=False).status_code==303
         page=client.get('/videos'); assert page.status_code==200
+        assert '<h1>AI detekce</h1>' in page.text
         token=re.search(r'name="csrf_token" value="([^"]+)"',page.text)[1]
         gallery=re.search(r'<div class="gallery videos">(.*?)</div><p class="hint">',page.text,re.S)[1]
         assert f'id="v{main}"' in gallery and f'id="v{manual}"' in gallery
+        assert gallery.index(f'id="v{main}"') < gallery.index(f'id="v{manual}"')
+        assert a.list_videos(cfg, limit=1, thumbnails=False)[0]['id'] == main
+        ordered = a.list_videos(cfg, thumbnails=False)
+        assert [v['id'] for v in ordered if v['start_ts'] == 100] == sorted(
+            [v['id'] for v in ordered if v['start_ts'] == 100], reverse=True)
+        moments = client.get('/moments').text
+        assert moments.index(f'id="v{main}"') < moments.index(f'id="v{manual}"')
+        source_picker = client.get('/studio').text
+        assert source_picker.index(f'/studio/new/{main}') < source_picker.index(f'/studio/new/{manual}')
         for eid in [part,working,missing,zero,open_part,orphan_part]:
             assert f'id="v{eid}"' not in gallery
         assert 'Průběžné části' not in page.text and '/parts' not in page.text

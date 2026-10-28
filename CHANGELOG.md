@@ -2,6 +2,11 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 6.0.2 – 2026-10-28 – clear AI detections and chronological video library
+
+- Rename Moments to AI detections in navigation, page headings and links.
+- Sort clips by recording start time, newest first, even when older footage is exported or merged later. Apply the same order when choosing a Studio source.
+
 ## 6.0.1 – 2026-10-28 – Atmovio 6 public release
 
 - Introduce the camera, moments, editable Studio and diagnostics workspace, with Frigate 0.18.2 and a validated upgrade from earlier versions.
