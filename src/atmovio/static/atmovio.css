@@ -1366,10 +1366,10 @@ header.top nav.menu > a.active, header.top nav.menu .dd > button.active { backgr
 .music-workspace .music-search-row{display:grid;grid-template-columns:minmax(0,1fr) 130px auto;gap:10px;align-items:end}.music-workspace .music-search-fields .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .music-workspace .tracks{max-height:440px;overflow:auto}.music-workspace .track{grid-template-columns:minmax(0,1fr) auto}.music-workspace .track audio{grid-column:1/-1;width:100%;margin:4px 0}.music-workspace .inline-help{margin:16px 0}.music-workspace .music-instruments{border:0;padding:0;margin:12px 0}
 .studio-inspector .music-selection audio{height:54px;margin:20px 0}.intro-edit-grid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(260px,.7fr);gap:28px;align-items:start}.intro-canvas{border-radius:10px;overflow:hidden;background:#0b1421;color:#fff;min-height:220px;display:grid;align-items:center;text-align:center}.intro-canvas p{padding:24px}.intro-canvas .intro-preview{margin:0;width:100%;max-height:50dvh;object-fit:contain}.intro-edit-grid input[type=file]{width:100%;font-size:12px}
-.studio-project .editor-preview video{height:clamp(144px,calc(100dvh - 440px),560px);aspect-ratio:auto;max-height:none;object-fit:contain}.studio-project .editor-timeline{margin-top:8px;padding:12px}.studio-project .editor-timeline .trim-rail{margin:10px 0}.studio-project .editor-timeline .hint{margin:6px 0 0}.studio-project .editor-timeline .section-head{margin-bottom:8px}
+.studio-project .editor-timeline{margin-top:8px;padding:12px}.studio-project .editor-timeline .trim-rail{margin:10px 0}.studio-project .editor-timeline .hint{margin:6px 0 0}.studio-project .editor-timeline .section-head{margin-bottom:8px}
 /* The generic form rule has intentionally high specificity; these compact date controls override it. */
 .workspace .camera-player .date-pick input{min-height:32px!important;height:32px!important;padding:4px 8px!important}
-@media(max-width:1100px){.studio-project .editor-tools{grid-template-columns:repeat(3,minmax(0,1fr))}.music-workspace{grid-template-columns:1fr}.studio-project .editor-tools button{min-height:44px}.studio-project .editor-preview video{height:clamp(144px,calc(100dvh - 485px),480px)}}
+@media(max-width:1100px){.studio-project .editor-tools{grid-template-columns:repeat(3,minmax(0,1fr))}.music-workspace{grid-template-columns:1fr}.studio-project .editor-tools button{min-height:44px}}
 @media(max-width:620px){.studio-layout--focused .studio-inspector{padding:16px}.intro-edit-grid{grid-template-columns:1fr}.studio-project .editor-tools{gap:6px}.studio-project .editor-tools button{font-size:11px;padding:8px;gap:6px}.tool-number{width:20px;height:20px;font-size:10px}.music-workspace .music-search-row{grid-template-columns:1fr 100px}.music-workspace .music-search-row>button{grid-column:1/-1}.music-workspace .finder{padding:12px}}
 
 .music-offset-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end}.studio-inspector .music-selection audio{height:48px;margin:12px 0}.music-offset-row>.btn{margin-bottom:0}.music-offset-row>label{margin-top:8px}.music-selection .inline-help{margin-top:14px}.music-offset-row>.btn{white-space:normal;max-width:130px}
@@ -1383,3 +1383,30 @@ header.top nav.menu > a.active, header.top nav.menu .dd > button.active { backgr
 
 /* Positioning is separate from playback so dragging never steals the media controls. */
 .effect-position-controls{margin:16px 0 0;padding:12px;border:1px solid var(--at-line);border-radius:10px}.effect-position-controls legend{font-weight:650;font-size:14px;padding:0 5px}.effect-coordinates{display:grid;grid-template-columns:1fr 1fr;gap:12px}.effect-coordinates label{margin:0}.effect-position-controls .hint{margin:8px 0}.effect-position-controls .actions{gap:8px;flex-wrap:wrap}.effect-position-stage{position:relative;overflow:hidden;border-radius:10px;background:#0b1421}.effect-position-stage>img{position:absolute;width:100%;height:100%;object-fit:fill;user-select:none;pointer-events:none}.effect-position-stage .effect-position-box{position:absolute;min-width:0;min-height:0;margin:0;padding:0;display:grid;place-items:center;background:rgb(37 99 235 / 25%);border:2px solid #fff;box-shadow:0 0 0 1px #2563eb;border-radius:6px;cursor:grab;touch-action:none;user-select:none}.effect-position-box:active{cursor:grabbing}.effect-position-box span{padding:3px 8px;background:#15315b;color:white;border-radius:5px;font-size:12px;white-space:nowrap}.effect-position-box:focus-visible{outline:3px solid #ffbe55;outline-offset:2px}
+
+/* Keep the canvas and its media at the same source ratio; reserve real space for controls. */
+.studio-project{--studio-preview-height:clamp(180px,calc(100dvh - 500px),680px)}
+.studio-project .studio-layout{grid-template-columns:minmax(0,calc(var(--studio-preview-height)*var(--studio-aspect))) minmax(340px,1fr)}
+.studio-project .editor-preview{aspect-ratio:var(--studio-aspect)}
+.studio-project .editor-preview video{width:100%;height:100%;aspect-ratio:auto;max-height:none;object-fit:contain}
+.studio-project .studio-inspector{padding:20px}
+.studio-project #studio-trim h2{margin-bottom:8px}
+.studio-project #studio-trim hr{margin:14px 0}
+.studio-project #studio-trim>p{margin:10px 0}
+.studio-project #studio-trim label{margin-top:10px}
+.studio-defaults{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;max-width:540px}
+.studio-defaults .hint{flex-basis:100%;margin:0;font-size:11px}
+.studio-defaults .text-link{background:none;border:0;box-shadow:none;color:var(--at-muted);padding:4px;width:auto;margin:0;font-size:12px}
+.editor-footer>.actions{flex-shrink:0}
+.effect-library{margin:14px 0;padding:12px;border:1px solid var(--at-line);border-radius:8px}
+.effect-library summary{font-size:13px;font-weight:600}
+.effect-library-list{max-height:240px;overflow:auto;margin:10px 0}
+.effect-library-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--at-line);font-size:12px}
+.effect-library-row span{overflow-wrap:anywhere;min-width:0}
+.effect-library-row button{flex-shrink:0;margin:0}
+.effect-trash{margin-top:16px}
+.library-confirm{padding:12px;margin-top:12px;background:var(--at-surface-2);border-radius:8px;font-size:12px}
+.library-confirm p{margin:0 0 8px}
+.effect-video-preview video{height:auto;max-height:none}
+@media(max-width:1050px){.studio-project .studio-layout{grid-template-columns:minmax(0,1fr)}.studio-project .studio-canvas{position:static;width:min(100%,calc(var(--studio-preview-height)*var(--studio-aspect)));justify-self:center}.studio-project #studio-trim{max-width:720px;margin:auto}.studio-defaults{max-width:420px}}
+@media(max-width:620px){.studio-project{--studio-preview-height:340px}.studio-project .studio-inspector{padding:16px}.studio-project .editor-footer{position:static;box-shadow:none;gap:16px}.studio-defaults{max-width:none}.editor-footer>.actions{flex-wrap:wrap}.effect-library-row{align-items:flex-start}}

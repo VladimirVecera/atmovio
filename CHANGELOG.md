@@ -2,6 +2,12 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 6.0.6 – 2026-10-28 – reusable Studio settings and animation library
+
+- Remember speed, music, intro and effect settings (including X/Y) for new videos with one explicit action. Keep trim, titles and existing projects independent.
+- Preserve the source aspect ratio in the trimming preview, keep its timeline nearby and give the controls more width.
+- Remove saved animations individually or in bulk, restore them from trash and purge unused assets. Keep saved-project assets and active renders available.
+
 ## 6.0.5 – 2026-10-28 – position video effects
 
 - Place uploaded animations with X/Y percentages or drag their bounding box over the source thumbnail. Keyboard arrows and a bottom-center reset are available.

@@ -14,7 +14,7 @@ class AudioEngine {
 let pendingPreview, previewBody;
 const window = {AudioContext:AudioEngine,addEventListener(){}};
 vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname,'../src/atmovio/static/atmovio.js'),'utf8'),{
-  FormData,fetch:(_url,options)=>new Promise(resolve=>{previewBody=options.body;pendingPreview=resolve;}),
+  FormData:class extends FormData{constructor(form){super();if(form)form.forEach(([key,value])=>this.append(key,value));}},fetch:(_url,options)=>new Promise(resolve=>{previewBody=options.body;pendingPreview=resolve;}),
   document:{readyState:'loading',addEventListener:(name,fn)=>events[name]=fn}, window,
   Alpine:{data:(name,factory)=>components[name]=factory}
 });
@@ -79,5 +79,20 @@ events['alpine:init']();
   request=uploaded.playVideoEffect();assert.equal(previewBody.get('x'),'10');assert.equal(previewBody.get('y'),'1');
   uploaded.positionChanged();pendingPreview({ok:true,json:async()=>({url:'/wrong-position.mp4'})});await request;
   assert.equal(uploaded.previewUrl,'');assert.equal(uploaded.positioning,true);
+  const preferences=components.studioPreferences(true,false,false);
+  preferences.$el={closest:selector=>{assert.equal(selector,'form');return [['csrf_token','fixture'],['speed','50'],['effect_x','25']];}};
+  request=preferences.saveDefaults();assert.equal(previewBody.get('speed'),'50');assert.equal(preferences.defaultsBusy,true);
+  pendingPreview({ok:true,json:async()=>({saved:true,message:'Saved'})});await request;
+  assert.equal(preferences.defaultsSaved,true);assert.equal(preferences.defaultsMessage,'Saved');assert.equal(preferences.defaultsBusy,false);
+  request=preferences.saveDefaults(true);assert.equal(previewBody.get('reset'),'1');
+  pendingPreview({ok:true,json:async()=>({saved:false,message:'Reset'})});await request;assert.equal(preferences.defaultsSaved,false);
+  request=preferences.saveDefaults();pendingPreview({ok:false,json:async()=>({error:'Unavailable effect'})});await request;
+  assert.equal(preferences.defaultsSaved,false);assert.equal(preferences.defaultsMessage,'Unavailable effect');
+  uploaded.$dispatch=()=>{};uploaded.asset='clip.mp4';
+  request=uploaded.manageLibrary('delete','clip.mp4');assert.equal(previewBody.get('asset'),'clip.mp4');
+  pendingPreview({ok:true,json:async()=>({items:[],trash:[{asset:'clip.mp4'}],message:'Moved'})});await request;
+  assert.equal(uploaded.asset,'');assert.equal(uploaded.trash.length,1);assert.equal(uploaded.busy,false);
+  request=uploaded.manageLibrary('restore','clip.mp4');pendingPreview({ok:true,json:async()=>({items:[{asset:'clip.mp4'}],trash:[],message:'Restored'})});await request;
+  assert.equal(uploaded.items.length,1);assert.equal(uploaded.trash.length,0);
   console.log('Studio preview: gain, seek, replay, fallback, fade and cleanup OK');
 })().catch(error=>{console.error(error);process.exitCode=1;});

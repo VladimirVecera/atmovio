@@ -55,11 +55,26 @@
         destroy(){this.$refs.track.pause();if(source)source.disconnect();if(gain)gain.disconnect();if(context)context.close().catch(()=>{});}
       };
     });
+    Alpine.data('studioPreferences', function(intro, textOn, saved) {
+      return {tab:'trim',intro,textOn,introUploading:false,effectUploading:false,defaultsBusy:false,defaultsSaved:saved,defaultsMessage:'',
+        get uploading(){return this.introUploading||this.effectUploading;},
+        async saveDefaults(reset=false){
+          if(this.defaultsBusy||this.uploading)return;
+          this.defaultsBusy=true;this.defaultsMessage='Ukládám…';
+          try{
+            const body=new FormData(this.$el.closest('form'));if(reset)body.set('reset','1');
+            const response=await fetch('/studio/defaults',{method:'POST',body,credentials:'same-origin'}),data=await response.json();
+            if(!response.ok)throw Error(data.error||'Nastavení nelze uložit.');
+            this.defaultsMessage=data.message;this.defaultsSaved=data.saved;
+          }catch(error){this.defaultsMessage=error.message;}finally{this.defaultsBusy=false;}
+        }
+      };
+    });
     Alpine.data('effectPreview', function(effect, at, seconds, options={}) {
       let animation=null, generation=0;
       return {
         effect, at, seconds, playing:false, effectMessage:'', busy:false, previewUrl:'',
-        items:options.items||[],asset:options.asset||'',timing:options.timing||'manual',background:options.background||'auto',size:options.size||.4,sound:options.sound!==false,
+        trash:options.trash||[],libraryMessage:'',libraryConfirm:'',items:options.items||[],asset:options.asset||'',timing:options.timing||'manual',background:options.background||'auto',size:options.size||.4,sound:options.sound!==false,
         posX:options.x??50,posY:options.y??100,positioning:false,drag:null,frameWidth:options.frameWidth||1920,frameHeight:options.frameHeight||1080,
         positionChanged(){
           this.posX=Math.max(0,Math.min(100,Number(this.posX)||0));this.posY=Math.max(0,Math.min(100,Number(this.posY)||0));
@@ -102,6 +117,22 @@
           return Math.floor(at/60)+':'+String(Math.floor(at%60)).padStart(2,'0');
         },
         resetVideoPreview(){this.stopEffect();this.previewUrl='';},
+        async manageLibrary(action,asset='',all=false){
+          if(this.busy)return;
+          this.resetVideoPreview();this.busy=true;this.libraryMessage='';
+          this.$dispatch('effect-upload',{busy:true});
+          try{
+            const body=new FormData();Object.entries({asset,all_assets:all?'1':'',csrf_token:this.$el.closest('form').querySelector('[name=csrf_token]').value}).forEach(([key,value])=>body.append(key,value));
+            const response=await fetch('/studio/effects/library/'+action,{method:'POST',body,credentials:'same-origin'}),data=await response.json();
+            if(!response.ok)throw Error(data.error||'Knihovnu se nepodařilo změnit.');
+            const previous=this.items.find(item=>item.asset===this.asset);
+            this.items=data.items;this.trash=data.trash;
+            // An archived effect already selected by a saved project stays editable.
+            if(previous?.archived&&this.trash.some(item=>item.asset===previous.asset))this.items.push(previous);
+            if(!this.items.some(item=>item.asset===this.asset)){this.asset='';this.positioning=false;}
+            this.libraryMessage=data.message;this.libraryConfirm='';
+          }catch(error){this.libraryMessage=error.message;}finally{this.busy=false;this.$dispatch('effect-upload',{busy:false});}
+        },
         async uploadEffect(event){
           const file=event.target.files[0];if(!file)return;
           if(file.size>100*1024*1024){this.effectMessage='Soubor je větší než 100 MB.';return;}

@@ -35,6 +35,8 @@ with tempfile.TemporaryDirectory(prefix='atmovio-effects-') as tmp:
   with patch.object(a,'studio_kick'):
    sid=a.studio_enqueue(cfg,a._studio_export(cfg,eid),1,True,'tone.wav','','Overlay','',edit=edit,draft=True)
   with a.db() as con:job=dict(con.execute('SELECT * FROM studio_videos WHERE id=?',(sid,)).fetchone())
+  client.post('/studio/effects/library/delete',data={'csrf_token':token,'asset':meta['asset']})
+  assert a.studio_effect_path(meta['asset']).parent.name=='trash'
   assert json.loads(job['edit_json'])['effect_asset']==meta['asset']
   assert json.loads(job['edit_json'])['effect_x']==pos and json.loads(job['edit_json'])['effect_y']==pos
   client.post('/studio/upload/music/delete',data={'csrf_token':token,'name':'tone.wav'},follow_redirects=False)
