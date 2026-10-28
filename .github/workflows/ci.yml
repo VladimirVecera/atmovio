@@ -40,6 +40,7 @@ jobs:
         run: |
           node tests/camera_player.js
           node tests/music_finder.js
+          node tests/studio_preview.js
       - name: No personal data in sources
         run: |
           # heslo zapsané natvrdo (ne odkaz na proměnnou jako PASSWORD="$ADMIN_PW")

@@ -477,7 +477,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "6.0.2"
+APP_VERSION = "6.0.3"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -4150,7 +4150,11 @@ TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<a
 <div class="editor-timeline"><div class="section-head"><b>{{ short_title(export.name,export.camera) }}</b><span class="hint">{{ cam(export.camera) }}</span></div><div class="trim-rail" :style="'--start-ratio:'+(trimStart/duration)+';--end-ratio:'+(trimEnd/duration)"><div class="trim-selection"></div><input type="range" aria-label="Začátek ořezu" min="0" :max="duration" step=".1" x-model.number="trimStart" @input="adjustTrim('start')"><input type="range" aria-label="Konec ořezu" min="0" :max="duration" step=".1" x-model.number="trimEnd" @input="adjustTrim('end')"></div><div class="timeline-labels"><span x-text="stamp(trimStart)"></span><span x-text="'Výběr '+stamp(trimEnd-trimStart)"></span><span x-text="stamp(trimEnd)"></span></div><p class="hint">Náhled zdroje · výsledek s hudbou, intrem a efekty uvidíte po přípravě videa.</p><p class="hint" role="status" x-text="trimError"></p></div></div>
 <aside class="studio-inspector">
 <section id="studio-trim" x-show="tab==='trim'"><h2>Vyberte nejlepší část</h2><p class="hint">Posuňte video a označte začátek i konec.</p><div class="actions"><button type="button" class="btn small sec" @click="trimStart=$refs.trimVideo.currentTime;adjustTrim('start')">Označit OD</button><button type="button" class="btn small sec" @click="trimEnd=$refs.trimVideo.currentTime;adjustTrim('end')">Označit DO</button></div><div class="row"><label>OD · sekundy<input name="trim_start" type="number" step=".1" min="0" :max="trimEnd-.1" x-model.number="trimStart" @change="adjustTrim('start')"></label><label>DO · sekundy<input name="trim_end" type="number" step=".1" :min="trimStart+.1" :max="duration" x-model.number="trimEnd" @change="adjustTrim('end')"></label></div><button type="button" class="btn sec" @click="previewTrim()">Přehrát výběr</button><hr><label>Rychlost <b x-text="speed+'×'"></b><select name="speed" x-model.number="speed"><option value="1">Běžná rychlost · 1×</option>{% for n in range(10,241,10) %}<option value="{{ n }}">Časosběr · {{ n }}×</option>{% endfor %}</select></label><p>Výsledná délka <b x-text="fmt((trimEnd-trimStart)/speed)"></b><small class="hint"> bez intra</small></p><p class="hint">Původní klip zůstane zachovaný.</p></section>
-<section id="studio-music" x-show="tab==='music'" x-cloak x-data="musicFinder({{ values.music|tojson|forceescape }})" x-init="open=true"><h2>Hudba k videu</h2><p class="hint">Pusťte si skladbu, posuňte přehrávač a vyberte místo, odkud má hudba začít.</p><div class="music-workspace"><div class="music-selection"><label>Skladba<select name="music" x-model="music" x-ref="sel"><option value="">Bez hudby</option>{% for m in music %}<option value="{{ m.name }}">{{ m.name }}</option>{% endfor %}</select></label><audio x-ref="track" controls preload="metadata" :src="music ? '/studio/asset/music/'+encodeURIComponent(music) : null" x-show="music" @loadedmetadata="$el.currentTime=Math.min(Number($refs.offset.value)||0,$el.duration);$el.volume=Math.min(1,Number($refs.volume.value))" @play="solo($event.target)"></audio><div class="music-offset-row"><label>Začátek skladby · sekundy<input x-ref="offset" name="music_start" type="number" min="0" max="86400" step=".1" value="{{ values.edit.music_start }}" @input="if($refs.track.duration)$refs.track.currentTime=Math.min(Number($event.target.value),$refs.track.duration)"></label><button type="button" class="btn small sec" @click="$refs.offset.value=Math.floor($refs.track.currentTime)">Použít aktuální místo</button></div><label>Hlasitost<input x-ref="volume" name="music_volume" type="range" min="0" max="2" step=".05" value="{{ values.edit.music_volume }}" @input="$refs.track.volume=Math.min(1,Number($event.target.value))"></label><details class="inline-help"><summary>Nástup a doznění hudby</summary><div class="row"><label>Nástup · s<input name="fade_in" type="number" min="0" max="30" value="{{ values.edit.fade_in }}"></label><label>Doznění · s<input name="fade_out" type="number" min="0" max="30" value="{{ values.edit.fade_out }}"></label></div></details></div><details class="finder" :open="open" @toggle="open = $el.open"><summary>Najít novou hudbu</summary><p class="hint">Openverse · CC0 / CC BY · autor se přidá do popisu videa.</p>
+<section id="studio-music" x-show="tab==='music'" x-cloak x-data="musicFinder({{ values.music|tojson|forceescape }})" x-init="open=true"><h2>Hudba k videu</h2><p class="hint">Pusťte si skladbu, posuňte přehrávač a vyberte místo, odkud má hudba začít.</p><div class="music-workspace"><div class="music-selection"><label>Skladba<select name="music" x-model="music" x-ref="sel"><option value="">Bez hudby</option>{% for m in music %}<option value="{{ m.name }}">{{ m.name }}</option>{% endfor %}</select></label><div x-data="musicPreview({{ values.edit.music_volume }})"><audio x-ref="track" controls preload="metadata" :src="music ? '/studio/asset/music/'+encodeURIComponent(music) : null" x-show="music" @loadedmetadata="seekStart();applyVolume()" @play="solo($event.target);startAudio()" @volumechange="nativeVolumeChanged()" @error="audioMessage='Skladbu nelze přehrát. Vyberte ji znovu nebo zkuste jinou.'"></audio>
+<div class="music-offset-row"><label>Začátek skladby · sekundy<input x-ref="offset" name="music_start" type="number" min="0" max="86400" step=".1" value="{{ values.edit.music_start }}" @input="seekStart()"></label><button type="button" class="btn small sec" :disabled="!music" @click="$refs.offset.value=Math.floor($refs.track.currentTime)">Použít aktuální místo</button></div>
+<label class="music-volume-label" for="studio-music-volume">Hlasitost <output for="studio-music-volume" x-text="Math.round(level*100)+' %'"></output></label><input id="studio-music-volume" name="music_volume" type="range" min="0" max="2" step=".05" x-model.number="level" @input="applyVolume()" :aria-valuetext="Math.round(level*100)+' procent'">
+<p class="hint">100 % = původní hlasitost. Posuvník mění i poslech.</p><button type="button" class="btn sec" :disabled="!music" @click="playSelection()">▶ Přehrát od vybraného začátku</button><p class="hint" role="status" x-text="audioMessage"></p>
+<details class="inline-help"><summary>Nástup a doznění hudby</summary><p class="hint">Nástup a doznění se použijí při přípravě videa.</p><div class="row"><label>Nástup · s<input name="fade_in" type="number" min="0" max="30" value="{{ values.edit.fade_in }}"></label><label>Doznění · s<input name="fade_out" type="number" min="0" max="30" value="{{ values.edit.fade_out }}"></label></div></details></div></div><details class="finder" :open="open" @toggle="open = $el.open"><summary>Najít novou hudbu</summary><p class="hint">Openverse · CC0 / CC BY · autor se přidá do popisu videa.</p>
    <fieldset class="music-search-fields" :disabled="busy" :aria-busy="busy">
    <div class="music-search-row"><div><label for="music-query" x-text="searchIn === 'title' ? 'Název skladby' : 'Téma / nálada'"></label><input id="music-query" type="text" x-model="q" maxlength="100" @keydown.enter.prevent="search()" :placeholder="searchIn === 'title' ? 'např. run (lze nechat prázdné)' : 'např. calm, sunset, ambient…'"></div>
     <div><label for="music-length">Délka</label><select id="music-length" x-model="len"><option value="">Libovolná délka</option><option value="short">do 2 min</option><option value="medium">2–10 min</option><option value="long">nad 10 min</option></select></div>
@@ -4179,7 +4183,10 @@ TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<a
   </details></div></section>
 <section id="studio-intro" x-show="tab==='intro'" x-cloak x-data="introPicker({{ (values.edit.intro_asset or '')|tojson|forceescape }}, {{ values.intro_url|tojson|forceescape }}, {{ (intro.suffix|lower if intro else '')|tojson|forceescape }})"><h2>Úvod videa</h2><p class="hint">Tady si přehrajete intro a můžete ho vyměnit.</p><input type="hidden" name="intro_asset" :value="asset"><div class="intro-edit-grid"><div class="intro-canvas"><img x-show="url && isImage" class="intro-preview" :src="isImage ? url : null" alt="Náhled intra"><video x-show="url && !isImage" class="intro-preview" controls playsinline preload="metadata" :src="url && !isImage ? url : null"></video><p x-show="!url">Vyberte video nebo obrázek pro začátek videa.</p></div><div><label class="check"><input type="checkbox" name="intro" value="1" x-model="intro" :disabled="!url">Přidat intro na začátek</label><label>Vybrat nebo změnit intro<input type="file" accept=".mp4,.mov,.m4v,.png,.jpg,.jpeg" @change="upload($event)" :disabled="busy"></label><p class="hint" role="status" x-text="message"></p><p class="hint">Video nebo obrázek · do 100 MB. Změna platí pro tento projekt.</p></div></div></section>
 <section id="studio-text" x-show="tab==='text'" x-cloak><h2>Text v obraze</h2><label class="check"><input type="checkbox" name="text_on" value="1" x-model="textOn">Přidat text</label><label x-show="textOn">Váš text<input name="text" value="{{ values.text }}" maxlength="200" placeholder="Například: Ranní mlha nad údolím"></label><label>Poloha<select name="text_pos">{% for key,label in [('bl','Dole vlevo'),('bc','Dole uprostřed'),('br','Dole vpravo'),('tl','Nahoře vlevo'),('tr','Nahoře vpravo')] %}<option value="{{ key }}" {{ 'selected' if values.edit.text_pos==key }}>{{ label }}</option>{% endfor %}</select></label><p class="hint">Napište běžný text. Kamera, datum a čas patří do popisu, pokud je nechcete v obraze.</p></section>
-<section id="studio-effects" x-show="tab==='effects'" x-cloak x-data="{effect:{{ values.edit.effect|tojson|forceescape }}}"><h2>Výzva divákům</h2><label>Efekt<select name="effect" x-model="effect">{% for key,label in [('','Bez efektu'),('subscribe','Odebírejte další videa'),('share','Sdílejte tento okamžik'),('both','Sdílejte a odebírejte')] %}<option value="{{ key }}" {{ 'selected' if values.edit.effect==key }}>{{ label }}</option>{% endfor %}</select></label><label>Začátek · sekundy hotového záběru<input type="number" min="0" max="21600" name="effect_at" value="{{ values.edit.effect_at }}"></label><label>Délka zobrazení · s<input type="number" min="1" max="30" name="effect_duration" value="{{ values.edit.effect_duration }}"></label><div class="effect-preview" x-show="effect" x-text="{subscribe:'Odebírejte další videa',share:'Sdílejte tento okamžik',both:'Sdílejte a odebírejte'}[effect]"></div><p class="hint">Výzva se zobrazí dole uprostřed. Čas se počítá od zrychleného záběru za intrem.</p></section>
+<section id="studio-effects" x-show="tab==='effects'" x-cloak x-data="effectPreview({{ values.edit.effect|tojson|forceescape }}, {{ values.edit.effect_at }}, {{ values.edit.effect_duration }})" @studio-tab.window="stopEffect()"><h2>Výzva divákům</h2><div class="effect-workspace"><div class="effect-settings"><label>Efekt<select name="effect" x-model="effect" @change="stopEffect()">{% for key,label in [('','Bez efektu'),('subscribe','Odebírejte další videa'),('share','Sdílejte tento okamžik'),('both','Sdílejte a odebírejte')] %}<option value="{{ key }}" {{ 'selected' if values.edit.effect==key }}>{{ label }}</option>{% endfor %}</select></label><div class="row"><label>Začátek · sekundy hotového záběru<input type="number" min="0" max="21600" name="effect_at" x-model.number="at" @input="stopEffect()"></label><label>Délka zobrazení · s<input type="number" min="1" max="30" name="effect_duration" x-model.number="seconds" @input="stopEffect()"></label></div>
+<div class="effect-preview-actions"><button type="button" class="btn" :disabled="!effect" @click="playEffect((trimEnd-trimStart)/speed)" x-text="playing ? '↻ Přehrát znovu' : '▶ Přehrát efekt'"></button><span class="hint" role="status" x-text="effectMessage"></span></div>
+</div><div class="effect-demo">{% set effect_width = [src.width or 1920,1920]|min %}{% set effect_size = [24,effect_width//45]|max %}
+<div class="effect-preview" style="--effect-font:{{ effect_size/effect_width*100 }}cqw;--effect-bottom:{{ 24/effect_width*100 }}cqw;--effect-padding:{{ 10/effect_width*100 }}cqw;--effect-stroke:{{ 2/effect_width*100 }}cqw"><img src="/videos/{{ export.id }}/thumb.jpg" alt="Snímek zdrojového videa"><span class="effect-caption" x-ref="caption" x-show="effect" x-text="caption"></span></div><p class="hint">Ukázka efektu na snímku z videa, od okamžiku jeho zobrazení. Efekt se objeví dole uprostřed a plynule zmizí. Začátek se počítá od zrychleného záběru za intrem.</p></div></div></section>
 <section id="studio-title" x-show="tab==='title'" x-cloak x-data="titleIdeas({vid:{{ export.id }}})"><h2>Název a popis</h2><label>Název<input name="title" value="{{ short_title(values.title,export.camera) }}" maxlength="100" x-ref="title"></label><label>Popis<textarea name="description" rows="6" x-ref="description">{{ values.description }}</textarea></label><button type="button" class="btn sec" @click="askMetadata()" :disabled="busy">Navrhnout texty</button><p class="hint" x-text="metaMsg"></p><div x-show="proposal"><strong x-text="proposal?.title"></strong><p x-text="proposal?.description"></p><button class="btn small" type="button" @click="applyMetadata()">Použít návrh</button></div></section>
 </aside></div><div class="editor-footer"><span>Úpravy můžete později znovu otevřít.</span><div class="actions"><button class="btn sec" name="action" value="draft" :disabled="uploading">Uložit projekt</button><button class="btn" name="action" value="render" :disabled="uploading">Připravit video →</button></div></div></form>{% endblock %}"""
 
@@ -4386,6 +4393,11 @@ def short_video_title(value, camera=''):
     if label:
         value = re.sub(r'\s*[–—-]\s*' + re.escape(label) + r'\s*\(\d{1,2}\.\s*\d{1,2}\.\s*\d{4}\)\s*$', '', value)
     return value or 'Nový okamžik'
+
+def generated_video_title(value):
+    """Sentence case for generated titles; preserve acronyms and the rest of the text."""
+    value = str(value or '').strip()
+    return value[:1].upper() + value[1:]
 
 jenv.globals['short_title'] = short_video_title
 jenv.filters["czdt"] = cz_dt
@@ -7832,7 +7844,7 @@ def studio_metadata(cfg, v: dict) -> dict:
     data = extract_json(ai_text(cfg["ai"], prompt, 1000))
     if not isinstance(data, dict) or not all(isinstance(data.get(k), str) and data[k].strip() for k in ("title", "description")):
         raise ValueError("AI nevrátila nadpis i popis. Původní text zůstal zachován.")
-    return {"title": data["title"].strip()[:100], "description": data["description"].strip()[:4500]}
+    return {"title": generated_video_title(data["title"])[:100], "description": data["description"].strip()[:4500]}
 
 
 def studio_fill(tpl: str, v: dict) -> str:
@@ -8245,7 +8257,7 @@ def studio_title_ideas(cfg, v: dict, n: int = 5) -> list:
         out = [str(x).strip().strip('"').strip("'") for x in data if str(x).strip()]
     if not out:
         out = [line.strip("-•* \"'0123456789.").strip() for line in raw.splitlines() if 8 < len(line.strip()) < 100]
-    return [t[:100] for t in out][:n]
+    return [generated_video_title(t)[:100] for t in out][:n]
 
 
 def _studio_vars_for_row(cfg, row: dict) -> dict:
@@ -8345,7 +8357,7 @@ def studio_new(request: Request, vid: int, again: int = 0):
               "music": prev["music"] if prev else sc.get("music_default", ""),
               "text_on": bool(prev["text"]) if prev else bool(sc.get("text_enabled", True)),
               "text": prev["text"] if prev and prev["text"] else sc.get("text", ""),
-              "title": prev["title"] if prev else short_video_title(export['name'], export['camera']),
+              "title": prev["title"] if prev else generated_video_title(short_video_title(export['name'], export['camera'])),
               "description": prev["description"] if prev else studio_fill(sc.get("description", ""), v),
               "edit": normalize_studio_edit(json.loads(prev.get("edit_json") or "{}") if prev else {}, sc)}
     if values["text_on"]:
@@ -8360,7 +8372,7 @@ def studio_new(request: Request, vid: int, again: int = 0):
         try:
             proposal = json.loads(export.get("metadata_json") or "{}")
             if proposal.get("title") and isinstance(proposal.get("description"), str):
-                values.update(title=proposal["title"], description=proposal["description"])
+                values.update(title=generated_video_title(proposal["title"]), description=proposal["description"])
         except (ValueError, TypeError):
             pass
     return render(request, "studio_new.html", "Studio – nové video", export=export, values=values, quick=MUSIC_QUICK, instruments=MUSIC_INSTRUMENTS,
@@ -12446,7 +12458,7 @@ header.top nav.menu > a.active, header.top nav.menu .dd > button.active { backgr
 .studio-project .editor-tools button.active{background:#2563e6;color:#fff;border-color:#2563e6;box-shadow:0 3px 10px #2563e630}
 .tool-number{display:grid;place-items:center;flex-shrink:0;width:26px;height:26px;border-radius:50%;background:var(--at-surface-2);color:var(--at-muted);font-size:12px}.active .tool-number{background:#ffffff30;color:white}
 .studio-layout.studio-layout--focused{display:block}.studio-layout--focused .studio-inspector{width:100%;min-height:0;padding:24px}
-.studio-layout--focused .studio-inspector>section:not(#studio-music):not(#studio-intro){max-width:780px;margin:0 auto}
+.studio-layout--focused .studio-inspector>section:not(#studio-music):not(#studio-intro):not(#studio-effects){max-width:780px;margin:0 auto}
 .music-workspace{display:grid;grid-template-columns:minmax(260px,.85fr) minmax(340px,1.15fr);gap:28px;align-items:start}.music-selection{min-width:0}.music-selection>label:first-child{margin-top:0}
 .music-workspace .finder{margin:0;padding:20px;border:1px solid var(--at-line);border-radius:10px;background:var(--at-surface-2)}.music-workspace .finder>summary{font-size:16px;font-weight:650}
 .music-workspace .music-search-row{display:grid;grid-template-columns:minmax(0,1fr) 130px auto;gap:10px;align-items:end}.music-workspace .music-search-fields .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -12459,6 +12471,11 @@ header.top nav.menu > a.active, header.top nav.menu .dd > button.active { backgr
 @media(max-width:620px){.studio-layout--focused .studio-inspector{padding:16px}.intro-edit-grid{grid-template-columns:1fr}.studio-project .editor-tools{gap:6px}.studio-project .editor-tools button{font-size:11px;padding:8px;gap:6px}.tool-number{width:20px;height:20px;font-size:10px}.music-workspace .music-search-row{grid-template-columns:1fr 100px}.music-workspace .music-search-row>button{grid-column:1/-1}.music-workspace .finder{padding:12px}}
 
 .music-offset-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end}.studio-inspector .music-selection audio{height:48px;margin:12px 0}.music-offset-row>.btn{margin-bottom:0}.music-offset-row>label{margin-top:8px}.music-selection .inline-help{margin-top:14px}.music-offset-row>.btn{white-space:normal;max-width:130px}
+
+/* Studio auditions: gain value and the same fade/position as the rendered callout. */
+.studio-inspector .music-volume-label{display:flex;justify-content:space-between;align-items:center}.music-volume-label output{font-weight:700;color:var(--pico-primary);font-variant-numeric:tabular-nums}.effect-preview-actions{display:flex;align-items:center;gap:16px;margin-top:20px}.effect-preview-actions .btn{margin:0;flex-shrink:0}.effect-preview{position:relative;container-type:inline-size;max-width:640px;padding:0;margin:16px auto;background:#0b1421;overflow:hidden;border-radius:10px;font-weight:400;line-height:1.2}.effect-preview img{display:block;width:100%;height:auto}.effect-caption{position:absolute;bottom:var(--effect-bottom);left:50%;transform:translateX(-50%);white-space:nowrap;font-family:"DejaVu Sans",Arial,sans-serif;font-size:var(--effect-font);font-weight:400;color:#fff;padding:var(--effect-padding);background:rgb(0 0 0 / 35%);-webkit-text-stroke:var(--effect-stroke) rgb(0 0 0 / 70%);paint-order:stroke fill}.effect-preview-actions .hint{margin:0}
+
+.effect-workspace{display:grid;grid-template-columns:minmax(240px,.85fr) minmax(0,1.4fr);gap:28px;align-items:start}.effect-settings>label:first-child{margin-top:0}.effect-workspace .effect-preview{margin:0 0 12px}.effect-workspace .effect-preview-actions{flex-wrap:wrap}.effect-workspace .row{grid-template-columns:1fr}.effect-demo{min-width:0}@media(max-width:900px){.effect-workspace{grid-template-columns:1fr}.effect-workspace .row{grid-template-columns:1fr 1fr}}
 ATMOVIO_CSS_EOF
   cat > "$1/atmovio.js" <<'ATMOVIO_JS_EOF'
 /* Atmovio – interakce (Alpine.js komponenty + pomocné funkce). */
@@ -12478,6 +12495,69 @@ ATMOVIO_CSS_EOF
 
   // ---------- Alpine komponenty ----------
   document.addEventListener('alpine:init', function () {
+    Alpine.data('musicPreview', function(initialVolume) {
+      // Native nodes stay outside Alpine's reactive proxy.
+      let context=null, gain=null, source=null, expectedVolume=1;
+      return {
+        level:Number(initialVolume), audioMessage:'',
+        init(){this.$watch('music',()=>{this.$refs.track.pause();this.audioMessage='';});},
+        seekStart(){const track=this.$refs.track;if(Number.isFinite(track.duration))track.currentTime=Math.min(Math.max(0,Number(this.$refs.offset.value)||0),track.duration);},
+        applyVolume(){
+          this.level=Math.max(0,Math.min(2,Number(this.level)||0));
+          const track=this.$refs.track;
+          expectedVolume=gain ? 1 : Math.min(1,this.level);track.volume=expectedVolume;
+          if(gain)gain.gain.value=this.level;
+          if(this.level>1&&!gain&&!track.paused)this.startAudio();
+        },
+        nativeVolumeChanged(){
+          const track=this.$refs.track;
+          if(Math.abs(track.volume-expectedVolume)>.001){this.level=track.volume;this.applyVolume();}
+        },
+        async startAudio(){
+          this.audioMessage='';
+          try {
+            const AudioEngine=window.AudioContext||window.webkitAudioContext;
+            if(!context&&AudioEngine){
+              context=new AudioEngine();gain=context.createGain();
+              source=context.createMediaElementSource(this.$refs.track);source.connect(gain);gain.connect(context.destination);
+            }
+            if(context&&context.state==='suspended')await context.resume();
+            if(this.level>1&&!gain)throw Error('amplification');
+            this.applyVolume();
+          }catch(error){this.$refs.track.pause();this.audioMessage='Přehrání zesílené hudby není dostupné. Zkuste aktuální prohlížeč nebo hlasitost do 100 %.';}
+        },
+        async playSelection(){
+          this.seekStart();await this.startAudio();
+          if(this.audioMessage)return;
+          this.$refs.track.muted=false;
+          try{await this.$refs.track.play();}catch(error){this.audioMessage='Přehrání se nepodařilo spustit. Zkuste tlačítko v přehrávači.';}
+        },
+        destroy(){this.$refs.track.pause();if(source)source.disconnect();if(gain)gain.disconnect();if(context)context.close().catch(()=>{});}
+      };
+    });
+    Alpine.data('effectPreview', function(effect, at, seconds) {
+      let animation=null;
+      return {
+        effect, at, seconds, playing:false, effectMessage:'',
+        get caption(){return {subscribe:'Odebírejte další videa',share:'Sdílejte tento okamžik',both:'Sdílejte a odebírejte'}[this.effect]||'';},
+        stopEffect(){if(animation){animation.onfinish=null;animation.cancel();animation=null;}this.playing=false;this.effectMessage='';},
+        playEffect(mainDuration){
+          this.stopEffect();if(!this.effect)return;
+          const begin=Math.min(Math.max(0,Number(this.at)||0),Math.max(0,mainDuration-1));
+          const duration=Math.min(Math.max(1,Math.min(30,Number(this.seconds)||1)),mainDuration-begin);
+          if(!Number.isFinite(duration)||duration<=0){this.effectMessage='Nejdříve vyberte délku videa ve střihu.';return;}
+          // Same 0.3 s fade and clip-end truncation as the FFmpeg callout.
+          const fade=Math.min(.3,duration/2),peak=Math.min(1,duration/.6);
+          animation=this.$refs.caption.animate([
+            {opacity:0,offset:0},{opacity:peak,offset:fade/duration},
+            {opacity:peak,offset:1-fade/duration},{opacity:0,offset:1}
+          ],{duration:duration*1000,easing:'linear',fill:'forwards'});
+          this.playing=true;this.effectMessage='Přehrávám efekt…';
+          animation.onfinish=()=>{this.playing=false;this.effectMessage='Ukázka dokončena. Můžete ji přehrát znovu.';};
+        },
+        destroy(){this.stopEffect();}
+      };
+    });
     Alpine.data('introPicker', function(asset, url, ext) {
       return {asset, url, ext, busy:false, message:'',
         get isImage(){return ['.png','.jpg','.jpeg'].includes(this.ext);},

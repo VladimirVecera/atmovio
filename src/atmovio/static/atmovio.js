@@ -15,6 +15,69 @@
 
   // ---------- Alpine komponenty ----------
   document.addEventListener('alpine:init', function () {
+    Alpine.data('musicPreview', function(initialVolume) {
+      // Native nodes stay outside Alpine's reactive proxy.
+      let context=null, gain=null, source=null, expectedVolume=1;
+      return {
+        level:Number(initialVolume), audioMessage:'',
+        init(){this.$watch('music',()=>{this.$refs.track.pause();this.audioMessage='';});},
+        seekStart(){const track=this.$refs.track;if(Number.isFinite(track.duration))track.currentTime=Math.min(Math.max(0,Number(this.$refs.offset.value)||0),track.duration);},
+        applyVolume(){
+          this.level=Math.max(0,Math.min(2,Number(this.level)||0));
+          const track=this.$refs.track;
+          expectedVolume=gain ? 1 : Math.min(1,this.level);track.volume=expectedVolume;
+          if(gain)gain.gain.value=this.level;
+          if(this.level>1&&!gain&&!track.paused)this.startAudio();
+        },
+        nativeVolumeChanged(){
+          const track=this.$refs.track;
+          if(Math.abs(track.volume-expectedVolume)>.001){this.level=track.volume;this.applyVolume();}
+        },
+        async startAudio(){
+          this.audioMessage='';
+          try {
+            const AudioEngine=window.AudioContext||window.webkitAudioContext;
+            if(!context&&AudioEngine){
+              context=new AudioEngine();gain=context.createGain();
+              source=context.createMediaElementSource(this.$refs.track);source.connect(gain);gain.connect(context.destination);
+            }
+            if(context&&context.state==='suspended')await context.resume();
+            if(this.level>1&&!gain)throw Error('amplification');
+            this.applyVolume();
+          }catch(error){this.$refs.track.pause();this.audioMessage='Přehrání zesílené hudby není dostupné. Zkuste aktuální prohlížeč nebo hlasitost do 100 %.';}
+        },
+        async playSelection(){
+          this.seekStart();await this.startAudio();
+          if(this.audioMessage)return;
+          this.$refs.track.muted=false;
+          try{await this.$refs.track.play();}catch(error){this.audioMessage='Přehrání se nepodařilo spustit. Zkuste tlačítko v přehrávači.';}
+        },
+        destroy(){this.$refs.track.pause();if(source)source.disconnect();if(gain)gain.disconnect();if(context)context.close().catch(()=>{});}
+      };
+    });
+    Alpine.data('effectPreview', function(effect, at, seconds) {
+      let animation=null;
+      return {
+        effect, at, seconds, playing:false, effectMessage:'',
+        get caption(){return {subscribe:'Odebírejte další videa',share:'Sdílejte tento okamžik',both:'Sdílejte a odebírejte'}[this.effect]||'';},
+        stopEffect(){if(animation){animation.onfinish=null;animation.cancel();animation=null;}this.playing=false;this.effectMessage='';},
+        playEffect(mainDuration){
+          this.stopEffect();if(!this.effect)return;
+          const begin=Math.min(Math.max(0,Number(this.at)||0),Math.max(0,mainDuration-1));
+          const duration=Math.min(Math.max(1,Math.min(30,Number(this.seconds)||1)),mainDuration-begin);
+          if(!Number.isFinite(duration)||duration<=0){this.effectMessage='Nejdříve vyberte délku videa ve střihu.';return;}
+          // Same 0.3 s fade and clip-end truncation as the FFmpeg callout.
+          const fade=Math.min(.3,duration/2),peak=Math.min(1,duration/.6);
+          animation=this.$refs.caption.animate([
+            {opacity:0,offset:0},{opacity:peak,offset:fade/duration},
+            {opacity:peak,offset:1-fade/duration},{opacity:0,offset:1}
+          ],{duration:duration*1000,easing:'linear',fill:'forwards'});
+          this.playing=true;this.effectMessage='Přehrávám efekt…';
+          animation.onfinish=()=>{this.playing=false;this.effectMessage='Ukázka dokončena. Můžete ji přehrát znovu.';};
+        },
+        destroy(){this.stopEffect();}
+      };
+    });
     Alpine.data('introPicker', function(asset, url, ext) {
       return {asset, url, ext, busy:false, message:'',
         get isImage(){return ['.png','.jpg','.jpeg'].includes(this.ext);},

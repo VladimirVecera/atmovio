@@ -2,6 +2,12 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 6.0.3 – 2026-10-28 – effect playback and audible music volume
+
+- Preview subscribe/share effects over a source thumbnail, including their fade and selected duration.
+- Show music volume as 0–200%, apply it to playback and add playback from the selected music offset.
+- Start generated video titles with a capital letter while preserving custom saved titles and acronyms.
+
 ## 6.0.2 – 2026-10-28 – clear AI detections and chronological video library
 
 - Rename Moments to AI detections in navigation, page headings and links.
