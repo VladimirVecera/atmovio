@@ -80,6 +80,27 @@ try:
         assert f'/studio/v/{sid}/download' in gallery and f'/studio/v/{sid}/play.mp4' in detail
         assert f'action="/studio/v/{sid}/youtube"' in detail
 
+        # Creation is not publication: all upload states must be visible without opening a tab.
+        for status, label in ((None, 'Nenahráno na YouTube'), ('queued', 'Čeká na nahrání na YouTube'),
+                              ('uploading', 'Nahrávám'), ('failed', 'Nahrávání se nepodařilo'),
+                              ('done', 'Nahráno na YouTube'), ('unexpected', 'Stav YouTube není známý')):
+            url = 'https://youtu.be/fixture' if status == 'done' else None
+            with a.db() as con:
+                con.execute('UPDATE studio_videos SET yt_status=?,yt_url=? WHERE id=?', (status,url,sid))
+            gallery, detail = pages()
+            assert label in gallery and label in detail
+            assert 'detailTab' not in detail
+            assert detail.index('class="publication-summary"') < detail.index('<video')
+            assert detail.index('id="youtube"') < detail.index('Upravit název a popis')
+            assert (f'/studio/v/{sid}#youtube' in gallery) == (status in (None,'failed'))
+            assert ('Otevřít na YouTube' in gallery) == (status == 'done')
+        with a.db() as con:
+            con.execute("UPDATE studio_videos SET yt_status='done',yt_url=NULL WHERE id=?", (sid,))
+        _, detail = pages()
+        assert 'Odkaz není uložený' in detail and f'action="/studio/v/{sid}/youtube"' not in detail
+        with a.db() as con:
+            con.execute('UPDATE studio_videos SET yt_status=NULL,yt_url=NULL WHERE id=?', (sid,))
+
         for status, label in (("queued", "Čeká na vytvoření videa"), ("rendering", "Vytváří se…"),
                               ("failed", "nepodařilo se"), ("unknown", "Video není dostupné")):
             with a.db() as con:

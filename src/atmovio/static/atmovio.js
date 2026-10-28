@@ -49,12 +49,16 @@
       },destroy(){if(player)player.destroy();this.$el.removeAttribute('src');this.$el.load();}};
     });
     Alpine.data('cameraPlayer', function (camera) {
-      let player=null; // Keep the media engine outside Alpine's reactive proxy (Worker messages must be cloneable).
+      let player=null, layoutObserver=null; // Keep media and DOM observers outside Alpine's reactive proxy.
       return {
         live:true, cursor:Date.now()/1000, day:'', start:0, end:1, spans:[], tz:'UTC',
         from:null, to:null, message:'', anchor:0, stopAt:null, windowEnd:0, playSpans:[],
-         controller:null, timer:null, keyHandler:null, loading:false,
+         controller:null, timer:null, keyHandler:null, resizeHandler:null, loading:false, scrub:null,
         async init() {
+          this.resizeHandler=()=>this.fitPlayer();
+          window.addEventListener('resize',this.resizeHandler);
+          if(this.$el && window.ResizeObserver){layoutObserver=new window.ResizeObserver(this.resizeHandler);layoutObserver.observe(this.$refs.transport);const heading=this.$el.closest('main')?.querySelector('.page-head');if(heading)layoutObserver.observe(heading);}
+          if(this.$nextTick)this.$nextTick(this.resizeHandler);
           this.keyHandler=e=>{if(e.ctrlKey||e.metaKey||e.altKey||e.target.closest('input,textarea,select,[contenteditable]'))return;
             if(e.key.toLowerCase()==='i')this.mark('from');if(e.key.toLowerCase()==='o')this.mark('to');};
           window.addEventListener('keydown',this.keyHandler);
@@ -65,10 +69,13 @@
           }else this.goLive();
           this.timer=setInterval(()=>{if(this.live)this.cursor=Date.now()/1000;},1000);
         },
-        destroy() {clearInterval(this.timer);window.removeEventListener('keydown',this.keyHandler);if(this.controller)this.controller.abort();this.unload();},
+        destroy() {clearInterval(this.timer);window.removeEventListener('keydown',this.keyHandler);window.removeEventListener('resize',this.resizeHandler);if(layoutObserver)layoutObserver.disconnect();if(this.controller)this.controller.abort();this.unload();},
+        fitPlayer() {if(!this.$el||!this.$refs.transport)return;const top=this.$el.getBoundingClientRect().top+window.scrollY;
+          const height=Math.max(144,Math.floor(window.innerHeight-top-this.$refs.transport.offsetHeight-18));
+          this.$el.style.setProperty('--player-height',height+'px');},
         unload() {if(player){player.destroy();player=null;}const v=this.$refs.video;v.pause();v.removeAttribute('src');v.load();},
         stamp(t) {return new Date(t*1000).toLocaleTimeString('cs-CZ',{timeZone:this.tz,hour:'2-digit',minute:'2-digit',second:'2-digit'});},
-        fullStamp(t) {return new Date(t*1000).toLocaleString('cs-CZ',{timeZone:this.tz});},
+        fullStamp(t) {return new Date(t*1000).toLocaleString('cs-CZ',{timeZone:this.tz,day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});},
         percent(t) {return Math.max(0,Math.min(100,(t-this.start)/(this.end-this.start)*100));},
         spanStyle(s) {return 'left:'+this.percent(s[0])+'%;width:'+Math.max(0,this.percent(s[1])-this.percent(s[0]))+'%';},
         async loadDay() {
@@ -79,7 +86,7 @@
             this.message=d.spans.length?'':'Pro tento den není uložený záznam.';
           } catch(e){if(e.name!=='AbortError')this.message=e.message||'Záznamy nelze načíst.';}
         },
-        goLive() {this.unload();this.live=true;this.stopAt=null;this.loading=false;this.message='';const v=this.$refs.video,url='/stream/'+camera+'/hls/master.m3u8';v.onloadedmetadata=()=>{this.message='';v.play().catch(()=>{this.message='Přehrávání spustíte tlačítkem ▶.';});};
+        goLive() {this.unload();this.live=true;this.cursor=Date.now()/1000;this.scrub=null;this.stopAt=null;this.loading=false;this.message='';const v=this.$refs.video,url='/stream/'+camera+'/hls/master.m3u8';v.onloadedmetadata=()=>{this.message='';v.play().catch(()=>{this.message='Přehrávání spustíte tlačítkem ▶.';});};
           if((!window.Hls||!Hls.isSupported())&&v.canPlayType('application/vnd.apple.mpegurl'))v.src=url;
           else if(window.Hls&&Hls.isSupported()){player=new Hls({liveSyncDurationCount:2});player.loadSource(url);player.attachMedia(v);player.on(Hls.Events.ERROR,(_,d)=>{if(d.fatal)this.message='Živý přenos není dostupný. Zkuste jej spustit znovu.';});}
           else v.src='/stream/'+camera+'.mp4';},

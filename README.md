@@ -28,7 +28,7 @@ sudo bash install.sh
 
 Open the address shown by the installer. The interface is currently in Czech. Recording works without an AI account; cloud AI features require your own provider key and may incur charges.
 
-**Version 6 is under development on this branch.** The screenshots show its interface with demonstration data. The command above installs the latest published release. The v6 update includes Frigate 0.18.2, configuration validation and rollback backups; see the [upgrade notes](docs/v6.md).
+**Atmovio 6.0.1** includes Frigate 0.18.2, configuration validation and rollback backups. Update an existing installation in **Settings → System → Updates → Check now** (the interface is in Czech). Screenshots use demonstration data. See the [upgrade notes](docs/v6.md).
 
 ## Learn more
 

@@ -1295,7 +1295,38 @@ header.top nav.menu > a.active, header.top nav.menu .dd > button.active { backgr
 .camera-caption{display:flex;justify-content:space-between;align-items:center;padding:17px 20px}.camera-caption h2{font-size:16px;margin:0}.camera-caption h2 a{color:var(--at-text);text-decoration:none}.camera-caption p{font-size:11px;color:var(--at-muted);margin:5px 0 0}.camera-card video{width:100%;aspect-ratio:16/9;display:block;background:#101827}
 .quiet-links{display:flex;gap:22px;flex-wrap:wrap;margin:22px 0;font-size:12px}.continue-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.continue-card{display:flex;gap:14px;align-items:center;background:var(--at-surface);border:1px solid var(--at-line);border-radius:12px;padding:18px;text-decoration:none;color:var(--at-text);font-size:13px}.continue-card small{display:block;color:var(--at-muted);font-size:11px;margin-top:4px}
 .empty-state{grid-column:1/-1;padding:40px 24px;text-align:center;background:var(--at-surface);border:1px dashed var(--at-line);border-radius:12px}.empty-state h2{font-size:21px}.empty-state p{color:var(--at-muted);font-size:13px}
-.camera-player{border:1px solid var(--at-line);border-radius:14px;background:var(--at-surface);overflow:hidden}.player-stage{position:relative;background:#0b1421}.player-stage video{display:block;width:100%;aspect-ratio:16/9;max-height:65vh;object-fit:contain}.player-mode{position:absolute;top:16px;left:16px;font-size:10px;letter-spacing:1px;color:white;background:#182238ce;padding:6px 10px;border-radius:5px;pointer-events:none}.player-controls{padding:12px 20px;display:flex;justify-content:space-between;gap:12px;align-items:center;border-bottom:1px solid var(--at-line)}.player-controls strong{font-size:13px;font-variant-numeric:tabular-nums}.timeline-panel{padding:20px 24px}.date-pick{display:flex;align-items:center;gap:10px;font-size:12px;margin:0}.date-pick input{width:155px;margin:0;padding:6px;font-size:12px}.timeline-panel h2{font-size:16px}.recording-track{height:32px;background:var(--at-surface-2);border-radius:6px;position:relative;cursor:crosshair;overflow:hidden}.recorded-span{position:absolute;top:9px;height:14px;background:#94b6f6;border-radius:2px}.selected-span{position:absolute;top:2px;height:28px;background:#2563e63b;border:2px solid #2563e6;border-radius:4px}.time-cursor{position:absolute;top:0;bottom:0;width:2px;background:#e16c45}.timeline-seek{margin:5px 0!important;height:14px!important}.timeline-labels{display:flex;justify-content:space-between;gap:12px;font-size:10px;color:var(--at-muted);font-variant-numeric:tabular-nums}.clip-selection{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin:22px 0;font-size:12px}.clip-selection kbd{font-size:9px;margin-left:10px;padding:1px 4px;background:var(--at-surface-2);color:var(--at-muted)}.clip-save{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0;border-top:1px solid var(--at-line);padding-top:18px}.text-btn{background:none;border:0;color:var(--at-muted);font-size:11px;padding:6px;width:auto;margin:0}.player-notice{font-size:12px;margin:12px 0 0;color:var(--sw-warn)}
+.camera-player{border:1px solid var(--at-line);border-radius:14px;background:var(--at-surface);overflow:hidden}
+.player-stage{position:relative;background:#0b1421}
+.player-stage video{display:block;width:100%;height:var(--player-height,clamp(144px,calc(100dvh - 410px),720px));object-fit:contain}
+.player-overlay{position:absolute;inset:12px 14px auto;display:flex;align-items:center;justify-content:space-between;gap:12px;pointer-events:none}
+.player-mode,.player-clock{color:#fff;background:#101b2be8;border-radius:5px;padding:6px 10px;text-shadow:0 1px 2px #000}
+.player-mode{font-size:10px;letter-spacing:1px}.player-clock{font-size:14px;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
+.player-controls{padding:8px 16px;display:flex;justify-content:space-between;gap:10px;align-items:center}
+.player-controls .actions{gap:6px}.player-controls .btn{min-height:32px;padding:5px 10px}
+.workspace .camera-player .date-pick{display:flex;align-items:center;gap:8px;font-size:12px;margin:0}.workspace .camera-player .date-pick input{width:150px;height:32px;margin:0;padding:4px 8px;font-size:12px}
+.timeline-panel{padding:0 16px 10px}.recording-track{height:30px;background:var(--at-surface-2);border-radius:6px;position:relative;cursor:crosshair;overflow:hidden}
+.recorded-span{position:absolute;top:8px;height:14px;background:#94b6f6;border-radius:2px;pointer-events:none}
+.selected-span{position:absolute;top:2px;height:26px;background:#2563e63b;border:2px solid #2563e6;border-radius:4px;pointer-events:none}
+.time-cursor{position:absolute;top:0;bottom:0;width:2px;background:#e16c45;pointer-events:none}
+.camera-player input.timeline-seek{position:absolute;inset:0;width:100%;height:30px!important;margin:0!important;padding:0;background:transparent;cursor:ew-resize;appearance:none;-webkit-appearance:none}
+.camera-player input.timeline-seek::-webkit-slider-runnable-track{height:2px;background:transparent;border:0}
+.camera-player input.timeline-seek::-moz-range-track{height:2px;background:transparent;border:0}
+.camera-player input.timeline-seek::-moz-range-progress{background:transparent}
+.camera-player input.timeline-seek::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:12px;height:24px;margin-top:-11px;border-radius:4px;background:#2563e6;border:2px solid white;box-shadow:0 1px 4px #0005}
+.camera-player input.timeline-seek::-moz-range-thumb{width:10px;height:22px;border-radius:4px;background:#2563e6;border:2px solid white;box-shadow:0 1px 4px #0005}
+.timeline-labels{display:flex;justify-content:space-between;gap:8px;font-size:10px;color:var(--at-muted);font-variant-numeric:tabular-nums;margin-top:4px}
+.clip-selection{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin:8px 0;font-size:11px}
+.clip-marker{display:flex;align-items:center;gap:8px}.clip-marker>span{font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.clip-selection .btn{padding:5px 10px;min-height:32px}.clip-selection kbd{font-size:9px;margin-left:6px;padding:1px 4px;background:var(--at-surface-2);color:var(--at-muted)}
+.clip-save{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0;border-top:1px solid var(--at-line);padding-top:8px}
+.clip-save .btn{padding:6px 10px;min-height:32px}.clip-save .hint{font-size:11px}.clip-save .check{font-size:11px;margin:0}
+.text-btn{background:none;border:0;color:var(--at-muted);font-size:11px;padding:4px;width:auto;margin:0}
+.player-notice{font-size:11px;margin:6px 0 0;color:var(--sw-warn)}
+.publication-summary{display:flex;align-items:center;gap:12px;justify-content:space-between;padding:12px 16px;margin:0 0 18px;border:1px solid var(--at-line);border-radius:10px;background:var(--at-surface)}
+.publication-summary>div{display:flex;align-items:center;gap:12px;flex:1;min-width:0}.publication-summary span{font-size:12px;color:var(--at-muted)}.publication-summary strong{font-size:14px}
+.video-youtube-state{margin:10px 0}.video-youtube-state .badge{white-space:normal}.video-meta form.card{border:0;margin:16px 0 0;padding:0}
+#youtube{scroll-margin-top:84px}#youtube>p{font-size:13px}.workspace header.top .inner{min-height:66px}
+
 .advanced-panel{padding:16px 20px;border:1px solid var(--at-line);border-radius:10px;margin:20px 0;background:var(--at-surface)}.advanced-panel summary{font-size:13px;color:var(--at-muted)}.advanced-panel[open]>summary{margin-bottom:18px}.advanced-panel pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px}.more-menu{position:relative;margin:0;align-self:center}.more-menu>summary{list-style:none;color:var(--at-muted);font-size:12px;padding:8px}.more-menu[open]{padding:8px;background:var(--at-surface-2);border-radius:7px}.more-menu a{display:block;font-size:12px;margin:6px}.more-menu form{margin:0}
 .workspace .gallery.videos{grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}.workspace .shot.video{border-radius:12px;overflow:hidden;box-shadow:none}.workspace .shot.video .title{font-size:15px;line-height:1.45}.workspace .shot.video .b{padding:16px}.workspace .shot.video .facts{font-size:11px;margin:12px 0}.workspace .shot.video .acts{margin-top:14px}.workspace .shot.video .thumb .play{height:42px;width:42px;font-size:14px}.workspace .shot.video .dur{font-size:10px}
 .workspace .video-work{margin:12px 0 20px}.workspace .work-panel{border:1px solid var(--at-line);padding:12px 16px;border-radius:9px;box-shadow:none}.workspace .work-panel>summary{font-size:12px;font-weight:600}.workspace .work-panel>summary .hint{margin-left:15px}.workspace .work-item{padding:12px;margin-top:10px}.workspace .work-symbol{width:24px;height:24px;font-size:14px}.workspace .work-item progress{height:4px}.workspace .work-detail{font-size:11px}.workspace .work-name{font-size:12px}
@@ -1312,3 +1343,33 @@ header.top nav.menu > a.active, header.top nav.menu .dd > button.active { backgr
 .studio-inspector .row{grid-template-columns:repeat(2,minmax(0,1fr))}.studio-inspector .row>label{min-width:0}.studio-inspector .row input{width:100%;min-width:0}
 /* Keep the next action within reach while editing on a short screen. */
 .editor-footer{position:sticky;bottom:0;z-index:25;background:var(--pico-background-color);border-top:1px solid var(--at-line);padding:14px 0;box-shadow:0 -10px 16px var(--pico-background-color)}
+
+@media(max-width:620px){
+ .player-overlay{inset:8px 8px auto;gap:6px}.player-clock{font-size:11px;padding:5px 7px}.player-mode{font-size:9px;padding:5px 7px}
+ .player-controls{padding:8px 10px;flex-wrap:nowrap}.workspace .camera-player .date-pick{gap:4px}.workspace .camera-player .date-pick input{width:127px}.workspace .camera-player .date-pick{font-size:0}
+ .timeline-panel{padding:0 10px 10px}.clip-selection{gap:6px}.clip-marker{gap:4px;flex:1;flex-direction:column;align-items:flex-start}.clip-marker>span{font-size:10px}
+ .clip-selection kbd{display:none}.clip-save{gap:6px}.clip-save .actions{width:100%;justify-content:flex-end}
+ .publication-summary{flex-wrap:wrap}.publication-summary>div{flex-basis:100%;justify-content:space-between}
+}
+
+.workspace .camera-player .btn{min-height:32px;padding:5px 10px;line-height:1.3;margin:0}.workspace .camera-player .date-pick input{min-height:32px;height:32px;padding:4px 8px}.workspace .camera-player .date-pick{margin:0}
+
+/* Focus each Studio tool on its own media and controls. */
+.studio-project .editor-tools{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;padding:0;background:none;border:0;overflow:visible}
+.studio-project .editor-tools button{display:flex;align-items:center;justify-content:flex-start;gap:10px;white-space:normal;min-height:58px;padding:10px;border:1px solid var(--at-line);background:var(--at-surface);color:var(--at-text);font-size:13px;font-weight:600;text-align:left}
+.studio-project .editor-tools button.active{background:#2563e6;color:#fff;border-color:#2563e6;box-shadow:0 3px 10px #2563e630}
+.tool-number{display:grid;place-items:center;flex-shrink:0;width:26px;height:26px;border-radius:50%;background:var(--at-surface-2);color:var(--at-muted);font-size:12px}.active .tool-number{background:#ffffff30;color:white}
+.studio-layout.studio-layout--focused{display:block}.studio-layout--focused .studio-inspector{width:100%;min-height:0;padding:24px}
+.studio-layout--focused .studio-inspector>section:not(#studio-music):not(#studio-intro){max-width:780px;margin:0 auto}
+.music-workspace{display:grid;grid-template-columns:minmax(260px,.85fr) minmax(340px,1.15fr);gap:28px;align-items:start}.music-selection{min-width:0}.music-selection>label:first-child{margin-top:0}
+.music-workspace .finder{margin:0;padding:20px;border:1px solid var(--at-line);border-radius:10px;background:var(--at-surface-2)}.music-workspace .finder>summary{font-size:16px;font-weight:650}
+.music-workspace .music-search-row{display:grid;grid-template-columns:minmax(0,1fr) 130px auto;gap:10px;align-items:end}.music-workspace .music-search-fields .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.music-workspace .tracks{max-height:440px;overflow:auto}.music-workspace .track{grid-template-columns:minmax(0,1fr) auto}.music-workspace .track audio{grid-column:1/-1;width:100%;margin:4px 0}.music-workspace .inline-help{margin:16px 0}.music-workspace .music-instruments{border:0;padding:0;margin:12px 0}
+.studio-inspector .music-selection audio{height:54px;margin:20px 0}.intro-edit-grid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(260px,.7fr);gap:28px;align-items:start}.intro-canvas{border-radius:10px;overflow:hidden;background:#0b1421;color:#fff;min-height:220px;display:grid;align-items:center;text-align:center}.intro-canvas p{padding:24px}.intro-canvas .intro-preview{margin:0;width:100%;max-height:50dvh;object-fit:contain}.intro-edit-grid input[type=file]{width:100%;font-size:12px}
+.studio-project .editor-preview video{height:clamp(144px,calc(100dvh - 440px),560px);aspect-ratio:auto;max-height:none;object-fit:contain}.studio-project .editor-timeline{margin-top:8px;padding:12px}.studio-project .editor-timeline .trim-rail{margin:10px 0}.studio-project .editor-timeline .hint{margin:6px 0 0}.studio-project .editor-timeline .section-head{margin-bottom:8px}
+/* The generic form rule has intentionally high specificity; these compact date controls override it. */
+.workspace .camera-player .date-pick input{min-height:32px!important;height:32px!important;padding:4px 8px!important}
+@media(max-width:1100px){.studio-project .editor-tools{grid-template-columns:repeat(3,minmax(0,1fr))}.music-workspace{grid-template-columns:1fr}.studio-project .editor-tools button{min-height:44px}.studio-project .editor-preview video{height:clamp(144px,calc(100dvh - 485px),480px)}}
+@media(max-width:620px){.studio-layout--focused .studio-inspector{padding:16px}.intro-edit-grid{grid-template-columns:1fr}.studio-project .editor-tools{gap:6px}.studio-project .editor-tools button{font-size:11px;padding:8px;gap:6px}.tool-number{width:20px;height:20px;font-size:10px}.music-workspace .music-search-row{grid-template-columns:1fr 100px}.music-workspace .music-search-row>button{grid-column:1/-1}.music-workspace .finder{padding:12px}}
+
+.music-offset-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end}.studio-inspector .music-selection audio{height:48px;margin:12px 0}.music-offset-row>.btn{margin-bottom:0}.music-offset-row>label{margin-top:8px}.music-selection .inline-help{margin-top:14px}.music-offset-row>.btn{white-space:normal;max-width:130px}

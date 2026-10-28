@@ -1,4 +1,4 @@
-# Atmovio 6
+# Atmovio 6.0.1
 
 Hlavní nabídka má čtyři místa: **Kamery, Okamžiky, Moje videa a Studio**. Hudba, nastavení a diagnostika jsou ve spodní části nabídky. Technické podklady AI zůstávají v rozbalitelných detailech.
 
@@ -14,9 +14,11 @@ Okamžiky ukazují hotové klipy. Další zajímavé nálezy obsahují vybraná 
 
 Překrývající se automatické klipy stejné kamery se spojují do jednoho rozsahu, nejvýše šest hodin. Například 10:00–12:20, 10:50–13:00 a 12:00–13:30 vytvoří 10:00–13:30. Staré klipy se skryjí až po dokončení spojeného videa. Pokud původní záznam už chybí, zůstanou původní klipy dostupné. Zdroje uložených projektů se automatickým úklidem neodstraňují; prostor lze uvolnit ručně.
 
-Studio nabízí střih, rychlost 1× nebo časosběr 10–240×, hudbu s přehrávačem a volbou začátku, vlastní intro, text a výzvu k odběru či sdílení. Náhled zdroje slouží k výběru střihu; celý výsledek s efekty a hudbou je dostupný po přípravě videa. Uložený projekt lze znovu otevřít. Úprava hotového videa vytvoří další verzi; již publikované video se samo nezmění.
+Přepínače ve Studiu otevírají samostatné pracovní plochy. Zdrojové video vidíte u střihu; hudba má vlastní široký přehrávač a intro vlastní náhled. Studio nabízí střih, rychlost 1× nebo časosběr 10–240×, hudbu s přehrávačem a volbou začátku, vlastní intro, text a výzvu k odběru či sdílení. Náhled zdroje slouží k výběru střihu; celý výsledek s efekty a hudbou je dostupný po přípravě videa. Uložený projekt lze znovu otevřít. Úprava hotového videa vytvoří další verzi; již publikované video se samo nezmění.
 
 ## Aktualizace a diagnostika
+
+Ve starší instalaci otevřete **Nastavení → Systém → Aktualizace**, klikněte na **Zkontrolovat teď** a potom **Nainstalovat verzi 6.0.1**. Aktualizátor stáhne instalační soubor z GitHub Releases a ověří kontrolní součet. Stejnou cestou budou dostupné další vydané opravy.
 
 Aktualizátor stáhne Frigate 0.18.2 a ověří kopii konfigurace za běhu staré verze. Před přepnutím zálohuje konfiguraci i zastavenou databázi. Během restartu vznikne krátká mezera v nahrávání. Nová verze musí potvrdit API a obraz dříve dostupných kamer; při selhání se obnoví původní Frigate i jeho databáze. Záznamy na datovém disku se nepřesouvají.
 

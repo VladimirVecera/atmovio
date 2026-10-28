@@ -31,6 +31,12 @@ events['alpine:init']();
   p.from=1500;p.to=1600;
   assert.equal(p.from,1500);assert.equal(p.to,1600);
   p.from=1000;p.to=22601;assert.equal(p.validSelection(),false);
+  p.tz='Europe/Prague';assert.match(p.fullStamp(Date.parse('2026-10-28T05:37:42Z')/1000),/28\.\s?10\.\s?2026.*06:37:42/);
+  const size={};p.$el={getBoundingClientRect:()=>({top:180}),style:{setProperty:(k,v)=>size[k]=v}};
+  p.$refs.transport={offsetHeight:200};context.window.innerHeight=720;context.window.scrollY=0;p.fitPlayer();
+  assert.equal(size['--player-height'],'322px');
+  context.window.innerHeight=600;p.fitPlayer();assert.equal(size['--player-height'],'202px');
+  p.$el.getBoundingClientRect=()=>({top:80});context.window.scrollY=100;p.fitPlayer();assert.equal(size['--player-height'],'202px');
   p.destroy();
   class FakeHls{static isSupported(){return true;}static Events={ERROR:'error'};loadSource(){}attachMedia(){}on(){}destroy(){destroyed++;}}
   context.Hls=context.window.Hls=FakeHls;

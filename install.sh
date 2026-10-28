@@ -477,7 +477,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "6.0.0"
+APP_VERSION = "6.0.1"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -3981,15 +3981,15 @@ TEMPLATES["live.html"] = """{% extends "base.html" %}{% block actions %}<a class
 
 TEMPLATES["camera.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a href="/live" class="btn sec">← Kamery</a><a class="ico-btn" href="/cameras/edit/{{ camera }}" aria-label="Nastavení kamery">{{ icons.cog|safe }}</a></div>{% endblock %}{% block content %}
 <section class="camera-player" x-data='cameraPlayer({{ camera|tojson }})'>
-<div class="player-stage"><video x-ref="video" controls autoplay muted playsinline poster="/live/{{ camera }}.jpg?h=1080" @timeupdate="tick()" @ended="nextSegment()" @error="mediaError()"></video><span class="player-mode" x-text="live ? '● ŽIVĚ' : 'ZÁZNAM'">● ŽIVĚ</span></div>
-<div class="player-controls"><div class="actions"><button class="btn small sec" type="button" @click="step(-30)">−30 s</button><button class="btn small sec" type="button" @click="step(30)">+30 s</button><strong x-text="stamp(cursor)"></strong></div><button type="button" class="btn small" @click="goLive()">Zpět na živý přenos</button></div>
-<div class="timeline-panel"><div class="section-head"><div><h2>Záznamy</h2><span class="hint" x-text="tz"></span></div><label class="date-pick">Den <input type="date" x-model="day" @change="loadDay()" aria-label="Den záznamu"></label></div>
-<div class="recording-track" @click="seekAt($event)"><template x-for="(span,i) in spans" :key="i"><span class="recorded-span" :style="spanStyle(span)"></span></template><span class="selected-span" x-show="from!==null && to!==null" :style="spanStyle([from,to])"></span><span class="time-cursor" :style="'left:'+percent(cursor)+'%'"></span></div>
-<input class="timeline-seek" type="range" :min="start" :max="end" step="1" :value="cursor" @change="seek(Number($event.target.value))" aria-label="Přejít na čas v záznamu">
-<div class="timeline-labels"><span x-text="stamp(start)"></span><span>Dostupný záznam je vyznačen modře</span><span x-text="stamp(end)"></span></div>
-<div class="clip-selection"><button type="button" class="btn sec" @click="mark('from')">Označit OD <kbd>I</kbd></button><span x-text="from===null ? '—' : fullStamp(from)"></span><button type="button" class="btn sec" @click="mark('to')">Označit DO <kbd>O</kbd></button><span x-text="to===null ? '—' : fullStamp(to)"></span><button type="button" class="text-btn" @click="from=null;to=null">Zrušit výběr</button></div>
+<div class="player-stage"><video x-ref="video" controls autoplay muted playsinline poster="/live/{{ camera }}.jpg?h=1080" @timeupdate="tick()" @ended="nextSegment()" @error="mediaError()"></video><div class="player-overlay"><span class="player-mode" x-text="live ? '● ŽIVĚ' : 'ZÁZNAM'">● ŽIVĚ</span><time class="player-clock" x-text="fullStamp(cursor)" :title="live ? 'Aktuální čas · '+tz : 'Čas přehrávaného záznamu · '+tz"></time></div></div>
+<div class="player-transport" x-ref="transport">
+<div class="player-controls"><div class="actions"><button class="btn small sec" type="button" @click="step(-30)">−30 s</button><button class="btn small sec" type="button" @click="step(30)">+30 s</button><button type="button" class="btn small" @click="goLive()" :disabled="live">Živě</button></div><label class="date-pick">Den <input type="date" x-model="day" @change="loadDay()" aria-label="Den záznamu"></label></div>
+<div class="timeline-panel">
+<div class="recording-track" @click="seekAt($event)"><template x-for="(span,i) in spans" :key="i"><span class="recorded-span" :style="spanStyle(span)"></span></template><span class="selected-span" x-show="from!==null && to!==null" :style="spanStyle([from,to])"></span><span class="time-cursor" :style="'left:'+percent(cursor)+'%'"></span><input class="timeline-seek" type="range" :min="start" :max="end-1" step="1" :value="cursor" @click.stop @input="scrub=Number($event.target.value)" @change="seek(Number($event.target.value));scrub=null" aria-label="Přejít na čas v záznamu"></div>
+<div class="timeline-labels"><span x-text="stamp(start)"></span><span x-text="scrub===null ? 'Modře je dostupný záznam' : fullStamp(scrub)"></span><span x-text="stamp(end-1)"></span></div>
+<div class="clip-selection"><div class="clip-marker"><button type="button" class="btn sec" @click="mark('from')">Označit OD <kbd>I</kbd></button><span x-text="from===null ? '—' : fullStamp(from)"></span></div><div class="clip-marker"><button type="button" class="btn sec" @click="mark('to')">Označit DO <kbd>O</kbd></button><span x-text="to===null ? '—' : fullStamp(to)"></span></div><button type="button" class="text-btn" @click="from=null;to=null" x-show="from!==null || to!==null">Zrušit výběr</button></div>
 <form method="post" action="/camera/{{ camera }}/recording" class="clip-save"><input type="hidden" name="from_time" :value="from===null ? '' : new Date(from*1000).toISOString()"><input type="hidden" name="to_time" :value="to===null ? '' : new Date(to*1000).toISOString()"><span class="hint" x-text="selectionLabel()"></span><label class="check" x-show="selectionHasGaps()"><input type="checkbox" name="allow_gaps" value="1">Uložit dostupné části a přeskočit výpadky</label><div class="actions"><button type="button" class="btn sec" :disabled="!validSelection()" @click="previewSelection()">Přehrát výběr</button><button class="btn" :disabled="!validSelection()">Uložit klip</button></div></form>
-<p class="player-notice" role="status" x-show="message" x-text="message"></p></div></section>
+<p class="player-notice" role="status" x-show="message" x-text="message"></p></div></div></section>
 <details class="advanced-panel"><summary>Další možnosti</summary><a href="/camera/{{ camera }}/recording">Zadat přesné datum a čas</a> · <a href="{{ frigate_ui }}" target="_blank" rel="noopener">Otevřít Frigate</a></details>{% endblock %}"""
 
 TEMPLATES["youtube.html"] = """{% extends "base.html" %}{% block actions %}<a class="btn small sec" href="/studio">Nové video</a>{% endblock %}{% block content %}
@@ -4008,9 +4008,10 @@ TEMPLATES["youtube.html"] = """{% extends "base.html" %}{% block actions %}<a cl
 {% elif s.status == 'queued' %}<span>Čeká na vytvoření videa{% if s.eta_at %} · hotovo ~{{ s.eta_at }}{% endif %}</span>
 {% else %}<span>Video není dostupné</span>{% endif %}</a>{% endif %}
 {% if s.status == 'ready' and not s.ready %}<div class="media-reason" role="status">Soubor hotového videa se nepodařilo najít. <a href="/storage">Zkontroluj disk</a>. Pokud byl soubor smazán, vytvoř video znovu z původního klipu.</div>{% endif %}
-<div class="b"><div class="title">{{ short_title(s.title or s.name,s.camera) }}{% if s.auto %} <span class="badge ok">auto</span>{% endif %}{% if s.yt_status == 'done' %} <a class="badge info" href="{{ s.yt_url }}" target="_blank" rel="noopener">▶ YouTube</a>{% elif s.yt_status in ('queued', 'uploading') %} <span class="badge info">nahrává se na YouTube</span>{% elif s.yt_status == 'failed' %} <span class="badge err">YouTube selhalo</span>{% endif %}</div>
+<div class="b"><div class="title">{{ short_title(s.title or s.name,s.camera) }}{% if s.auto %} <span class="badge ok">auto</span>{% endif %}</div>
+<p class="video-youtube-state" data-youtube-status="{{ s.yt_live.status }}"><span class="badge {{ 'ok' if s.yt_live.status=='done' else ('err' if s.yt_live.status=='failed' else 'info') }}">{{ s.yt_live.label }}</span></p>
 <dl class="facts"><dt>Kamera</dt><dd>{{ s.camera_label }}</dd><dt>Úpravy</dt><dd>{{ s.speed }}×{% if s.intro %} · intro{% endif %}{% if s.music %} · hudba{% endif %}{% if s.text %} · text{% endif %}</dd><dt>Vytvořeno</dt><dd>{{ s.created|czdt }}</dd></dl>
-<div class="acts"><a class="btn small" href="/studio/v/{{ s.id }}">Otevřít</a>{% if s.ready %}<a class="btn small sec" href="/studio/v/{{ s.id }}/download">⬇ Stáhnout</a>{% endif %}
+<div class="acts"><a class="btn small" href="/studio/v/{{ s.id }}">Otevřít</a>{% if s.yt_live.url %}<a class="btn small sec" href="{{ s.yt_live.url }}" target="_blank" rel="noopener">Otevřít na YouTube ↗</a>{% elif s.ready and s.yt_live.status in ('not_uploaded','failed') %}<a class="btn small sec" href="/studio/v/{{ s.id }}#youtube">{{ 'Zkusit nahrání znovu' if s.yt_live.status=='failed' else 'Nahrát na YouTube' }}</a>{% endif %}{% if s.ready %}<a class="btn small sec" href="/studio/v/{{ s.id }}/download">⬇ Stáhnout</a>{% endif %}
 {% if s.status == 'ready' and not s.ready %}<a class="btn small sec" href="/studio/new/{{ s.export_id }}?again={{ s.id }}">Vytvořit znovu</a>{% endif %}
 <details class="more-menu"><summary aria-label="Další možnosti">•••</summary><a href="/studio/new/{{ s.export_id }}?again={{ s.id }}">Znovu upravit</a><form method="post" action="/studio/v/{{ s.id }}/delete" onsubmit="return confirm('Smazat video ze studia?')"><button class="btn small sec">Smazat</button></form></details></div></div></div>{% endfor %}
 </div>
@@ -4141,23 +4142,23 @@ TEMPLATES["history.html"] = """{% extends "base.html" %}{% block actions %}<div 
 {% endblock %}"""
 
 TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<a class="btn sec" href="/youtube">← Moje videa</a>{% endblock %}{% block content %}
-<form method="post" class="studio-project" x-data="{tab:'trim',uploading:false,intro:{{ 'true' if values.intro and intro else 'false' }},textOn:{{ 'true' if values.text_on else 'false' }}}" @intro-upload="uploading=$event.detail.busy">
+<form method="post" class="studio-project" x-data="{tab:'trim',uploading:false,intro:{{ 'true' if values.intro and intro else 'false' }},textOn:{{ 'true' if values.text_on else 'false' }}}" @intro-upload="uploading=$event.detail.busy" @studio-tab="$el.querySelectorAll('video,audio').forEach(function(media){media.pause()})">
 <input type="hidden" name="project_id" value="{{ values.project_id }}">
-<nav class="editor-tools" aria-label="Nástroje videa">{% for key,label in [('trim','Střih a rychlost'),('music','Hudba'),('intro','Intro'),('text','Text v obraze'),('effects','Efekty'),('title','Název a popis')] %}<button type="button" :class="{active:tab==='{{ key }}'}" @click="tab='{{ key }}'">{{ label }}</button>{% endfor %}</nav>
-<div class="studio-layout" x-data="speedPreview('/videos/{{ export.id }}/play.mp4', {{ values.speed }}, {{ src.duration }}, {{ values.trim_start|round(1) }}, {{ values.trim_end|round(1, 'floor') }})">
-<div class="studio-canvas"><div class="editor-preview"><video x-ref="trimVideo" class="studio-trim-video" src="/videos/{{ export.id }}/play.mp4" controls playsinline preload="metadata" poster="/videos/{{ export.id }}/thumb.jpg" @timeupdate="boundPreview()" @play="boundPreview()" @error="trimError='Náhled není dostupný. Ověřte zdrojový klip.'"></video></div>
+<nav class="editor-tools" aria-label="Vyberte, co chcete upravit">{% for key,label in [('trim','Střih a rychlost'),('music','Hudba'),('intro','Intro'),('text','Text v obraze'),('effects','Efekty'),('title','Název a popis')] %}<button type="button" :class="{active:tab==='{{ key }}'}" :aria-pressed="tab==='{{ key }}'" aria-controls="studio-{{ key }}" @click="tab='{{ key }}';$dispatch('studio-tab')"><span class="tool-number" aria-hidden="true">{{ loop.index }}</span><span>{{ label }}</span></button>{% endfor %}</nav>
+<div class="studio-layout" :class="{'studio-layout--focused':tab!=='trim'}" x-data="speedPreview('/videos/{{ export.id }}/play.mp4', {{ values.speed }}, {{ src.duration }}, {{ values.trim_start|round(1) }}, {{ values.trim_end|round(1, 'floor') }})">
+<div class="studio-canvas" x-show="tab==='trim'"><div class="editor-preview"><video x-ref="trimVideo" class="studio-trim-video" src="/videos/{{ export.id }}/play.mp4" controls playsinline preload="metadata" poster="/videos/{{ export.id }}/thumb.jpg" @timeupdate="boundPreview()" @play="boundPreview()" @error="trimError='Náhled není dostupný. Ověřte zdrojový klip.'"></video></div>
 <div class="editor-timeline"><div class="section-head"><b>{{ short_title(export.name,export.camera) }}</b><span class="hint">{{ cam(export.camera) }}</span></div><div class="trim-rail" :style="'--start-ratio:'+(trimStart/duration)+';--end-ratio:'+(trimEnd/duration)"><div class="trim-selection"></div><input type="range" aria-label="Začátek ořezu" min="0" :max="duration" step=".1" x-model.number="trimStart" @input="adjustTrim('start')"><input type="range" aria-label="Konec ořezu" min="0" :max="duration" step=".1" x-model.number="trimEnd" @input="adjustTrim('end')"></div><div class="timeline-labels"><span x-text="stamp(trimStart)"></span><span x-text="'Výběr '+stamp(trimEnd-trimStart)"></span><span x-text="stamp(trimEnd)"></span></div><p class="hint">Náhled zdroje · výsledek s hudbou, intrem a efekty uvidíte po přípravě videa.</p><p class="hint" role="status" x-text="trimError"></p></div></div>
 <aside class="studio-inspector">
-<section x-show="tab==='trim'"><h2>Vyberte nejlepší část</h2><p class="hint">Posuňte video a označte začátek i konec.</p><div class="actions"><button type="button" class="btn small sec" @click="trimStart=$refs.trimVideo.currentTime;adjustTrim('start')">Označit OD</button><button type="button" class="btn small sec" @click="trimEnd=$refs.trimVideo.currentTime;adjustTrim('end')">Označit DO</button></div><div class="row"><label>OD · sekundy<input name="trim_start" type="number" step=".1" min="0" :max="trimEnd-.1" x-model.number="trimStart" @change="adjustTrim('start')"></label><label>DO · sekundy<input name="trim_end" type="number" step=".1" :min="trimStart+.1" :max="duration" x-model.number="trimEnd" @change="adjustTrim('end')"></label></div><button type="button" class="btn sec" @click="previewTrim()">Přehrát výběr</button><hr><label>Rychlost <b x-text="speed+'×'"></b><select name="speed" x-model.number="speed"><option value="1">Běžná rychlost · 1×</option>{% for n in range(10,241,10) %}<option value="{{ n }}">Časosběr · {{ n }}×</option>{% endfor %}</select></label><p>Výsledná délka <b x-text="fmt((trimEnd-trimStart)/speed)"></b><small class="hint"> bez intra</small></p><p class="hint">Původní klip zůstane zachovaný.</p></section>
-<section x-show="tab==='music'" x-cloak x-data="musicFinder({{ values.music|tojson|forceescape }})"><h2>Hudba</h2><label>Skladba<select name="music" x-model="music" x-ref="sel"><option value="">Bez hudby</option>{% for m in music %}<option value="{{ m.name }}">{{ m.name }}</option>{% endfor %}</select></label><audio x-ref="track" controls preload="metadata" :src="music ? '/studio/asset/music/'+encodeURIComponent(music) : null" x-show="music" @play="solo($event.target)"></audio><label>Začátek skladby · sekundy<input x-ref="offset" name="music_start" type="number" min="0" max="86400" step=".1" value="{{ values.edit.music_start }}" @change="if($refs.track.duration)$refs.track.currentTime=Math.min(Number($event.target.value),$refs.track.duration)"></label><button type="button" class="btn small sec" @click="$refs.offset.value=Math.floor($refs.track.currentTime)">Použít aktuální místo</button><label>Hlasitost<input name="music_volume" type="range" min="0" max="2" step=".05" value="{{ values.edit.music_volume }}" @input="$refs.track.volume=Math.min(1,Number($event.target.value))"></label><div class="row"><label>Nástup · s<input name="fade_in" type="number" min="0" max="30" value="{{ values.edit.fade_in }}"></label><label>Doznění · s<input name="fade_out" type="number" min="0" max="30" value="{{ values.edit.fade_out }}"></label></div>  <details class="finder" :open="open" @toggle="open = $el.open"><summary>🔎 Najít hudbu k tomuto videu (Openverse – volně použitelná, CC0 / CC BY)</summary>
+<section id="studio-trim" x-show="tab==='trim'"><h2>Vyberte nejlepší část</h2><p class="hint">Posuňte video a označte začátek i konec.</p><div class="actions"><button type="button" class="btn small sec" @click="trimStart=$refs.trimVideo.currentTime;adjustTrim('start')">Označit OD</button><button type="button" class="btn small sec" @click="trimEnd=$refs.trimVideo.currentTime;adjustTrim('end')">Označit DO</button></div><div class="row"><label>OD · sekundy<input name="trim_start" type="number" step=".1" min="0" :max="trimEnd-.1" x-model.number="trimStart" @change="adjustTrim('start')"></label><label>DO · sekundy<input name="trim_end" type="number" step=".1" :min="trimStart+.1" :max="duration" x-model.number="trimEnd" @change="adjustTrim('end')"></label></div><button type="button" class="btn sec" @click="previewTrim()">Přehrát výběr</button><hr><label>Rychlost <b x-text="speed+'×'"></b><select name="speed" x-model.number="speed"><option value="1">Běžná rychlost · 1×</option>{% for n in range(10,241,10) %}<option value="{{ n }}">Časosběr · {{ n }}×</option>{% endfor %}</select></label><p>Výsledná délka <b x-text="fmt((trimEnd-trimStart)/speed)"></b><small class="hint"> bez intra</small></p><p class="hint">Původní klip zůstane zachovaný.</p></section>
+<section id="studio-music" x-show="tab==='music'" x-cloak x-data="musicFinder({{ values.music|tojson|forceescape }})" x-init="open=true"><h2>Hudba k videu</h2><p class="hint">Pusťte si skladbu, posuňte přehrávač a vyberte místo, odkud má hudba začít.</p><div class="music-workspace"><div class="music-selection"><label>Skladba<select name="music" x-model="music" x-ref="sel"><option value="">Bez hudby</option>{% for m in music %}<option value="{{ m.name }}">{{ m.name }}</option>{% endfor %}</select></label><audio x-ref="track" controls preload="metadata" :src="music ? '/studio/asset/music/'+encodeURIComponent(music) : null" x-show="music" @loadedmetadata="$el.currentTime=Math.min(Number($refs.offset.value)||0,$el.duration);$el.volume=Math.min(1,Number($refs.volume.value))" @play="solo($event.target)"></audio><div class="music-offset-row"><label>Začátek skladby · sekundy<input x-ref="offset" name="music_start" type="number" min="0" max="86400" step=".1" value="{{ values.edit.music_start }}" @input="if($refs.track.duration)$refs.track.currentTime=Math.min(Number($event.target.value),$refs.track.duration)"></label><button type="button" class="btn small sec" @click="$refs.offset.value=Math.floor($refs.track.currentTime)">Použít aktuální místo</button></div><label>Hlasitost<input x-ref="volume" name="music_volume" type="range" min="0" max="2" step=".05" value="{{ values.edit.music_volume }}" @input="$refs.track.volume=Math.min(1,Number($event.target.value))"></label><details class="inline-help"><summary>Nástup a doznění hudby</summary><div class="row"><label>Nástup · s<input name="fade_in" type="number" min="0" max="30" value="{{ values.edit.fade_in }}"></label><label>Doznění · s<input name="fade_out" type="number" min="0" max="30" value="{{ values.edit.fade_out }}"></label></div></details></div><details class="finder" :open="open" @toggle="open = $el.open"><summary>Najít novou hudbu</summary><p class="hint">Openverse · CC0 / CC BY · autor se přidá do popisu videa.</p>
    <fieldset class="music-search-fields" :disabled="busy" :aria-busy="busy">
    <div class="music-search-row"><div><label for="music-query" x-text="searchIn === 'title' ? 'Název skladby' : 'Téma / nálada'"></label><input id="music-query" type="text" x-model="q" maxlength="100" @keydown.enter.prevent="search()" :placeholder="searchIn === 'title' ? 'např. run (lze nechat prázdné)' : 'např. calm, sunset, ambient…'"></div>
     <div><label for="music-length">Délka</label><select id="music-length" x-model="len"><option value="">Libovolná délka</option><option value="short">do 2 min</option><option value="medium">2–10 min</option><option value="long">nad 10 min</option></select></div>
     <button type="button" class="btn small" @click="search()" x-text="busy ? 'Hledám…' : 'Hledat'"></button></div>
-   <fieldset class="music-instruments"><legend>Nástroje a obsazení</legend>
+   <details class="inline-help"><summary>Nástroje a obsazení <span x-show="instruments.length" x-text="'· '+instruments.length"></span></summary><fieldset class="music-instruments"><legend class="sr-only">Nástroje a obsazení</legend>
     <div class="chips">{% for key, label in instruments %}<label class="chip"><input type="checkbox" value="{{ key }}" x-model="instruments">{{ label }}</label>{% endfor %}</div>
     <div class="music-filter-note"><span class="hint">Vybrat můžeš více možností. Skladba musí mít všechny vybrané nástroje ve štítcích autora.</span><button type="button" class="btn small sec" @click="instruments = []" x-show="instruments.length" x-cloak>Zrušit výběr</button></div>
-   </fieldset>
+   </fieldset></details>
    <details class="inline-help"><summary>Další filtry</summary><div class="row" style="margin-top:.5rem">
     <div><label>Hledat text v</label><select x-model="searchIn"><option value="title">Názvu skladby</option><option value="tags">Tématu / náladě (štítky)</option></select></div>
     <div><label>Licence</label><select x-model="license"><option value="">CC0 a CC BY</option><option value="cc0">CC0</option><option value="by">CC BY</option></select></div>
@@ -4175,15 +4176,17 @@ TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<a
      <button type="button" class="btn small" @click="use(t)" :disabled="busy" x-text="t.name ? '✓ Vybráno' : 'Použít'"></button>
     </div></template>
    </div>
-  </details></section>
-<section x-show="tab==='intro'" x-cloak x-data="introPicker({{ (values.edit.intro_asset or '')|tojson|forceescape }}, {{ values.intro_url|tojson|forceescape }}, {{ (intro.suffix|lower if intro else '')|tojson|forceescape }})"><h2>Intro</h2><input type="hidden" name="intro_asset" :value="asset"><label class="check"><input type="checkbox" name="intro" value="1" x-model="intro" :disabled="!url">Přidat na začátek</label><img x-show="isImage" class="intro-preview" :src="isImage ? url : null" alt="Náhled intra"><video x-show="url && !isImage" class="intro-preview" controls preload="metadata" :src="url && !isImage ? url : null"></video><label class="btn sec">Vybrat vlastní intro<input type="file" accept=".mp4,.mov,.m4v,.png,.jpg,.jpeg" @change="upload($event)" :disabled="busy"></label><p class="hint" role="status" x-text="message"></p><p class="hint">Video nebo obrázek · do 100 MB. Změna platí pro tento projekt.</p></section>
-<section x-show="tab==='text'" x-cloak><h2>Text v obraze</h2><label class="check"><input type="checkbox" name="text_on" value="1" x-model="textOn">Přidat text</label><label x-show="textOn">Váš text<input name="text" value="{{ values.text }}" maxlength="200" placeholder="Například: Ranní mlha nad údolím"></label><label>Poloha<select name="text_pos">{% for key,label in [('bl','Dole vlevo'),('bc','Dole uprostřed'),('br','Dole vpravo'),('tl','Nahoře vlevo'),('tr','Nahoře vpravo')] %}<option value="{{ key }}" {{ 'selected' if values.edit.text_pos==key }}>{{ label }}</option>{% endfor %}</select></label><p class="hint">Napište běžný text. Kamera, datum a čas patří do popisu, pokud je nechcete v obraze.</p></section>
-<section x-show="tab==='effects'" x-cloak x-data="{effect:{{ values.edit.effect|tojson|forceescape }}}"><h2>Výzva divákům</h2><label>Efekt<select name="effect" x-model="effect">{% for key,label in [('','Bez efektu'),('subscribe','Odebírejte další videa'),('share','Sdílejte tento okamžik'),('both','Sdílejte a odebírejte')] %}<option value="{{ key }}" {{ 'selected' if values.edit.effect==key }}>{{ label }}</option>{% endfor %}</select></label><label>Začátek · sekundy hotového záběru<input type="number" min="0" max="21600" name="effect_at" value="{{ values.edit.effect_at }}"></label><label>Délka zobrazení · s<input type="number" min="1" max="30" name="effect_duration" value="{{ values.edit.effect_duration }}"></label><div class="effect-preview" x-show="effect" x-text="{subscribe:'Odebírejte další videa',share:'Sdílejte tento okamžik',both:'Sdílejte a odebírejte'}[effect]"></div><p class="hint">Výzva se zobrazí dole uprostřed. Čas se počítá od zrychleného záběru za intrem.</p></section>
-<section x-show="tab==='title'" x-cloak x-data="titleIdeas({vid:{{ export.id }}})"><h2>Název a popis</h2><label>Název<input name="title" value="{{ short_title(values.title,export.camera) }}" maxlength="100" x-ref="title"></label><label>Popis<textarea name="description" rows="6" x-ref="description">{{ values.description }}</textarea></label><button type="button" class="btn sec" @click="askMetadata()" :disabled="busy">Navrhnout texty</button><p class="hint" x-text="metaMsg"></p><div x-show="proposal"><strong x-text="proposal?.title"></strong><p x-text="proposal?.description"></p><button class="btn small" type="button" @click="applyMetadata()">Použít návrh</button></div></section>
+  </details></div></section>
+<section id="studio-intro" x-show="tab==='intro'" x-cloak x-data="introPicker({{ (values.edit.intro_asset or '')|tojson|forceescape }}, {{ values.intro_url|tojson|forceescape }}, {{ (intro.suffix|lower if intro else '')|tojson|forceescape }})"><h2>Úvod videa</h2><p class="hint">Tady si přehrajete intro a můžete ho vyměnit.</p><input type="hidden" name="intro_asset" :value="asset"><div class="intro-edit-grid"><div class="intro-canvas"><img x-show="url && isImage" class="intro-preview" :src="isImage ? url : null" alt="Náhled intra"><video x-show="url && !isImage" class="intro-preview" controls playsinline preload="metadata" :src="url && !isImage ? url : null"></video><p x-show="!url">Vyberte video nebo obrázek pro začátek videa.</p></div><div><label class="check"><input type="checkbox" name="intro" value="1" x-model="intro" :disabled="!url">Přidat intro na začátek</label><label>Vybrat nebo změnit intro<input type="file" accept=".mp4,.mov,.m4v,.png,.jpg,.jpeg" @change="upload($event)" :disabled="busy"></label><p class="hint" role="status" x-text="message"></p><p class="hint">Video nebo obrázek · do 100 MB. Změna platí pro tento projekt.</p></div></div></section>
+<section id="studio-text" x-show="tab==='text'" x-cloak><h2>Text v obraze</h2><label class="check"><input type="checkbox" name="text_on" value="1" x-model="textOn">Přidat text</label><label x-show="textOn">Váš text<input name="text" value="{{ values.text }}" maxlength="200" placeholder="Například: Ranní mlha nad údolím"></label><label>Poloha<select name="text_pos">{% for key,label in [('bl','Dole vlevo'),('bc','Dole uprostřed'),('br','Dole vpravo'),('tl','Nahoře vlevo'),('tr','Nahoře vpravo')] %}<option value="{{ key }}" {{ 'selected' if values.edit.text_pos==key }}>{{ label }}</option>{% endfor %}</select></label><p class="hint">Napište běžný text. Kamera, datum a čas patří do popisu, pokud je nechcete v obraze.</p></section>
+<section id="studio-effects" x-show="tab==='effects'" x-cloak x-data="{effect:{{ values.edit.effect|tojson|forceescape }}}"><h2>Výzva divákům</h2><label>Efekt<select name="effect" x-model="effect">{% for key,label in [('','Bez efektu'),('subscribe','Odebírejte další videa'),('share','Sdílejte tento okamžik'),('both','Sdílejte a odebírejte')] %}<option value="{{ key }}" {{ 'selected' if values.edit.effect==key }}>{{ label }}</option>{% endfor %}</select></label><label>Začátek · sekundy hotového záběru<input type="number" min="0" max="21600" name="effect_at" value="{{ values.edit.effect_at }}"></label><label>Délka zobrazení · s<input type="number" min="1" max="30" name="effect_duration" value="{{ values.edit.effect_duration }}"></label><div class="effect-preview" x-show="effect" x-text="{subscribe:'Odebírejte další videa',share:'Sdílejte tento okamžik',both:'Sdílejte a odebírejte'}[effect]"></div><p class="hint">Výzva se zobrazí dole uprostřed. Čas se počítá od zrychleného záběru za intrem.</p></section>
+<section id="studio-title" x-show="tab==='title'" x-cloak x-data="titleIdeas({vid:{{ export.id }}})"><h2>Název a popis</h2><label>Název<input name="title" value="{{ short_title(values.title,export.camera) }}" maxlength="100" x-ref="title"></label><label>Popis<textarea name="description" rows="6" x-ref="description">{{ values.description }}</textarea></label><button type="button" class="btn sec" @click="askMetadata()" :disabled="busy">Navrhnout texty</button><p class="hint" x-text="metaMsg"></p><div x-show="proposal"><strong x-text="proposal?.title"></strong><p x-text="proposal?.description"></p><button class="btn small" type="button" @click="applyMetadata()">Použít návrh</button></div></section>
 </aside></div><div class="editor-footer"><span>Úpravy můžete později znovu otevřít.</span><div class="actions"><button class="btn sec" name="action" value="draft" :disabled="uploading">Uložit projekt</button><button class="btn" name="action" value="render" :disabled="uploading">Připravit video →</button></div></div></form>{% endblock %}"""
 
 TEMPLATES["studio_video.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a class="btn small sec" href="/youtube">← Videa</a><a class="btn small sec" href="/studio/new/{{ v.export_id }}?again={{ v.id }}">Znovu upravit</a></div>{% endblock %}{% block content %}
-<div class="grid-2 media-editor-grid" x-data="{detailTab:'text'}">
+<div x-data='youtubeUpload({{ v.id }}, {{ v.yt_live|tojson }})'>
+<section class="publication-summary" aria-label="Stav YouTube" data-youtube-status="{{ v.yt_live.status }}"><div><span>YouTube</span><strong x-text="state.label">{{ v.yt_live.label }}</strong></div><a class="btn small sec" x-show="state.url" :href="state.url" target="_blank" rel="noopener" {% if not v.yt_live.url %}x-cloak{% endif %}>Otevřít na YouTube ↗</a>{% if v.ready and v.yt_live.status in ('not_uploaded','failed') %}<a class="btn small" href="#youtube">{{ 'Zkusit nahrání znovu' if v.yt_live.status=='failed' else 'Nahrát na YouTube' }}</a>{% endif %}</section>
+<div class="grid-2 media-editor-grid">
 <div>
  <div class="card" style="padding:0;overflow:hidden">
  {% if v.ready %}<video controls preload="metadata" playsinline style="width:100%;display:block;background:#000;aspect-ratio:16/9" poster="{% if v.thumb %}/studio/v/{{ v.id }}/thumb.jpg{% endif %}" src="/studio/v/{{ v.id }}/play.mp4"></video>
@@ -4209,12 +4212,37 @@ TEMPLATES["studio_video.html"] = """{% extends "base.html" %}{% block actions %}
  </dl></details>
 </div>
 <div>
- <nav class="tabs"><button type="button" :class="{active:detailTab==='text'}" @click="detailTab='text'">Název a popis</button><button type="button" :class="{active:detailTab==='publish'}" @click="detailTab='publish'">Publikovat</button></nav><form x-show="detailTab==='text'" method="post" action="/studio/v/{{ v.id }}/meta" class="card" x-data="titleIdeas({sid: {{ v.id }}})"><h2>Titulek a popis</h2>
+ <div class="card" id="youtube"><h2>YouTube</h2>{% if v.yt_live.status=='not_uploaded' %}<p>Video zatím není nahrané na YouTube. Vytvoření videa a nahrání jsou dva samostatné kroky.</p>{% endif %}
+ {% if v.yt_status == 'done' %}<p><span class="badge ok">nahráno</span> {% if v.yt_url %}<a href="{{ v.yt_url }}" target="_blank" rel="noopener"><b>Otevřít video na YouTube ↗</b></a>{% else %}<span class="hint">Odkaz není uložený. Video vyhledejte ve svém YouTube Studiu.</span>{% endif %}</p><p class="hint">Titulek, popis, viditelnost i playlist můžeš dál upravit přímo na YouTube (YouTube Studio).</p>
+  <p class="hint">Místní soubor můžete odstranit v nabídce „Stažení a odstranění“.</p>
+ {% elif v.yt_status in ('queued', 'uploading') %}
+ <div class="upload-focus" aria-live="polite">
+ <p><b x-text="state.label">{{ v.yt_live.label }}</b></p>
+ <progress x-show="state.progress === null && state.status!=='failed'" aria-label="Přenos čeká na potvrzení"></progress>
+ <progress x-show="state.progress !== null && state.status!=='failed'" max="100" :value="state.progress" {% if v.yt_live.progress is not none %}value="{{ v.yt_live.progress }}"{% endif %} aria-label="Potvrzený průběh nahrávání"></progress>
+ <p class="hint" x-text="state.detail">{{ v.yt_live.detail }}</p>
+ <p class="hint" x-show="state.eta" x-text="state.eta"></p>
+ <p class="hint" x-show="offline" x-cloak>Spojení s Atmovio se přerušilo. Stav zkouším načíst znovu.</p>
+ <a class="btn" x-show="state.url" :href="state.url" target="_blank" rel="noopener" x-cloak>Otevřít video na YouTube ↗</a>
+ <a class="btn small sec" x-show="state.status==='failed'" href="/studio/v/{{ v.id }}#youtube" x-cloak>Zkusit nahrání znovu</a>
+ <form method="post" action="/studio/v/{{ v.id }}/youtube/reset" data-nobusy style="margin-top:.5rem" x-show="state.status==='queued' || state.status==='uploading'"><button class="btn small sec">Zrušit</button></form>
+ </div>
+ {% elif not yt_linked %}<p class="hint">YouTube ještě není propojený. Nastavíš to jednou v <a href="/studio/settings#youtube">Nastavení → Video studio → YouTube</a> (průvodce krok za krokem).</p>
+ {% elif not v.ready %}<p class="hint">{% if v.status in ('queued', 'rendering') %}Až bude video hotové, půjde nahrát.{% else %}K nahrání je potřeba dostupný soubor videa. Zkontroluj disk nebo video vytvoř znovu.{% endif %}</p>
+ {% else %}{% if v.yt_status == 'failed' %}<p><span class="badge err">nepodařilo se</span> {{ v.yt_error }}</p>{% endif %}
+  <form method="post" action="/studio/v/{{ v.id }}/youtube" x-data="{pl: '{{ yt.playlist_id or '' }}'}">
+   <div class="hint">Kanál <b>{{ yt.channel_title }}</b>. Nahraje se uložený název a popis. Změnit je můžete níže.</div>
+   <div class="row" style="margin-top:.5rem"><div><label>Viditelnost</label><select name="privacy">{% for k, l in yt_privacy.items() %}<option value="{{ k }}"{% if (yt.privacy or 'unlisted') == k %} selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+   <div><label>Playlist</label><select name="playlist_id" x-model="pl"><option value="">bez playlistu</option>{% for p in yt.playlists or [] %}<option value="{{ p.id }}">{{ p.title }}</option>{% endfor %}<option value="__new__">＋ nový playlist…</option></select></div></div>
+   <div x-show="pl === '__new__'" x-cloak><label>Název nového playlistu</label><input type="text" name="playlist_new" placeholder="např. Západy slunce"></div>
+   <div class="row" style="margin-top:.6rem;align-items:center"><button class="btn" data-busy="Zařazuji k nahrání">▶ Nahrát na YouTube</button><span class="hint">Nahrání spotřebuje kousek denní kvóty YouTube API (vejde se ~6 videí denně).</span></div>
+  </form>{% endif %}</div>
+ <details class="advanced-panel video-meta"><summary>Upravit název a popis</summary><form method="post" action="/studio/v/{{ v.id }}/meta" class="card" x-data="titleIdeas({sid: {{ v.id }}})"><h2>Titulek a popis</h2>
   <label>Titulek</label><input type="text" name="title" value="{{ v.title }}" maxlength="100" x-ref="title">
 
   <label>Popis</label><textarea name="description" rows="6" x-ref="description">{{ v.description }}</textarea><div class="metadata-proposal"><button type="button" class="btn small sec" @click="askMetadata()" :disabled="busy" x-text="busy ? 'AI připravuje návrh…' : 'Navrhnout texty'"></button><p class="hint">Návrh si můžete upravit.</p><p class="hint" x-text="metaMsg" role="status"></p>
 <div x-show="proposal" x-cloak class="guide"><strong x-text="proposal?.title"></strong><p x-text="proposal?.description" style="white-space:pre-wrap"></p><button type="button" class="btn small" @click="applyMetadata()">Použít návrh</button></div></div>
-  <div class="row" style="margin-top:.6rem"><button class="btn small">Uložit</button></div></form>
+  <div class="row" style="margin-top:.6rem"><button class="btn small">Uložit</button></div></form></details>
  <details class="advanced-panel"><summary>Stažení a odstranění</summary>
   <div class="acts studio-acts">{% if v.ready %}<a class="btn" href="/studio/v/{{ v.id }}/download">⬇ Stáhnout MP4</a>{% endif %}</div>
   <form method="post" action="/studio/v/{{ v.id }}/cleanup" class="cleanup" onsubmit="return confirm('Smazat z RPi vybrané položky? Nejde vrátit.{% if v.yt_url %} Video na YouTube zůstane.{% endif %}')">
@@ -4224,31 +4252,8 @@ TEMPLATES["studio_video.html"] = """{% extends "base.html" %}{% block actions %}
    <label class="check"><input type="checkbox" name="detection" value="1">Detekci AI včetně snímku (z historie) – po videu nezůstane nic</label>
    <div class="row" style="align-items:center"><button class="btn small sec">Smazat vybrané</button><span class="hint">{% if v.yt_url %}Video je bezpečně na YouTube – uvolní se místo na disku.{% else %}Nechceš ho na YouTube? Zaškrtni vše a je pryč.{% endif %}</span></div>
   </form></details>
- <div class="card" id="youtube" x-show="detailTab==='publish'"><h2>▶ YouTube</h2>
- {% if v.yt_status == 'done' and v.yt_url %}<p><span class="badge ok">nahráno</span> <a href="{{ v.yt_url }}" target="_blank" rel="noopener"><b>{{ v.yt_url }}</b></a></p><p class="hint">Titulek, popis, viditelnost i playlist můžeš dál upravit přímo na YouTube (YouTube Studio).</p>
-  <p class="hint">Uvolnit místo na RPi můžeš v rámečku „Co dál“ – video na YouTube zůstane.</p>
- {% elif v.yt_status in ('queued', 'uploading') %}
- <div class="upload-focus" x-data='youtubeUpload({{ v.id }}, {{ v.yt_live|tojson }})' aria-live="polite">
- <p><b x-text="state.label">{{ v.yt_live.label }}</b></p>
- <progress x-show="state.progress === null && state.status!=='failed'" aria-label="Přenos čeká na potvrzení"></progress>
- <progress x-show="state.progress !== null && state.status!=='failed'" max="100" :value="state.progress" {% if v.yt_live.progress is not none %}value="{{ v.yt_live.progress }}"{% endif %} aria-label="Potvrzený průběh nahrávání"></progress>
- <p class="hint" x-text="state.detail">{{ v.yt_live.detail }}</p>
- <p class="hint" x-show="state.eta" x-text="state.eta"></p>
- <p class="hint" x-show="offline" x-cloak>Spojení s Atmovio se přerušilo. Stav zkouším načíst znovu.</p>
- <a class="btn" x-show="state.url" :href="state.url" target="_blank" rel="noopener" x-cloak>Otevřít video na YouTube ↗</a>
- <form method="post" action="/studio/v/{{ v.id }}/youtube/reset" data-nobusy style="margin-top:.5rem" x-show="state.status==='queued' || state.status==='uploading'"><button class="btn small sec">Zrušit</button></form>
- </div>
- {% elif not yt_linked %}<p class="hint">YouTube ještě není propojený. Nastavíš to jednou v <a href="/studio/settings#youtube">Nastavení → Video studio → YouTube</a> (průvodce krok za krokem).</p>
- {% elif not v.ready %}<p class="hint">{% if v.status in ('queued', 'rendering') %}Až bude video hotové, půjde nahrát.{% else %}K nahrání je potřeba dostupný soubor videa. Zkontroluj disk nebo video vytvoř znovu.{% endif %}</p>
- {% else %}{% if v.yt_status == 'failed' %}<p><span class="badge err">nepodařilo se</span> {{ v.yt_error }}</p>{% endif %}
-  <form method="post" action="/studio/v/{{ v.id }}/youtube" x-data="{pl: '{{ yt.playlist_id or '' }}'}">
-   <div class="hint">Kanál <b>{{ yt.channel_title }}</b>. Na YouTube jde titulek a popis z rámečku nahoře – pokud jsi je změnil, nejdřív je <b>Ulož</b>.</div>
-   <div class="row" style="margin-top:.5rem"><div><label>Viditelnost</label><select name="privacy">{% for k, l in yt_privacy.items() %}<option value="{{ k }}"{% if (yt.privacy or 'unlisted') == k %} selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
-   <div><label>Playlist</label><select name="playlist_id" x-model="pl"><option value="">bez playlistu</option>{% for p in yt.playlists or [] %}<option value="{{ p.id }}">{{ p.title }}</option>{% endfor %}<option value="__new__">＋ nový playlist…</option></select></div></div>
-   <div x-show="pl === '__new__'" x-cloak><label>Název nového playlistu</label><input type="text" name="playlist_new" placeholder="např. Západy slunce – Sehradice"></div>
-   <div class="row" style="margin-top:.6rem;align-items:center"><button class="btn" data-busy="Zařazuji k nahrání">▶ Nahrát na YouTube</button><span class="hint">Nahrání spotřebuje kousek denní kvóty YouTube API (vejde se ~6 videí denně).</span></div>
-  </form>{% endif %}</div>
-</div></div>
+
+</div></div></div>
 {% if v.status in ('queued', 'rendering') %}<div x-data="autorefresh(8)"></div>{% endif %}
 {% endblock %}"""
 
@@ -5189,7 +5194,7 @@ def camera_page(request: Request, camera: str):
                   week=dict(week) if week else {"calls": 0, "notified": 0}, videos=videos, rec_state=rec_state,
                   ai_on=camera in cfg["ai"]["cameras"], auto_on=bool(ax.get("enabled")) and camera in (ax.get("cameras") or []),
                   ax=ax, pending_auto=[j for j in pending_auto_exports(cfg) if j["camera"] == camera], outage_events=outage_events,
-                  now_ts=int(time.time()), subtitle="Stav, hlídání oblohy, detekce a videa této kamery. Nastavení je v menu Nastavení.")
+                  now_ts=int(time.time()), subtitle="Živý přenos a záznam. Vyberte čas a označte začátek i konec klipu.")
 
 
 @app.post("/camera/{camera}/ai")
@@ -8411,8 +8416,8 @@ def studio_video(request: Request, sid: int):
     if r["status"] == "queued":
         with db() as con:
             queue_pos = int(con.execute("SELECT COUNT(*) FROM studio_videos WHERE status IN ('queued','rendering') AND id<?", (sid,)).fetchone()[0])
-    return render(request, "studio_video.html", r["title"] or r["name"], v=r, queue_pos=queue_pos, sc=studio_cfg(cfg), yt=yt_cfg(cfg), yt_linked=yt_linked(cfg), yt_privacy=YT_PRIVACY,
-                  subtitle="Náhled hotového videa, úprava titulku a popisu, stažení.")
+    return render(request, "studio_video.html", short_video_title(r["title"] or r["name"], r["camera"]), v=r, queue_pos=queue_pos, sc=studio_cfg(cfg), yt=yt_cfg(cfg), yt_linked=yt_linked(cfg), yt_privacy=YT_PRIVACY,
+                  subtitle=f"{r['camera_label']} · {cz_dt(r['created'])}")
 
 
 @app.post("/studio/v/{sid}/meta")
@@ -9106,7 +9111,7 @@ def _yt_worker():
 def youtube_upload_state(row):
     sid, status = row["id"], row.get("yt_status") or ""
     progress = _yt_progress.get(sid, 0)
-    state = dict(status=status, progress=None, label="Čeká na nahrání", detail="Video je ve frontě.", eta="", url="")
+    state = dict(status=status or "not_uploaded", progress=None, label="Čeká na nahrání na YouTube", detail="Video je ve frontě.", eta="", url="")
     if status == "done":
         state.update(progress=100, label="Nahráno na YouTube", detail="YouTube převzal soubor. Přehrávání může být dostupné až po jeho zpracování.", url=row.get("yt_url") or "")
     elif status == "failed":
@@ -9126,8 +9131,10 @@ def youtube_upload_state(row):
             state.update(label="Nahrávám… méně než 1 %", detail="YouTube potvrdil první část souboru. Pokračuji v přenosu.")
         else:
             state.update(label="Nahrávám · čekám na první potvrzení", detail="Navazuji přenos a odesílám první část. Zatím nelze spolehlivě určit procenta ani zbývající čas.")
+    elif not status:
+        state.update(label="Nenahráno na YouTube", detail="Atmovio nemá uložené potvrzení o nahrání tohoto videa.")
     elif status != "queued":
-        state.update(label="Nahrávání není aktivní", detail="Pro další možnosti obnov stránku.")
+        state.update(label="Stav YouTube není známý", detail="Nahrání není potvrzené. Zkontrolujte svůj YouTube kanál.")
     return state
 
 
@@ -12374,7 +12381,38 @@ header.top nav.menu > a.active, header.top nav.menu .dd > button.active { backgr
 .camera-caption{display:flex;justify-content:space-between;align-items:center;padding:17px 20px}.camera-caption h2{font-size:16px;margin:0}.camera-caption h2 a{color:var(--at-text);text-decoration:none}.camera-caption p{font-size:11px;color:var(--at-muted);margin:5px 0 0}.camera-card video{width:100%;aspect-ratio:16/9;display:block;background:#101827}
 .quiet-links{display:flex;gap:22px;flex-wrap:wrap;margin:22px 0;font-size:12px}.continue-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.continue-card{display:flex;gap:14px;align-items:center;background:var(--at-surface);border:1px solid var(--at-line);border-radius:12px;padding:18px;text-decoration:none;color:var(--at-text);font-size:13px}.continue-card small{display:block;color:var(--at-muted);font-size:11px;margin-top:4px}
 .empty-state{grid-column:1/-1;padding:40px 24px;text-align:center;background:var(--at-surface);border:1px dashed var(--at-line);border-radius:12px}.empty-state h2{font-size:21px}.empty-state p{color:var(--at-muted);font-size:13px}
-.camera-player{border:1px solid var(--at-line);border-radius:14px;background:var(--at-surface);overflow:hidden}.player-stage{position:relative;background:#0b1421}.player-stage video{display:block;width:100%;aspect-ratio:16/9;max-height:65vh;object-fit:contain}.player-mode{position:absolute;top:16px;left:16px;font-size:10px;letter-spacing:1px;color:white;background:#182238ce;padding:6px 10px;border-radius:5px;pointer-events:none}.player-controls{padding:12px 20px;display:flex;justify-content:space-between;gap:12px;align-items:center;border-bottom:1px solid var(--at-line)}.player-controls strong{font-size:13px;font-variant-numeric:tabular-nums}.timeline-panel{padding:20px 24px}.date-pick{display:flex;align-items:center;gap:10px;font-size:12px;margin:0}.date-pick input{width:155px;margin:0;padding:6px;font-size:12px}.timeline-panel h2{font-size:16px}.recording-track{height:32px;background:var(--at-surface-2);border-radius:6px;position:relative;cursor:crosshair;overflow:hidden}.recorded-span{position:absolute;top:9px;height:14px;background:#94b6f6;border-radius:2px}.selected-span{position:absolute;top:2px;height:28px;background:#2563e63b;border:2px solid #2563e6;border-radius:4px}.time-cursor{position:absolute;top:0;bottom:0;width:2px;background:#e16c45}.timeline-seek{margin:5px 0!important;height:14px!important}.timeline-labels{display:flex;justify-content:space-between;gap:12px;font-size:10px;color:var(--at-muted);font-variant-numeric:tabular-nums}.clip-selection{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin:22px 0;font-size:12px}.clip-selection kbd{font-size:9px;margin-left:10px;padding:1px 4px;background:var(--at-surface-2);color:var(--at-muted)}.clip-save{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0;border-top:1px solid var(--at-line);padding-top:18px}.text-btn{background:none;border:0;color:var(--at-muted);font-size:11px;padding:6px;width:auto;margin:0}.player-notice{font-size:12px;margin:12px 0 0;color:var(--sw-warn)}
+.camera-player{border:1px solid var(--at-line);border-radius:14px;background:var(--at-surface);overflow:hidden}
+.player-stage{position:relative;background:#0b1421}
+.player-stage video{display:block;width:100%;height:var(--player-height,clamp(144px,calc(100dvh - 410px),720px));object-fit:contain}
+.player-overlay{position:absolute;inset:12px 14px auto;display:flex;align-items:center;justify-content:space-between;gap:12px;pointer-events:none}
+.player-mode,.player-clock{color:#fff;background:#101b2be8;border-radius:5px;padding:6px 10px;text-shadow:0 1px 2px #000}
+.player-mode{font-size:10px;letter-spacing:1px}.player-clock{font-size:14px;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
+.player-controls{padding:8px 16px;display:flex;justify-content:space-between;gap:10px;align-items:center}
+.player-controls .actions{gap:6px}.player-controls .btn{min-height:32px;padding:5px 10px}
+.workspace .camera-player .date-pick{display:flex;align-items:center;gap:8px;font-size:12px;margin:0}.workspace .camera-player .date-pick input{width:150px;height:32px;margin:0;padding:4px 8px;font-size:12px}
+.timeline-panel{padding:0 16px 10px}.recording-track{height:30px;background:var(--at-surface-2);border-radius:6px;position:relative;cursor:crosshair;overflow:hidden}
+.recorded-span{position:absolute;top:8px;height:14px;background:#94b6f6;border-radius:2px;pointer-events:none}
+.selected-span{position:absolute;top:2px;height:26px;background:#2563e63b;border:2px solid #2563e6;border-radius:4px;pointer-events:none}
+.time-cursor{position:absolute;top:0;bottom:0;width:2px;background:#e16c45;pointer-events:none}
+.camera-player input.timeline-seek{position:absolute;inset:0;width:100%;height:30px!important;margin:0!important;padding:0;background:transparent;cursor:ew-resize;appearance:none;-webkit-appearance:none}
+.camera-player input.timeline-seek::-webkit-slider-runnable-track{height:2px;background:transparent;border:0}
+.camera-player input.timeline-seek::-moz-range-track{height:2px;background:transparent;border:0}
+.camera-player input.timeline-seek::-moz-range-progress{background:transparent}
+.camera-player input.timeline-seek::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:12px;height:24px;margin-top:-11px;border-radius:4px;background:#2563e6;border:2px solid white;box-shadow:0 1px 4px #0005}
+.camera-player input.timeline-seek::-moz-range-thumb{width:10px;height:22px;border-radius:4px;background:#2563e6;border:2px solid white;box-shadow:0 1px 4px #0005}
+.timeline-labels{display:flex;justify-content:space-between;gap:8px;font-size:10px;color:var(--at-muted);font-variant-numeric:tabular-nums;margin-top:4px}
+.clip-selection{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin:8px 0;font-size:11px}
+.clip-marker{display:flex;align-items:center;gap:8px}.clip-marker>span{font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.clip-selection .btn{padding:5px 10px;min-height:32px}.clip-selection kbd{font-size:9px;margin-left:6px;padding:1px 4px;background:var(--at-surface-2);color:var(--at-muted)}
+.clip-save{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0;border-top:1px solid var(--at-line);padding-top:8px}
+.clip-save .btn{padding:6px 10px;min-height:32px}.clip-save .hint{font-size:11px}.clip-save .check{font-size:11px;margin:0}
+.text-btn{background:none;border:0;color:var(--at-muted);font-size:11px;padding:4px;width:auto;margin:0}
+.player-notice{font-size:11px;margin:6px 0 0;color:var(--sw-warn)}
+.publication-summary{display:flex;align-items:center;gap:12px;justify-content:space-between;padding:12px 16px;margin:0 0 18px;border:1px solid var(--at-line);border-radius:10px;background:var(--at-surface)}
+.publication-summary>div{display:flex;align-items:center;gap:12px;flex:1;min-width:0}.publication-summary span{font-size:12px;color:var(--at-muted)}.publication-summary strong{font-size:14px}
+.video-youtube-state{margin:10px 0}.video-youtube-state .badge{white-space:normal}.video-meta form.card{border:0;margin:16px 0 0;padding:0}
+#youtube{scroll-margin-top:84px}#youtube>p{font-size:13px}.workspace header.top .inner{min-height:66px}
+
 .advanced-panel{padding:16px 20px;border:1px solid var(--at-line);border-radius:10px;margin:20px 0;background:var(--at-surface)}.advanced-panel summary{font-size:13px;color:var(--at-muted)}.advanced-panel[open]>summary{margin-bottom:18px}.advanced-panel pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px}.more-menu{position:relative;margin:0;align-self:center}.more-menu>summary{list-style:none;color:var(--at-muted);font-size:12px;padding:8px}.more-menu[open]{padding:8px;background:var(--at-surface-2);border-radius:7px}.more-menu a{display:block;font-size:12px;margin:6px}.more-menu form{margin:0}
 .workspace .gallery.videos{grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}.workspace .shot.video{border-radius:12px;overflow:hidden;box-shadow:none}.workspace .shot.video .title{font-size:15px;line-height:1.45}.workspace .shot.video .b{padding:16px}.workspace .shot.video .facts{font-size:11px;margin:12px 0}.workspace .shot.video .acts{margin-top:14px}.workspace .shot.video .thumb .play{height:42px;width:42px;font-size:14px}.workspace .shot.video .dur{font-size:10px}
 .workspace .video-work{margin:12px 0 20px}.workspace .work-panel{border:1px solid var(--at-line);padding:12px 16px;border-radius:9px;box-shadow:none}.workspace .work-panel>summary{font-size:12px;font-weight:600}.workspace .work-panel>summary .hint{margin-left:15px}.workspace .work-item{padding:12px;margin-top:10px}.workspace .work-symbol{width:24px;height:24px;font-size:14px}.workspace .work-item progress{height:4px}.workspace .work-detail{font-size:11px}.workspace .work-name{font-size:12px}
@@ -12391,6 +12429,36 @@ header.top nav.menu > a.active, header.top nav.menu .dd > button.active { backgr
 .studio-inspector .row{grid-template-columns:repeat(2,minmax(0,1fr))}.studio-inspector .row>label{min-width:0}.studio-inspector .row input{width:100%;min-width:0}
 /* Keep the next action within reach while editing on a short screen. */
 .editor-footer{position:sticky;bottom:0;z-index:25;background:var(--pico-background-color);border-top:1px solid var(--at-line);padding:14px 0;box-shadow:0 -10px 16px var(--pico-background-color)}
+
+@media(max-width:620px){
+ .player-overlay{inset:8px 8px auto;gap:6px}.player-clock{font-size:11px;padding:5px 7px}.player-mode{font-size:9px;padding:5px 7px}
+ .player-controls{padding:8px 10px;flex-wrap:nowrap}.workspace .camera-player .date-pick{gap:4px}.workspace .camera-player .date-pick input{width:127px}.workspace .camera-player .date-pick{font-size:0}
+ .timeline-panel{padding:0 10px 10px}.clip-selection{gap:6px}.clip-marker{gap:4px;flex:1;flex-direction:column;align-items:flex-start}.clip-marker>span{font-size:10px}
+ .clip-selection kbd{display:none}.clip-save{gap:6px}.clip-save .actions{width:100%;justify-content:flex-end}
+ .publication-summary{flex-wrap:wrap}.publication-summary>div{flex-basis:100%;justify-content:space-between}
+}
+
+.workspace .camera-player .btn{min-height:32px;padding:5px 10px;line-height:1.3;margin:0}.workspace .camera-player .date-pick input{min-height:32px;height:32px;padding:4px 8px}.workspace .camera-player .date-pick{margin:0}
+
+/* Focus each Studio tool on its own media and controls. */
+.studio-project .editor-tools{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;padding:0;background:none;border:0;overflow:visible}
+.studio-project .editor-tools button{display:flex;align-items:center;justify-content:flex-start;gap:10px;white-space:normal;min-height:58px;padding:10px;border:1px solid var(--at-line);background:var(--at-surface);color:var(--at-text);font-size:13px;font-weight:600;text-align:left}
+.studio-project .editor-tools button.active{background:#2563e6;color:#fff;border-color:#2563e6;box-shadow:0 3px 10px #2563e630}
+.tool-number{display:grid;place-items:center;flex-shrink:0;width:26px;height:26px;border-radius:50%;background:var(--at-surface-2);color:var(--at-muted);font-size:12px}.active .tool-number{background:#ffffff30;color:white}
+.studio-layout.studio-layout--focused{display:block}.studio-layout--focused .studio-inspector{width:100%;min-height:0;padding:24px}
+.studio-layout--focused .studio-inspector>section:not(#studio-music):not(#studio-intro){max-width:780px;margin:0 auto}
+.music-workspace{display:grid;grid-template-columns:minmax(260px,.85fr) minmax(340px,1.15fr);gap:28px;align-items:start}.music-selection{min-width:0}.music-selection>label:first-child{margin-top:0}
+.music-workspace .finder{margin:0;padding:20px;border:1px solid var(--at-line);border-radius:10px;background:var(--at-surface-2)}.music-workspace .finder>summary{font-size:16px;font-weight:650}
+.music-workspace .music-search-row{display:grid;grid-template-columns:minmax(0,1fr) 130px auto;gap:10px;align-items:end}.music-workspace .music-search-fields .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.music-workspace .tracks{max-height:440px;overflow:auto}.music-workspace .track{grid-template-columns:minmax(0,1fr) auto}.music-workspace .track audio{grid-column:1/-1;width:100%;margin:4px 0}.music-workspace .inline-help{margin:16px 0}.music-workspace .music-instruments{border:0;padding:0;margin:12px 0}
+.studio-inspector .music-selection audio{height:54px;margin:20px 0}.intro-edit-grid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(260px,.7fr);gap:28px;align-items:start}.intro-canvas{border-radius:10px;overflow:hidden;background:#0b1421;color:#fff;min-height:220px;display:grid;align-items:center;text-align:center}.intro-canvas p{padding:24px}.intro-canvas .intro-preview{margin:0;width:100%;max-height:50dvh;object-fit:contain}.intro-edit-grid input[type=file]{width:100%;font-size:12px}
+.studio-project .editor-preview video{height:clamp(144px,calc(100dvh - 440px),560px);aspect-ratio:auto;max-height:none;object-fit:contain}.studio-project .editor-timeline{margin-top:8px;padding:12px}.studio-project .editor-timeline .trim-rail{margin:10px 0}.studio-project .editor-timeline .hint{margin:6px 0 0}.studio-project .editor-timeline .section-head{margin-bottom:8px}
+/* The generic form rule has intentionally high specificity; these compact date controls override it. */
+.workspace .camera-player .date-pick input{min-height:32px!important;height:32px!important;padding:4px 8px!important}
+@media(max-width:1100px){.studio-project .editor-tools{grid-template-columns:repeat(3,minmax(0,1fr))}.music-workspace{grid-template-columns:1fr}.studio-project .editor-tools button{min-height:44px}.studio-project .editor-preview video{height:clamp(144px,calc(100dvh - 485px),480px)}}
+@media(max-width:620px){.studio-layout--focused .studio-inspector{padding:16px}.intro-edit-grid{grid-template-columns:1fr}.studio-project .editor-tools{gap:6px}.studio-project .editor-tools button{font-size:11px;padding:8px;gap:6px}.tool-number{width:20px;height:20px;font-size:10px}.music-workspace .music-search-row{grid-template-columns:1fr 100px}.music-workspace .music-search-row>button{grid-column:1/-1}.music-workspace .finder{padding:12px}}
+
+.music-offset-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end}.studio-inspector .music-selection audio{height:48px;margin:12px 0}.music-offset-row>.btn{margin-bottom:0}.music-offset-row>label{margin-top:8px}.music-selection .inline-help{margin-top:14px}.music-offset-row>.btn{white-space:normal;max-width:130px}
 ATMOVIO_CSS_EOF
   cat > "$1/atmovio.js" <<'ATMOVIO_JS_EOF'
 /* Atmovio – interakce (Alpine.js komponenty + pomocné funkce). */
@@ -12444,12 +12512,16 @@ ATMOVIO_CSS_EOF
       },destroy(){if(player)player.destroy();this.$el.removeAttribute('src');this.$el.load();}};
     });
     Alpine.data('cameraPlayer', function (camera) {
-      let player=null; // Keep the media engine outside Alpine's reactive proxy (Worker messages must be cloneable).
+      let player=null, layoutObserver=null; // Keep media and DOM observers outside Alpine's reactive proxy.
       return {
         live:true, cursor:Date.now()/1000, day:'', start:0, end:1, spans:[], tz:'UTC',
         from:null, to:null, message:'', anchor:0, stopAt:null, windowEnd:0, playSpans:[],
-         controller:null, timer:null, keyHandler:null, loading:false,
+         controller:null, timer:null, keyHandler:null, resizeHandler:null, loading:false, scrub:null,
         async init() {
+          this.resizeHandler=()=>this.fitPlayer();
+          window.addEventListener('resize',this.resizeHandler);
+          if(this.$el && window.ResizeObserver){layoutObserver=new window.ResizeObserver(this.resizeHandler);layoutObserver.observe(this.$refs.transport);const heading=this.$el.closest('main')?.querySelector('.page-head');if(heading)layoutObserver.observe(heading);}
+          if(this.$nextTick)this.$nextTick(this.resizeHandler);
           this.keyHandler=e=>{if(e.ctrlKey||e.metaKey||e.altKey||e.target.closest('input,textarea,select,[contenteditable]'))return;
             if(e.key.toLowerCase()==='i')this.mark('from');if(e.key.toLowerCase()==='o')this.mark('to');};
           window.addEventListener('keydown',this.keyHandler);
@@ -12460,10 +12532,13 @@ ATMOVIO_CSS_EOF
           }else this.goLive();
           this.timer=setInterval(()=>{if(this.live)this.cursor=Date.now()/1000;},1000);
         },
-        destroy() {clearInterval(this.timer);window.removeEventListener('keydown',this.keyHandler);if(this.controller)this.controller.abort();this.unload();},
+        destroy() {clearInterval(this.timer);window.removeEventListener('keydown',this.keyHandler);window.removeEventListener('resize',this.resizeHandler);if(layoutObserver)layoutObserver.disconnect();if(this.controller)this.controller.abort();this.unload();},
+        fitPlayer() {if(!this.$el||!this.$refs.transport)return;const top=this.$el.getBoundingClientRect().top+window.scrollY;
+          const height=Math.max(144,Math.floor(window.innerHeight-top-this.$refs.transport.offsetHeight-18));
+          this.$el.style.setProperty('--player-height',height+'px');},
         unload() {if(player){player.destroy();player=null;}const v=this.$refs.video;v.pause();v.removeAttribute('src');v.load();},
         stamp(t) {return new Date(t*1000).toLocaleTimeString('cs-CZ',{timeZone:this.tz,hour:'2-digit',minute:'2-digit',second:'2-digit'});},
-        fullStamp(t) {return new Date(t*1000).toLocaleString('cs-CZ',{timeZone:this.tz});},
+        fullStamp(t) {return new Date(t*1000).toLocaleString('cs-CZ',{timeZone:this.tz,day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});},
         percent(t) {return Math.max(0,Math.min(100,(t-this.start)/(this.end-this.start)*100));},
         spanStyle(s) {return 'left:'+this.percent(s[0])+'%;width:'+Math.max(0,this.percent(s[1])-this.percent(s[0]))+'%';},
         async loadDay() {
@@ -12474,7 +12549,7 @@ ATMOVIO_CSS_EOF
             this.message=d.spans.length?'':'Pro tento den není uložený záznam.';
           } catch(e){if(e.name!=='AbortError')this.message=e.message||'Záznamy nelze načíst.';}
         },
-        goLive() {this.unload();this.live=true;this.stopAt=null;this.loading=false;this.message='';const v=this.$refs.video,url='/stream/'+camera+'/hls/master.m3u8';v.onloadedmetadata=()=>{this.message='';v.play().catch(()=>{this.message='Přehrávání spustíte tlačítkem ▶.';});};
+        goLive() {this.unload();this.live=true;this.cursor=Date.now()/1000;this.scrub=null;this.stopAt=null;this.loading=false;this.message='';const v=this.$refs.video,url='/stream/'+camera+'/hls/master.m3u8';v.onloadedmetadata=()=>{this.message='';v.play().catch(()=>{this.message='Přehrávání spustíte tlačítkem ▶.';});};
           if((!window.Hls||!Hls.isSupported())&&v.canPlayType('application/vnd.apple.mpegurl'))v.src=url;
           else if(window.Hls&&Hls.isSupported()){player=new Hls({liveSyncDurationCount:2});player.loadSource(url);player.attachMedia(v);player.on(Hls.Events.ERROR,(_,d)=>{if(d.fatal)this.message='Živý přenos není dostupný. Zkuste jej spustit znovu.';});}
           else v.src='/stream/'+camera+'.mp4';},

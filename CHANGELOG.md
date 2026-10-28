@@ -2,7 +2,14 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
-## 6.0.0 – 2026-10-28 – camera and video workspace (unreleased)
+## 6.0.1 – 2026-10-28 – Atmovio 6 public release
+
+- Introduce the camera, moments, editable Studio and diagnostics workspace, with Frigate 0.18.2 and a validated upgrade from earlier versions.
+- Give music and intro their own full-width Studio workspace with clear tool navigation.
+- Fit the camera image and recording timeline together on shorter screens; show the date and playback time over the image.
+- Always show YouTube upload status in the video library and detail, with direct upload or viewing actions. Keep publishing controls visible and collapse secondary metadata editing.
+
+## 6.0.0 – 2026-10-28 – camera and video workspace (deployment preview)
 
 - Redesign navigation, camera cards, moments, video library, Studio, settings and diagnostics; keep filters and processing details collapsed.
 - Add live/archive HLS playback, a recording timeline with actual coverage, persistent OD–DO selection and gap-aware clip export.

@@ -28,7 +28,7 @@ sudo bash install.sh
 
 Po instalaci otevřete vypsanou adresu. Rozhraní je česky. Nahrávání funguje bez AI účtu; pro cloudové AI je potřeba vlastní klíč poskytovatele a jeho služby mohou být placené.
 
-**Verze 6 se připravuje v této větvi.** Obrázky ukazují její rozhraní s ukázkovými daty. Příkaz výše instaluje poslední vydanou verzi. Aktualizace v6 obsahuje Frigate 0.18.2, ověření konfigurace a zálohu pro návrat při chybě. [Co vědět před aktualizací →](docs/cs/verze-6.0.md)
+**Atmovio 6.0.1** obsahuje Frigate 0.18.2, ověření konfigurace a zálohu pro návrat při chybě. Starší instalaci aktualizujete v **Nastavení → Systém → Aktualizace → Zkontrolovat teď**. Obrázky používají ukázková data. [Co vědět před aktualizací →](docs/cs/verze-6.0.md)
 
 ## Další informace
 
