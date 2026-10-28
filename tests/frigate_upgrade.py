@@ -18,12 +18,17 @@ try:
     (u.CONFIG/'frigate.db').write_bytes(b'old-database')
     (u.CONFIG/'frigate.db-wal').write_bytes(b'old-wal')
     backup=base/'backup'
-    with patch.object(u,'run',return_value='') as run,patch.object(u.subprocess,'run',return_value=SimpleNamespace(returncode=1,stdout='invalid fixture config')):
+    with patch.object(u.os,'uname',return_value=SimpleNamespace(machine='x86_64')),patch.object(u,'run') as run:
+        try:u.prepare(backup);raise AssertionError('unsupported architecture accepted')
+        except RuntimeError as error:assert '64bit ARM' in str(error)
+        run.assert_not_called()
+        assert not backup.exists()
+    with patch.object(u.os,'uname',return_value=SimpleNamespace(machine='aarch64')),patch.object(u,'run',return_value='') as run,patch.object(u.subprocess,'run',return_value=SimpleNamespace(returncode=1,stdout='invalid fixture config')):
         try:u.prepare(backup);raise AssertionError('invalid config accepted')
-        except RuntimeError:pass
+        except RuntimeError as error:assert 'Frigate odmítl' in str(error)
         assert all(call.args[0][:2]!=['docker','stop'] for call in run.call_args_list)
         assert not (backup/'prepared.json').exists() and u.COMPOSE.read_text()==original
-    with patch.object(u,'run',return_value=''),patch.object(u.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout='valid')):
+    with patch.object(u.os,'uname',return_value=SimpleNamespace(machine='aarch64')),patch.object(u,'run',return_value=''),patch.object(u.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout='valid')):
         u.prepare(backup)
     assert (backup/'prepared.json').exists()
     calls=[]
