@@ -1,6 +1,6 @@
-# Atmovio 6.0.7
+# Atmovio 6.0.8
 
-Hlavní nabídka má čtyři místa: **Kamery, AI detekce, Moje videa a Studio**. Hudba, nastavení a diagnostika jsou ve spodní části nabídky. Technické podklady AI zůstávají v rozbalitelných detailech.
+Hlavní nabídka má tři místa: **Kamery, AI detekce a Moje videa**. Záznam vyberete v **AI detekci** a tlačítkem **Vytvořit video** otevřete editor. Rozpracované i hotové výsledky jsou v **Moje videa**. Samostatný výběr ve Studiu je sloučený s AI detekcí; staré odkazy dál fungují. Hudba, nastavení a diagnostika jsou ve spodní části nabídky. Technické podklady AI zůstávají v rozbalitelných detailech.
 
 Živý přenos i záznam zachovávají skutečný poměr stran kamery. Velikost obrazu se přizpůsobuje společně s časovou osou výšce obrazovky.
 
@@ -10,9 +10,11 @@ Kliknutím na náhled otevřete živý přenos. Pod přehrávačem vyberte den a
 
 Jeden výběr může mít nejvýše šest hodin. Mezery na ose znamenají chybějící záznam. U výběru s mezerou lze zkrátit rozsah nebo výslovně potvrdit uložení dostupných částí. Časová osa při přehrávání zohledňuje přeskočené výpadky. Dostupná minulost závisí na uchovávání záznamů a volném místě.
 
-## AI detekce a Studio
+## Od AI detekce k hotovému videu
 
-AI detekce ukazují hotové klipy od nejnovějšího záznamu, bez ohledu na datum vytvoření či spojení souboru. Další nálezy AI obsahují vybraná hodnocení AI. Surová historie a fotografie slouží hlavně při hledání problémů.
+AI detekce jsou společný výběr záběrů pro editor. Ukazují uložené klipy od nejnovějšího záznamu, bez ohledu na datum vytvoření či spojení souboru. Další nálezy AI obsahují vybraná hodnocení AI. Surová historie a fotografie slouží hlavně při hledání problémů.
+
+![Společný výběr klipů a přímé otevření editoru](../img/v6/detections.png)
 
 Překrývající se automatické klipy stejné kamery se spojují do jednoho rozsahu, nejvýše šest hodin. Například 10:00–12:20, 10:50–13:00 a 12:00–13:30 vytvoří 10:00–13:30. Staré klipy se skryjí až po dokončení spojeného videa. Pokud původní záznam už chybí, zůstanou původní klipy dostupné. Zdroje uložených projektů se automatickým úklidem neodstraňují; prostor lze uvolnit ručně.
 
@@ -28,7 +30,7 @@ Hudební knihovna nabízí **Smazat skladbu** i **Smazat vše**. Skladby se pře
 
 ## Aktualizace a diagnostika
 
-Ve starší instalaci otevřete **Nastavení → Systém → Aktualizace**, klikněte na **Zkontrolovat teď** a potom **Nainstalovat verzi 6.0.7**. Aktualizátor stáhne instalační soubor z GitHub Releases a ověří kontrolní součet. Stejnou cestou budou dostupné další vydané opravy.
+Ve starší instalaci otevřete **Nastavení → Systém → Aktualizace**, klikněte na **Zkontrolovat teď** a potom **Nainstalovat verzi 6.0.8**. Aktualizátor stáhne instalační soubor z GitHub Releases a ověří kontrolní součet. Stejnou cestou budou dostupné další vydané opravy.
 
 Aktualizátor stáhne Frigate 0.18.2 a ověří kopii konfigurace za běhu staré verze. Před přepnutím zálohuje konfiguraci i zastavenou databázi. Během restartu vznikne krátká mezera v nahrávání. Nová verze musí potvrdit API a obraz dříve dostupných kamer; při selhání se obnoví původní Frigate i jeho databáze. Záznamy na datovém disku se nepřesouvají.
 

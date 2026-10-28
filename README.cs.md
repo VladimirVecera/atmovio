@@ -8,7 +8,7 @@
 
 - **Sledujte a vraťte se v čase.** Otevřete kameru, projděte záznam a označením OD–DO uložte klip.
 - **Zachovejte zajímavé okamžiky.** Volitelné hlídání oblohy hledá události. Překrývající se automatické klipy ze stejné kamery spojí, pokud je původní záznam dostupný.
-- **Vytvořte video.** Vyberte střih, rychlost, hudbu, intro, text nebo výzvu k odběru a sdílení. Projekt můžete uložit a později znovu upravit.
+- **Vytvořte video.** V AI detekci vyberte klip a otevřete editor. Nastavte střih, rychlost, hudbu, intro, text nebo výzvu k odběru a sdílení. Projekt můžete uložit a později znovu upravit.
 - **Sdílejte hotový výsledek.** Pusťte si náhled, stáhněte MP4 nebo video nahrajte na svůj YouTube kanál.
 
 <details><summary>Podívat se na video editor</summary>
@@ -28,7 +28,7 @@ sudo bash install.sh
 
 Po instalaci otevřete vypsanou adresu. Rozhraní je česky. Nahrávání funguje bez AI účtu; pro cloudové AI je potřeba vlastní klíč poskytovatele a jeho služby mohou být placené.
 
-**Atmovio 6.0.7** obsahuje Frigate 0.18.2, ověření konfigurace a zálohu pro návrat při chybě. Starší instalaci aktualizujete v **Nastavení → Systém → Aktualizace → Zkontrolovat teď**. Obrázky používají ukázková data. [Co vědět před aktualizací →](docs/cs/verze-6.0.md)
+**Atmovio 6.0.8** obsahuje Frigate 0.18.2, ověření konfigurace a zálohu pro návrat při chybě. Starší instalaci aktualizujete v **Nastavení → Systém → Aktualizace → Zkontrolovat teď**. Obrázky používají ukázková data. [Co vědět před aktualizací →](docs/cs/verze-6.0.md)
 
 ## Další informace
 

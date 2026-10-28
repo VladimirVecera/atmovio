@@ -8,7 +8,7 @@
 
 - **Watch and rewind.** Open a camera, explore the recording timeline and save an OD–DO selection.
 - **Keep interesting moments.** Optional AI sky watching finds events; overlapping automatic clips from the same camera are combined when the source recording is available.
-- **Make a video.** Trim, change speed, choose music and intro, add text or a subscribe/share callout. Save a project and edit it again later.
+- **Make a video.** Choose a clip in AI Detections to open the editor. Trim, change speed, choose music and intro, add text or a subscribe/share callout. Save a project and edit it again later.
 - **Share when ready.** Preview the finished video, download MP4 or upload to your YouTube channel.
 
 <details><summary>See the video editor</summary>
@@ -28,7 +28,7 @@ sudo bash install.sh
 
 Open the address shown by the installer. The interface is currently in Czech. Recording works without an AI account; cloud AI features require your own provider key and may incur charges.
 
-**Atmovio 6.0.7** includes Frigate 0.18.2, configuration validation and rollback backups. Update an existing installation in **Settings → System → Updates → Check now** (the interface is in Czech). Screenshots use demonstration data. See the [upgrade notes](docs/v6.md).
+**Atmovio 6.0.8** includes Frigate 0.18.2, configuration validation and rollback backups. Update an existing installation in **Settings → System → Updates → Check now** (the interface is in Czech). Screenshots use demonstration data. See the [upgrade notes](docs/v6.md).
 
 ## Learn more
 

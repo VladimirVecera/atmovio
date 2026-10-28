@@ -2,6 +2,12 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 6.0.8 – 2026-10-28 – one source library, direct video editing
+
+- Merge the duplicate Studio source picker into AI Detections and remove its sidebar entry. Existing `/studio` bookmarks redirect to the shared library.
+- Open the editor directly from a clip, keep manual camera selection available and return new edits to their source. Drafts and finished videos remain in My Videos with their existing settings and publishing status.
+- Point New Video to the shared library, distinguish drafts from local results and YouTube uploads, and update navigation screenshots and upgrade notes.
+
 ## 6.0.7 – 2026-10-28 – camera playback aspect ratio
 
 - Keep the live and archive player frame at the stream's actual aspect ratio, including when switching recordings or changing stream dimensions.

@@ -55,6 +55,10 @@ try:
     a._yt_progress[uid] = 64
     a._yt_ack_time[uid] = a.time.time()
     a._yt_eta[uid] = 120
+    # The shared source library distinguishes drafts, local results and publication.
+    assert a.studio_source_status({'id': 1, 'status': 'draft'})['label'] == 'Rozpracované video · pokračovat'
+    assert a.studio_source_status({'id': 1, 'status': 'ready', 'ready': True})['label'] == 'Hotové video · nenahráno na YouTube'
+    assert a.studio_source_status({'id': 1, 'status': 'ready', 'ready': True, 'yt_status': 'done'})['label'] == 'Nahráno na YouTube'
     with contextlib.ExitStack() as stack:
         stack.enter_context(patch('requests.sessions.Session.request', side_effect=AssertionError('Unexpected network')))
         stack.enter_context(patch('subprocess.run', return_value=subprocess.CompletedProcess([],1,'','Offline fixture')))
@@ -78,8 +82,13 @@ try:
             [v['id'] for v in ordered if v['start_ts'] == 100], reverse=True)
         moments = client.get('/moments').text
         assert moments.index(f'id="v{main}"') < moments.index(f'id="v{manual}"')
-        source_picker = client.get('/studio').text
-        assert source_picker.index(f'/studio/new/{main}') < source_picker.index(f'/studio/new/{manual}')
+        legacy_picker = client.get('/studio', follow_redirects=False)
+        assert legacy_picker.status_code == 303 and legacy_picker.headers['location'] == '/moments'
+        assert client.get('/studio').text == moments
+        assert 'href="/studio"' not in moments and 'Vybrat úsek z kamery' in moments
+        assert f'href="/studio/new/{main}"' in moments and f'href="/studio/new/{manual}"' in moments
+        my_videos = client.get('/youtube').text
+        assert 'href="/moments">Vytvořit video</a>' in my_videos and 'href="/studio"' not in my_videos
         for eid in [part,working,missing,zero,open_part,orphan_part]:
             assert f'id="v{eid}"' not in gallery
         assert 'Průběžné části' not in page.text and '/parts' not in page.text

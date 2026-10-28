@@ -108,6 +108,13 @@ try:
     with patch.object(a,'frigate_exports',return_value={'source':{'video_path':str(source)}}),patch.object(a,'frigate_media_path',return_value=source),patch.object(a,'ffprobe_info',return_value={'duration':100,'width':640,'height':360,'fps':25}),patch.object(a,'studio_kick'),patch.object(a,'run',return_value=(1,'')):
         r=client.get(f'/studio/new/{eid}?again={sid}')
         assert r.status_code==200 and 'value="120.0"' in r.text and 'value="subscribe" selected' in r.text
+        assert '<h1>Editor videa</h1>' in r.text and 'href="/youtube">← Moje videa</a>' in r.text
+        assert 'class="active" href="/youtube"' in r.text and 'href="/studio"' not in r.text
+        new_editor = client.get(f'/studio/new/{eid}').text
+        assert f'href="/moments#v{eid}">← AI detekce</a>' in new_editor
+        assert 'class="active" href="/moments"' in new_editor
+        # A missing/mismatched previous project must behave like a new video.
+        assert f'href="/moments#v{eid}">← AI detekce</a>' in client.get(f'/studio/new/{eid}?again=99999').text
         with a.db() as con:
             con.execute("UPDATE exports SET name='Kamera východ 28.10. 03:58 – vývoj kupovité oblačnosti' WHERE id=?",(eid,))
             con.execute("UPDATE studio_videos SET title='můj vlastní název NASA' WHERE id=?",(sid,))
