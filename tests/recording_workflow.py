@@ -13,7 +13,7 @@ try:
  a.save_config(cfg);source=base/'source.mp4';source.write_bytes(b'fixture')
  client=TestClient(a.app)
  assert client.get('/camera/west/recording',follow_redirects=False).status_code==303
- with patch.object(a,'frigate_cameras',return_value=['west']),patch.object(a,'run',return_value=(1,'')),patch.object(a,'storage_ready',return_value=True),patch.object(a,'recording_state',return_value='ok'),patch.object(a,'frigate_start_export',return_value='fixture-id') as start_export,patch('requests.sessions.Session.request',side_effect=RuntimeError('External HTTP disabled')):
+ with patch.object(a,'frigate_cameras',return_value=['west']),patch.object(a,'run',return_value=(1,'')),patch.object(a,'storage_ready',return_value=True),patch.object(a,'recording_state',return_value='ok'),patch.object(a,'camera_recording_spans',side_effect=lambda cfg,cam,start,end:[[start,end]]),patch.object(a,'frigate_start_export',return_value='fixture-id') as start_export,patch('requests.sessions.Session.request',side_effect=RuntimeError('External HTTP disabled')):
   token=re.search(r'name="csrf_token" value="([^"]+)"',client.get('/login').text)[1]
   client.post('/login',data={'csrf_token':token,'password':'recording-fixture-password'})
   page=client.get('/camera/west/recording');assert page.status_code==200
@@ -28,7 +28,7 @@ try:
   assert ex['metadata_status']=='queued' and ex['detection_id'] is None
   assert start_export.call_args.args[-1]=='realtime'
   calls=start_export.call_count
-  for changes in [dict(to_time=form['from_time']),dict(to_time=a.clip_local(cfg,end+86400)),dict(from_time=a.clip_local(cfg,end-7300)),dict(from_time='invalid')]:
+  for changes in [dict(to_time=form['from_time']),dict(to_time=a.clip_local(cfg,end+86400)),dict(from_time=a.clip_local(cfg,end-21700)),dict(from_time='invalid')]:
    client.post('/camera/west/recording',data=dict(form,**changes),follow_redirects=False)
   assert start_export.call_count==calls
   # Render all preparation states without contacting any recorder.

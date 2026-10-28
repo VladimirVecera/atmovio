@@ -37,7 +37,7 @@ try:
   checks.append('Fixed 120-minute range includes before-margin, ignores after-margin, works for both AI modes and timelapse, and splits continuing events without overlap')
   assert a.exact_clip_bounds(cfg,'2026-09-25T23:30','2026-09-26T01:30')[1]-a.exact_clip_bounds(cfg,'2026-09-25T23:30','2026-09-26T01:30')[0]==7200
   assert a.exact_clip_bounds(cfg,'2026-03-29T01:30','2026-03-29T03:30')[1]-a.exact_clip_bounds(cfg,'2026-03-29T01:30','2026-03-29T03:30')[0]==3600
-  for values in [('', '2026-09-26T10:00'),('wrong','wrong'),('2026-09-26T10:00','2026-09-26T09:00'),('2026-09-26T09:00','2026-09-26T11:01'),('2026-03-29T02:30','2026-03-29T03:30'),('2026-09-27T10:00','2026-09-27T11:00'),('2025-10-26T02:15','2025-10-26T03:15')]:
+  for values in [('', '2026-09-26T10:00'),('wrong','wrong'),('2026-09-26T10:00','2026-09-26T09:00'),('2026-09-26T09:00','2026-09-26T15:01'),('2026-03-29T02:30','2026-03-29T03:30'),('2026-09-27T10:00','2026-09-27T11:00'),('2025-10-26T02:15','2025-10-26T03:15')]:
    try:a.exact_clip_bounds(cfg,*values);raise AssertionError(values)
    except ValueError:pass
   checks.append('Device timezone, midnight and DST; reject absent/reversed/overlong/nonexistent/future-start ranges')
@@ -64,7 +64,7 @@ try:
    client.post(url+'/export',data=dict(params,csrf_token=token,to_time='2026-09-26T09:30'),follow_redirects=False)
    with a.db() as con:assert con.execute('SELECT COUNT(*) FROM exports').fetchone()[0]==originals+1
    calls=export.call_count
-   for bad in [dict(params,to_time='2026-09-26T08:00'),dict(params,to_time=''),dict(params,to_time='2026-09-26T11:01')]:
+   for bad in [dict(params,to_time='2026-09-26T08:00'),dict(params,to_time=''),dict(params,to_time='2026-09-26T15:01')]:
     client.post(url+'/export',data=dict(bad,csrf_token=token));assert export.call_count==calls
    planned=client.post(url+'/export',data={'csrf_token':token,'from_time':'2026-09-26T11:30','to_time':'2026-09-26T13:30'},follow_redirects=False)
    assert planned.status_code==303 and export.call_count==calls and jobs()[-1]['end_ts']==a.clip_time(cfg,'2026-09-26T13:30')

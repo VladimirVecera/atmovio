@@ -25,14 +25,14 @@ try:
  # Preflight protects the entire group if any child is being used.
  with a.db() as con:
   con.execute("INSERT INTO studio_videos(export_id,camera,name,speed,intro,music,created,status) VALUES(?,'camera','Busy',25,0,'',datetime('now'),'rendering')",(part,))
- with patch.object(a.requests,'delete') as delete:
+ with patch.object(a,'frigate_delete_export') as delete:
   assert not a.delete_export(cfg,parent);delete.assert_not_called()
  with a.db() as con:con.execute('DELETE FROM studio_videos')
  # API failures must retain group records so deletion can be retried.
- with patch.object(a.requests,'delete',return_value=SimpleNamespace(ok=False,status_code=503)):
+ with patch.object(a,'frigate_delete_export',return_value=SimpleNamespace(ok=False,status_code=503)):
   assert not a.delete_export(cfg,parent)
  with a.db() as con:assert con.execute('SELECT COUNT(*) FROM exports').fetchone()[0]==3
- with patch.object(a.requests,'delete',return_value=SimpleNamespace(ok=True,status_code=200)) as delete:
+ with patch.object(a,'frigate_delete_export',return_value=SimpleNamespace(ok=True,status_code=200)) as delete:
   assert a.delete_export(cfg,parent) and delete.call_count==2
  with a.db() as con:assert [r[0] for r in con.execute('SELECT id FROM exports')]==[other]
  print('PASS: migrated main association, grouped parts, orphan group visibility, unrelated clips preserved, group-wide busy check, failed deletion retry, cascade deletion')

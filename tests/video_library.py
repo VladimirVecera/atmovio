@@ -70,7 +70,7 @@ try:
         for eid in [part,working,missing,zero,open_part,orphan_part]:
             assert f'id="v{eid}"' not in gallery
         assert 'Průběžné části' not in page.text and '/parts' not in page.text
-        assert 'Smazat všechna AI videa' in page.text
+        assert 'Smazat uložené klipy' in page.text
         review=client.get('/videos/delete-all')
         assert review.status_code==200 and 'Tuto akci nelze vrátit' in review.text
         assert 'name="csrf_token"' in review.text and '>Zrušit</a>' in review.text
@@ -101,7 +101,7 @@ try:
         after_click=export('created-after-click')
         # Any part in use protects its whole parent group. An API failure stays retryable.
         studio(part,'rendering')
-        with patch.object(a.requests,'delete',side_effect=lambda url,**kw:SimpleNamespace(ok=not url.endswith('/missing'),status_code=503 if url.endswith('/missing') else 200)) as delete:
+        with patch.object(a,'frigate_delete_export',side_effect=lambda cfg,fid,**kw:SimpleNamespace(ok=fid!='missing',status_code=503 if fid=='missing' else 200)) as delete:
             a.delete_all_ai_videos(cfg,captured)
         with a.db() as con:
             kept={r[0] for r in con.execute('SELECT id FROM exports')}
@@ -110,7 +110,7 @@ try:
         assert {main,part,manual,missing,open_part,after_click}==kept
         assert not a._video_bulk_state['active'] and a._video_bulk_state['deleted']==3
         assert not a._video_bulk_lock.locked()
-        assert all('/api/export/' in call.args[0] for call in delete.call_args_list)
+        assert all(call.args[0] == cfg and isinstance(call.args[1], str) for call in delete.call_args_list)
         # A stale Studio form cannot queue a consumer after its source has been deleted.
         with patch.object(a,'studio_kick') as kick:
             try:
@@ -124,7 +124,7 @@ try:
             con.execute("UPDATE studio_videos SET status='ready',yt_status='' ")
             retry=[dict(r) for r in con.execute('SELECT * FROM exports')]
         a._video_bulk_lock.acquire()
-        with patch.object(a.requests,'delete',return_value=SimpleNamespace(ok=True,status_code=200)):
+        with patch.object(a,'frigate_delete_export',return_value=SimpleNamespace(ok=True,status_code=200)):
             a.delete_all_ai_videos(cfg,retry)
         with a.db() as con:assert [r[0] for r in con.execute('SELECT id FROM exports')]==[open_part]
     print('PASS: ready-only final/manual gallery; hidden safety parts and zero-byte/unavailable files; actual render/upload progress; escaping; auth/CSRF/confirmation; fixed bulk snapshot; busy/open-event protection; partial failure and retry; no raw/YouTube deletion')

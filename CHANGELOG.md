@@ -2,6 +2,15 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 6.0.0 – 2026-10-28 – camera and video workspace (unreleased)
+
+- Redesign navigation, camera cards, moments, video library, Studio, settings and diagnostics; keep filters and processing details collapsed.
+- Add live/archive HLS playback, a recording timeline with actual coverage, persistent OD–DO selection and gap-aware clip export.
+- Join overlapping automatic clips by camera, retaining originals until the replacement is playable. Keep saved project sources during automatic retention cleanup.
+- Save and reopen Studio projects with trim, 1× playback or timelapse, music seeking/volume/fades, versioned intro, plain text and animated subscribe/share callouts.
+- Upgrade managed ARM64 Frigate installations to 0.18.2 with configuration validation, database/config backups, camera health checks and rollback. Update export/delete API adapters.
+- Group repeated errors, resolve them until recurrence and export redacted JSON. Shorten the project introduction and add new interface screenshots.
+
 ## 5.3.21 – 2026-10-20 – resilient Openverse music search
 
 - Allow 30 seconds for Openverse responses and retry timeouts, connection failures and temporary server errors once, preserving all search filters.

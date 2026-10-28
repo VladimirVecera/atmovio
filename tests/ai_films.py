@@ -77,7 +77,7 @@ try:
         assert jobs2[0]['start_ts']==jobs[0]['start_ts'] and jobs2[0]['end_ts']==moment(88).timestamp()
         assert 'odezněly' in json.loads(jobs2[0]['ai_context'])['description']
         assert model.call_count==4
-        with patch.object(a.time,'time',return_value=moment(121).timestamp()),patch.object(a,'recording_state',return_value='ok'),patch.object(a,'frigate_start_export',return_value='offline-fixture-export'):
+        with patch.object(a.time,'time',return_value=max(j['due_ts'] for j in jobs2)+1),patch.object(a,'recording_state',return_value='ok'),patch.object(a,'frigate_start_export',return_value='offline-fixture-export'):
             a.process_auto_exports(cfg)
         exports=rows('exports');assert len(exports)==2 and 'odezněly' in json.loads(exports[0]['ai_context'])['description']
         ok('Late onset crosses film boundary; next film extends one clip and ends at observed event end; aggregated evidence retained in export')

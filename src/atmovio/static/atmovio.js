@@ -15,6 +15,117 @@
 
   // ---------- Alpine komponenty ----------
   document.addEventListener('alpine:init', function () {
+    Alpine.data('introPicker', function(asset, url, ext) {
+      return {asset, url, ext, busy:false, message:'',
+        get isImage(){return ['.png','.jpg','.jpeg'].includes(this.ext);},
+        async upload(event){
+          const file=event.target.files[0]; if(!file)return;
+          if(file.size>100*1024*1024){this.message='Soubor je větší než 100 MB.';return;}
+          this.busy=true;this.$dispatch('intro-upload',{busy:true});this.message='Nahrávám intro…';
+          try {
+            const body=new FormData();body.append('file',file);
+            body.append('csrf_token',this.$el.closest('form').querySelector('[name=csrf_token]').value);
+            const response=await fetch('/studio/project/intro',{method:'POST',body,credentials:'same-origin'});
+            const result=await response.json();if(!response.ok)throw new Error(result.error||'Nahrání se nepodařilo.');
+            this.asset=result.asset;this.url=result.url;this.ext=result.ext;this.intro=true;this.message='Intro připraveno.';
+          }catch(error){this.message=error.message;}finally{this.busy=false;this.$dispatch('intro-upload',{busy:false});}
+        }
+      };
+    });
+    Alpine.data('archivePreview', function(camera,start,end) {
+      let player=null; // Keep the media engine outside Alpine's reactive proxy (Worker messages must be cloneable).
+      return {init(){const url='/recordings/'+camera+'/hls/'+start+'/'+end+'/master.m3u8';
+        if((!window.Hls||!Hls.isSupported())&&this.$el.canPlayType('application/vnd.apple.mpegurl'))this.$el.src=url;
+        else if(window.Hls&&Hls.isSupported()){player=new Hls();player.loadSource(url);player.attachMedia(this.$el);}
+        else this.$el.src='/clip/'+camera+'.mp4?start='+start+'&end='+end;
+      },destroy(){if(player)player.destroy();this.$el.removeAttribute('src');this.$el.load();}};
+    });
+    Alpine.data('livePreview', function (camera) {
+      let player=null; // Keep the media engine outside Alpine's reactive proxy (Worker messages must be cloneable).
+      return { init(){const url='/stream/'+camera+'/hls/master.m3u8';
+        if((!window.Hls||!Hls.isSupported())&&this.$el.canPlayType('application/vnd.apple.mpegurl'))this.$el.src=url;
+        else if(window.Hls&&Hls.isSupported()){player=new Hls();player.loadSource(url);player.attachMedia(this.$el);}
+        else this.$el.src='/stream/'+camera+'.mp4';
+      },destroy(){if(player)player.destroy();this.$el.removeAttribute('src');this.$el.load();}};
+    });
+    Alpine.data('cameraPlayer', function (camera) {
+      let player=null; // Keep the media engine outside Alpine's reactive proxy (Worker messages must be cloneable).
+      return {
+        live:true, cursor:Date.now()/1000, day:'', start:0, end:1, spans:[], tz:'UTC',
+        from:null, to:null, message:'', anchor:0, stopAt:null, windowEnd:0, playSpans:[],
+         controller:null, timer:null, keyHandler:null, loading:false,
+        async init() {
+          this.keyHandler=e=>{if(e.ctrlKey||e.metaKey||e.altKey||e.target.closest('input,textarea,select,[contenteditable]'))return;
+            if(e.key.toLowerCase()==='i')this.mark('from');if(e.key.toLowerCase()==='o')this.mark('to');};
+          window.addEventListener('keydown',this.keyHandler);
+          await this.loadDay();
+          const params=new URLSearchParams(location.search), from=Number(params.get('from')),to=Number(params.get('to'));
+          if(params.has('from')&&Number.isFinite(from)&&from>0&&to>from&&to-from<=21600){
+            this.from=from;this.to=to;this.day=new Intl.DateTimeFormat('sv-SE',{timeZone:this.tz,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(from*1000));await this.loadDay();this.seek(from);
+          }else this.goLive();
+          this.timer=setInterval(()=>{if(this.live)this.cursor=Date.now()/1000;},1000);
+        },
+        destroy() {clearInterval(this.timer);window.removeEventListener('keydown',this.keyHandler);if(this.controller)this.controller.abort();this.unload();},
+        unload() {if(player){player.destroy();player=null;}const v=this.$refs.video;v.pause();v.removeAttribute('src');v.load();},
+        stamp(t) {return new Date(t*1000).toLocaleTimeString('cs-CZ',{timeZone:this.tz,hour:'2-digit',minute:'2-digit',second:'2-digit'});},
+        fullStamp(t) {return new Date(t*1000).toLocaleString('cs-CZ',{timeZone:this.tz});},
+        percent(t) {return Math.max(0,Math.min(100,(t-this.start)/(this.end-this.start)*100));},
+        spanStyle(s) {return 'left:'+this.percent(s[0])+'%;width:'+Math.max(0,this.percent(s[1])-this.percent(s[0]))+'%';},
+        async loadDay() {
+          if(this.controller)this.controller.abort();const controller=new AbortController();this.controller=controller;
+          try {const r=await fetch('/camera/'+camera+'/timeline?day='+encodeURIComponent(this.day),{signal:controller.signal,cache:'no-store'});
+            const d=await r.json();if(!r.ok)throw Error(d.error);if(controller!==this.controller)return;
+            Object.assign(this,{day:d.day,start:d.start,end:d.end,spans:d.spans,tz:d.tz});
+            this.message=d.spans.length?'':'Pro tento den není uložený záznam.';
+          } catch(e){if(e.name!=='AbortError')this.message=e.message||'Záznamy nelze načíst.';}
+        },
+        goLive() {this.unload();this.live=true;this.stopAt=null;this.loading=false;this.message='';const v=this.$refs.video,url='/stream/'+camera+'/hls/master.m3u8';v.onloadedmetadata=()=>{this.message='';v.play().catch(()=>{this.message='Přehrávání spustíte tlačítkem ▶.';});};
+          if((!window.Hls||!Hls.isSupported())&&v.canPlayType('application/vnd.apple.mpegurl'))v.src=url;
+          else if(window.Hls&&Hls.isSupported()){player=new Hls({liveSyncDurationCount:2});player.loadSource(url);player.attachMedia(v);player.on(Hls.Events.ERROR,(_,d)=>{if(d.fatal)this.message='Živý přenos není dostupný. Zkuste jej spustit znovu.';});}
+          else v.src='/stream/'+camera+'.mp4';},
+        seekAt(e) {const r=e.currentTarget.getBoundingClientRect();this.seek(this.start+(e.clientX-r.left)/r.width*(this.end-this.start));},
+        async step(seconds) {let t=this.cursor+seconds;
+          if(!this.live&&this.spans.length&&t>this.spans[this.spans.length-1][1]-60)await this.loadDay();
+          if(this.live&&seconds<0){await this.loadDay();t=Math.min(t,this.spans.length?this.spans[this.spans.length-1][1]-1:t);}
+          this.seek(t);
+        },
+        seek(t, preview=false) {
+          const span=this.spans.find(s=>t>=s[0]&&t<s[1]);
+          if(!span){this.message='V tomto místě není záznam. Vyberte modrý úsek časové osy.';return;}
+          this.unload();this.live=false;this.loading=true;this.message='';this.cursor=t;
+          if(!preview)this.stopAt=null;
+          this.anchor=Math.floor(Math.max(span[0],t-30));this.windowEnd=Math.floor(Math.min(this.spans[this.spans.length-1][1],this.anchor+3600));
+          this.playSpans=this.spans.map(s=>[Math.max(this.anchor,s[0]),Math.min(this.windowEnd,s[1])]).filter(s=>s[1]>s[0]);
+          const video=this.$refs.video, url='/recordings/'+camera+'/hls/'+this.anchor+'/'+this.windowEnd+'/master.m3u8';
+          video.onloadedmetadata=()=>{video.currentTime=this.mediaOffset(t);this.loading=false;this.message='';video.play().catch(()=>{this.message='Přehrávání spustíte tlačítkem ▶.';});};
+          if((!window.Hls||!Hls.isSupported())&&video.canPlayType('application/vnd.apple.mpegurl'))video.src=url;
+          else if(window.Hls&&Hls.isSupported()) {player=new Hls({maxBufferLength:30});player.loadSource(url);player.attachMedia(video);
+            player.on(Hls.Events.ERROR,(_,data)=>{if(data.fatal){console.warn('Atmovio archive:',data.type,data.details,data.error?.message);this.loading=false;this.message='Záznam nelze přehrát. Zkuste jiný úsek nebo ověřte Frigate.';}});
+          } else video.src='/clip/'+camera+'.mp4?start='+this.anchor+'&end='+this.windowEnd;
+        },
+        mediaOffset(t){return this.playSpans.reduce((sum,s)=>sum+Math.max(0,Math.min(t,s[1])-s[0]),0);},
+        wallTime(offset){for(const s of this.playSpans){if(offset<=s[1]-s[0])return s[0]+offset;offset-=s[1]-s[0];}return this.windowEnd;},
+        tick() {if(this.live||this.loading)return;this.cursor=this.wallTime(this.$refs.video.currentTime);
+          if(this.stopAt!==null&&this.cursor>=this.stopAt){this.$refs.video.pause();this.stopAt=null;}
+        },
+        nextSegment() {if(this.live)return;const span=this.spans.find(s=>Math.floor(s[1])>this.windowEnd);
+          if(span)this.seek(Math.max(span[0],this.windowEnd+.1), this.stopAt!==null);else this.message='Konec dostupného úseku. Další záznam vyberte na časové ose.';
+        },
+        mediaError() {if(!this.$refs.video.getAttribute('src')||!this.$refs.video.error)return;this.loading=false;this.message=this.live?'Živý přenos nelze načíst. Ověřte kameru a podporu H.264; záznamy jsou dostupné na časové ose.':'Náhled tohoto úseku není dostupný.';},
+        mark(which) {if(this.live){this.message='Nejdřív vyberte uložený záznam na časové ose.';return;}this[which]=Math.floor(this.cursor);},
+        validSelection() {return this.from!==null&&this.to!==null&&this.to>this.from&&this.to-this.from<=21600;},
+        selectionHasGaps(){if(!this.validSelection())return false;const covered=this.spans.reduce((n,s)=>n+Math.max(0,Math.min(this.to,s[1])-Math.max(this.from,s[0])),0);return this.to-this.from-covered>1;},
+        selectionLabel() {if(this.from===null||this.to===null)return 'Označte začátek a konec klipu.';
+          if(!this.validSelection())return 'DO musí být za OD. Nejdelší klip je 6 hodin.';
+          return 'Vybráno '+Math.floor((this.to-this.from)/60)+' min '+Math.round((this.to-this.from)%60)+' s';
+        },
+        async previewSelection() {if(this.validSelection()){
+          if(this.from<this.start||this.from>=this.end){this.day=new Intl.DateTimeFormat('sv-SE',{timeZone:this.tz,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(this.from*1000));await this.loadDay();}
+          this.stopAt=this.to;this.seek(this.from,true);
+        }}
+      };
+    });
+
     Alpine.data('systemGraphs', function () {
       return {preset:'today', from:'', to:'', busy:false, message:'', controller:null,
         init: function () { this.load(); },
@@ -475,7 +586,7 @@
         var s = Math.max(5, decode + encode + 3);
         return s < 90 ? 'asi ' + Math.round(s / 10) * 10 + ' s' : 'asi ' + Math.round(s / 60) + ' min';
       },
-        get video() { return this.$refs.v; },
+        get video() { return this.$refs.v || this.$refs.trimVideo; },
         stop: function () {
           this.running = false;
           if (this.timer) { clearTimeout(this.timer); this.timer = null; }
@@ -512,8 +623,9 @@
         init: function () {
           var self = this;
           this.$watch('speed', function (s) { if (self.on) self.play(s); });
-          this.$refs.v.addEventListener('timeupdate', function () { if (self.speed <= 16 && self.video.currentTime >= self.trimEnd) self.video.currentTime = self.trimStart; if (self.speed <= 16) self.pos = self.fmt(self.video.currentTime) + ' / ' + self.fmt(self.video.duration); });
-                  }
+          if (this.$refs.v) this.$refs.v.addEventListener('timeupdate', function () { if (self.speed <= 16 && self.video.currentTime >= self.trimEnd) self.video.currentTime = self.trimStart; if (self.speed <= 16) self.pos = self.fmt(self.video.currentTime) + ' / ' + self.fmt(self.video.duration); });
+        },
+        destroy: function () { this.stop(); }
       };
     });
   });

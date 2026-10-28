@@ -116,7 +116,7 @@ with contextlib.ExitStack() as stack:
   with patch.object(a,'frigate_cameras',return_value=names), patch.object(a,'camera_info',return_value={'ip':'192.0.2.1','via':'LAN'}):
    page=client.get('/')
    assert page.status_code==200
-   for name in names: assert f'href="/camera/{name}" title="Otevřít kameru"' in page.text
+   for name in names: assert f'href="/camera/{name}" aria-label="Přehrát {name}"' in page.text
  ok('Dashboard includes every camera for 1, 2, 3, 4, 5 and 8 cameras')
 
  # Updater expressions must survive HTML attribute parsing, including quoted/multiline logs.
@@ -163,7 +163,7 @@ with contextlib.ExitStack() as stack:
  guard_marker.unlink()
  ok('Restart recovery waits for exact guard acknowledgement, not an old online recorder')
 
- pages=['/system/access','/system/integrations','/system/maintenance','/ai/guide','/youtube','/videos/settings','/','/live','/live/all','/live/test_cam','/camera/test_cam','/cameras','/cameras/edit/test_cam','/discover','/storage','/ai','/history','/history?show=all','/detection/1','/videos','/studio/new/1','/studio/v/1','/studio/settings','/email','/vpn','/logs','/system','/system/update']
+ pages=['/moments','/moments/discover','/studio','/studio/music','/settings','/system/access','/system/integrations','/system/maintenance','/ai/guide','/youtube','/videos/settings','/','/live','/live/all','/live/test_cam','/camera/test_cam','/cameras','/cameras/edit/test_cam','/discover','/storage','/ai','/history','/history?show=all','/detection/1','/videos','/studio/new/1','/studio/v/1','/studio/settings','/email','/vpn','/logs','/system','/system/update']
  failed=[];form_count=0
  for page in pages:
   r=client.get(page)

@@ -13,7 +13,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Python syntax
-        run: python3 -m py_compile src/atmovio/app.py src/atmovio/storage_guard.py
+        run: python3 -m py_compile src/atmovio/*.py
       - name: Built scripts match sources
         run: bash src/build.sh --check
       - name: Shell syntax
@@ -34,17 +34,12 @@ jobs:
       - name: Offline administration regression checks
         run: |
           python3 -m pip install -q httpx
-          python3 tests/regression.py
-          python3 tests/music_search.py
-          python3 tests/ai_films.py
-          python3 tests/video_ranges.py
-          python3 tests/studio_status.py
-          python3 tests/video_library.py
-          python3 tests/event_groups.py
-          python3 tests/event_video_delivery.py
-          python3 tests/storage_guard.py
-      - name: Music finder interaction checks
-        run: node tests/music_finder.js
+          sudo apt-get install -y -q ffmpeg >/dev/null
+          for test in tests/*.py; do python3 "$test"; done
+      - name: Player and music finder interaction checks
+        run: |
+          node tests/camera_player.js
+          node tests/music_finder.js
       - name: No personal data in sources
         run: |
           # heslo zapsané natvrdo (ne odkaz na proměnnou jako PASSWORD="$ADMIN_PW")

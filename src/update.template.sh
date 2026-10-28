@@ -66,6 +66,9 @@ ATMOVIO_STORAGE_EOF
 cat > "$STAGE/metrics.py" <<'ATMOVIO_METRICS_EOF'
 __ATMOVIO_METRICS__
 ATMOVIO_METRICS_EOF
+cat > "$STAGE/frigate_upgrade.py" <<'ATMOVIO_FRIGATE_EOF'
+__ATMOVIO_FRIGATE__
+ATMOVIO_FRIGATE_EOF
 cat > "$STAGE/requirements.txt" <<'ATMOVIO_REQUIREMENTS_EOF'
 __ATMOVIO_REQUIREMENTS__
 ATMOVIO_REQUIREMENTS_EOF
@@ -91,6 +94,10 @@ fetch_vendor() {  # $1 = cílový adresář static
     curl -fsSL --max-time 60 -o "$d/alpine.min.js.tmp" "https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js" \
       && mv "$d/alpine.min.js.tmp" "$d/alpine.min.js" || { rm -f "$d/alpine.min.js.tmp"; ok=0; }
   fi
+  if [[ ! -s "$d/hls.min.js" ]]; then
+    curl -fsSL --max-time 60 -o "$d/hls.min.js.tmp" "https://cdn.jsdelivr.net/npm/hls.js@1.6.13/dist/hls.min.js" \
+      && mv "$d/hls.min.js.tmp" "$d/hls.min.js" || { rm -f "$d/hls.min.js.tmp"; ok=0; }
+  fi
   [[ $ok -eq 1 ]] || echo "! Knihovny Pico CSS / Alpine.js se nepodařilo stáhnout – Atmovio je načte z internetu (CDN), dokud se to nepovede při dalším updatu."
 }
 write_static "$STAGE/static"
@@ -100,6 +107,7 @@ python3 -m venv "$NEW_VENV"
 "$NEW_VENV/bin/python" -m pip install -q -r "$STAGE/requirements.txt"
 "$NEW_VENV/bin/python" -m pip check
 ATMOVIO_DIR="$SKY_DIR" PYTHONPATH="$STAGE" PYTHONDONTWRITEBYTECODE=1 "$NEW_VENV/bin/python" -c 'import app, storage_guard, metrics; app.load_config()'
+"$NEW_VENV/bin/python" "$STAGE/frigate_upgrade.py" prepare "$BACKUP/frigate"
 cp -a "$SKY_DIR/app.py" "$BACKUP/app.py"
 if [[ -f "$SKY_DIR/storage_guard.py" ]]; then cp -a "$SKY_DIR/storage_guard.py" "$BACKUP/storage_guard.py"; fi
 if [[ -f "$SKY_DIR/requirements.txt" ]]; then cp -a "$SKY_DIR/requirements.txt" "$BACKUP/requirements.txt"; fi
@@ -112,6 +120,7 @@ rollback() {
   set +e
   echo "Aktualizace selhala, obnovuji původní aplikaci a prostředí."
   systemctl stop atmovio.service
+  "$NEW_VENV/bin/python" "$STAGE/frigate_upgrade.py" rollback "$BACKUP/frigate" || echo "Obnova Frigate potřebuje kontrolu: $BACKUP/frigate"
   cp -a "$BACKUP/app.py" "$SKY_DIR/app.py"
   if [[ -f "$BACKUP/storage_guard.py" ]]; then cp -a "$BACKUP/storage_guard.py" "$SKY_DIR/storage_guard.py"; fi
   if [[ -f "$BACKUP/metrics.py" ]]; then cp -a "$BACKUP/metrics.py" "$SKY_DIR/metrics.py"; fi
@@ -130,17 +139,20 @@ rollback() {
 trap rollback ERR INT TERM
 systemctl stop nvr-storage.service 2>/dev/null || true
 systemctl stop atmovio.service
+"$NEW_VENV/bin/python" "$SKY_DIR/storage_guard.py" --backup-db "$SKY_DIR/atmovio.db" "$BACKUP/atmovio.db"
 mv "$SKY_DIR/venv" "$BACKUP/venv"
 # Venv se nepřejmenovává: jeho pip/uvicorn obsahují absolutní cesty.
 ln -s "$NEW_VENV" "$SKY_DIR/venv"
 mv "$STAGE/app.py" "$SKY_DIR/app.py"
 mv "$STAGE/storage_guard.py" "$SKY_DIR/storage_guard.py"
 mv "$STAGE/metrics.py" "$SKY_DIR/metrics.py"
+cp "$STAGE/frigate_upgrade.py" "$SKY_DIR/frigate_upgrade.py"
 mv "$STAGE/requirements.txt" "$SKY_DIR/requirements.txt"
 mkdir -p "$SKY_DIR/static/vendor"
 mv -f "$STAGE/static/atmovio.css" "$SKY_DIR/static/atmovio.css"
 mv -f "$STAGE/static/atmovio.js" "$SKY_DIR/static/atmovio.js"
 fetch_vendor "$SKY_DIR/static"
+"$NEW_VENV/bin/python" "$SKY_DIR/frigate_upgrade.py" upgrade "$BACKUP/frigate"
 "$NEW_VENV/bin/python" "$SKY_DIR/storage_guard.py" --install
 
 # --- smartd (S.M.A.R.T. hlídání HDD): bez disku nesmí svítit jako chyba, s USB diskem má běžet

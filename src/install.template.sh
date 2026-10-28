@@ -356,7 +356,7 @@ cat > "$NVR_DIR/docker-compose.yml" <<EOF
 services:
   frigate:
     container_name: frigate
-    image: ghcr.io/blakeblackshear/frigate:0.17.2-standard-arm64
+    image: ghcr.io/blakeblackshear/frigate:0.18.2-standard-arm64
     restart: "no"
     logging:
       driver: local
@@ -426,6 +426,9 @@ cat > "$SKY_DIR/metrics.py" <<'ATMOVIO_METRICS_EOF'
 __ATMOVIO_METRICS__
 ATMOVIO_METRICS_EOF
 
+cat > "$SKY_DIR/frigate_upgrade.py" <<'ATMOVIO_FRIGATE_EOF'
+__ATMOVIO_FRIGATE__
+ATMOVIO_FRIGATE_EOF
 cat > "$SKY_DIR/requirements.txt" <<'ATMOVIO_REQUIREMENTS_EOF'
 __ATMOVIO_REQUIREMENTS__
 ATMOVIO_REQUIREMENTS_EOF
@@ -450,6 +453,10 @@ fetch_vendor() {  # $1 = cílový adresář static
   if [[ ! -s "$d/alpine.min.js" ]]; then
     curl -fsSL --max-time 60 -o "$d/alpine.min.js.tmp" "https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js" \
       && mv "$d/alpine.min.js.tmp" "$d/alpine.min.js" || { rm -f "$d/alpine.min.js.tmp"; ok=0; }
+  fi
+  if [[ ! -s "$d/hls.min.js" ]]; then
+    curl -fsSL --max-time 60 -o "$d/hls.min.js.tmp" "https://cdn.jsdelivr.net/npm/hls.js@1.6.13/dist/hls.min.js" \
+      && mv "$d/hls.min.js.tmp" "$d/hls.min.js" || { rm -f "$d/hls.min.js.tmp"; ok=0; }
   fi
   [[ $ok -eq 1 ]] || echo "! Knihovny Pico CSS / Alpine.js se nepodařilo stáhnout – Atmovio je načte z internetu (CDN), dokud se to nepovede při dalším updatu."
 }
