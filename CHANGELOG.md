@@ -2,6 +2,11 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 6.0.5 – 2026-10-28 – position video effects
+
+- Place uploaded animations with X/Y percentages or drag their bounding box over the source thumbnail. Keyboard arrows and a bottom-center reset are available.
+- Save coordinates with the project and apply the same position in previews and rendered videos, with a proportional inset that keeps the effect inside the frame.
+
 ## 6.0.4 – 2026-10-28 – reusable video effects and music library removal
 
 - Upload and reuse MP4/MOV/WebM animations, automatically remove green or black backgrounds and crop the empty margins. Preview the actual animation over a source thumbnail, including sound.

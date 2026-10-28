@@ -11,10 +11,10 @@ class AudioEngine {
   async resume(){this.state='running';}
   async close(){closed++;}
 }
-let pendingPreview;
+let pendingPreview, previewBody;
 const window = {AudioContext:AudioEngine,addEventListener(){}};
 vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname,'../src/atmovio/static/atmovio.js'),'utf8'),{
-  FormData,fetch:()=>new Promise(resolve=>{pendingPreview=resolve;}),
+  FormData,fetch:(_url,options)=>new Promise(resolve=>{previewBody=options.body;pendingPreview=resolve;}),
   document:{readyState:'loading',addEventListener:(name,fn)=>events[name]=fn}, window,
   Alpine:{data:(name,factory)=>components[name]=factory}
 });
@@ -62,5 +62,22 @@ events['alpine:init']();
   request=uploaded.playVideoEffect();pendingPreview({ok:true,json:async()=>({url:'/ready.mp4'})});await request;
   assert.equal(plays,1);assert.equal(uploaded.previewUrl,'/ready.mp4');
   uploaded.resetVideoPreview();assert.equal(uploaded.previewUrl,'');
+  uploaded.items=[{asset:'clip.mp4',duration:5,width:640,height:360,background:'none',crop:[0,0,1,1]}];
+  uploaded.frameWidth=1280;uploaded.frameHeight=720;
+  uploaded.posX=0;uploaded.posY=0;uploaded.positionChanged();
+  let box=uploaded.positionBox();assert.ok(box.x>0&&box.y>0);assert.equal(uploaded.positioning,true);
+  uploaded.posX=100;uploaded.posY=100;box=uploaded.positionBox();
+  assert.ok(box.x+box.width<box.W&&box.y+box.height<box.H);
+  uploaded.$refs.positionStage={getBoundingClientRect:()=>({width:640,height:360})};
+  const target={focus(){},setPointerCapture(){},hasPointerCapture(){return true;},releasePointerCapture(){}};
+  uploaded.beginDrag({button:0,pointerId:1,clientX:500,clientY:300,currentTarget:target});
+  uploaded.moveDrag({pointerId:2,clientX:0,clientY:0});assert.equal(uploaded.posX,100);
+  uploaded.moveDrag({pointerId:1,clientX:-500,clientY:-300});assert.equal(uploaded.posX,0);assert.equal(uploaded.posY,0);
+  uploaded.endDrag({pointerId:1,currentTarget:target});assert.equal(uploaded.drag,null);
+  uploaded.moveKey({key:'ArrowRight',shiftKey:true,preventDefault(){}});assert.equal(uploaded.posX,10);
+  uploaded.moveKey({key:'ArrowDown',shiftKey:false,preventDefault(){}});assert.equal(uploaded.posY,1);
+  request=uploaded.playVideoEffect();assert.equal(previewBody.get('x'),'10');assert.equal(previewBody.get('y'),'1');
+  uploaded.positionChanged();pendingPreview({ok:true,json:async()=>({url:'/wrong-position.mp4'})});await request;
+  assert.equal(uploaded.previewUrl,'');assert.equal(uploaded.positioning,true);
   console.log('Studio preview: gain, seek, replay, fallback, fade and cleanup OK');
 })().catch(error=>{console.error(error);process.exitCode=1;});

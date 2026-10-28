@@ -60,6 +60,41 @@
       return {
         effect, at, seconds, playing:false, effectMessage:'', busy:false, previewUrl:'',
         items:options.items||[],asset:options.asset||'',timing:options.timing||'manual',background:options.background||'auto',size:options.size||.4,sound:options.sound!==false,
+        posX:options.x??50,posY:options.y??100,positioning:false,drag:null,frameWidth:options.frameWidth||1920,frameHeight:options.frameHeight||1080,
+        positionChanged(){
+          this.posX=Math.max(0,Math.min(100,Number(this.posX)||0));this.posY=Math.max(0,Math.min(100,Number(this.posY)||0));
+          this.resetVideoPreview();this.positioning=true;
+        },
+        editPosition(){this.stopEffect();this.positioning=true;this.$nextTick(()=>this.$refs.positionStage.scrollIntoView({block:'nearest',behavior:'smooth'}));},
+        positionBox(){
+          const item=this.items.find(item=>item.asset===this.asset);
+          const W=Math.min(1920,this.frameWidth),H=this.frameHeight*W/this.frameWidth,margin=W/120;
+          const mode=this.background==='auto'?item?.background:this.background;
+          const crop=item&&mode===item.background&&mode!=='none'?(item.crop||[0,0,1,1]):[0,0,1,1];
+          const ratio=item?Math.max(2,Math.floor((crop[2]-crop[0])*item.width/2)*2)/Math.max(2,Math.floor((crop[3]-crop[1])*item.height/2)*2):16/9;
+          const width=Math.max(2,Math.floor(Math.min(W*this.size,(H-2*margin)*ratio)/2)*2),height=Math.round(width/ratio/2)*2;
+          const dx=Math.max(0,W-width-2*margin),dy=Math.max(0,H-height-2*margin);
+          return {W,H,width,height,dx,dy,x:margin+dx*this.posX/100,y:margin+dy*this.posY/100};
+        },
+        positionStyle(){const b=this.positionBox();return `left:${b.x/b.W*100}%;top:${b.y/b.H*100}%;width:${b.width/b.W*100}%;height:${b.height/b.H*100}%`;},
+        beginDrag(event){
+          if(event.button!==0)return;
+          this.stopEffect();this.previewUrl='';this.positioning=true;
+          this.drag={id:event.pointerId,x:event.clientX,y:event.clientY,posX:this.posX,posY:this.posY};
+          event.currentTarget.focus({preventScroll:true});event.currentTarget.setPointerCapture(event.pointerId);
+        },
+        moveDrag(event){
+          if(!this.drag||event.pointerId!==this.drag.id)return;
+          const b=this.positionBox(),rect=this.$refs.positionStage.getBoundingClientRect();
+          if(!rect.width||!rect.height)return;
+          this.posX=b.dx?Math.round(Math.max(0,Math.min(100,this.drag.posX+(event.clientX-this.drag.x)/rect.width*b.W/b.dx*100))):50;
+          this.posY=b.dy?Math.round(Math.max(0,Math.min(100,this.drag.posY+(event.clientY-this.drag.y)/rect.height*b.H/b.dy*100))):50;
+        },
+        endDrag(event){if(this.drag?.id===event.pointerId){this.drag=null;if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);}},
+        moveKey(event){
+          const delta={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[event.key];if(!delta)return;
+          event.preventDefault();const step=event.shiftKey?10:1;this.posX+=delta[0]*step;this.posY+=delta[1]*step;this.positionChanged();
+        },
         selectedDuration(){return this.items.find(item=>item.asset===this.asset)?.duration||0;},
         effectTime(mainDuration){
           const item=this.items.find(item=>item.asset===this.asset),length=this.effect==='video' ? (item?.duration||0) : Number(this.seconds)||4;
@@ -83,11 +118,11 @@
           if(!this.asset||this.busy)return;
           const current=++generation;this.busy=true;this.effectMessage='Připravuji ukázku s vaším záběrem…';
           try{
-            const body=new FormData();Object.entries({asset:this.asset,vid:options.vid,background:this.background,size:this.size,sound:this.sound?'1':'',csrf_token:this.$el.closest('form').querySelector('[name=csrf_token]').value}).forEach(([key,value])=>body.append(key,value));
+            const body=new FormData();Object.entries({asset:this.asset,vid:options.vid,background:this.background,size:this.size,x:this.posX,y:this.posY,sound:this.sound?'1':'',csrf_token:this.$el.closest('form').querySelector('[name=csrf_token]').value}).forEach(([key,value])=>body.append(key,value));
             const response=await fetch('/studio/effects/preview',{method:'POST',body,credentials:'same-origin'}),data=await response.json();
             if(current!==generation)return;
             if(!response.ok)throw Error(data.error||'Ukázku nelze připravit.');
-            this.previewUrl=data.url;this.effectMessage='';await this.$nextTick();
+            this.previewUrl=data.url;this.positioning=false;this.effectMessage='';await this.$nextTick();
             if(current!==generation)return;
             const video=this.$refs.effectVideo;video.currentTime=0;
             await video.play().catch(()=>{this.effectMessage='Ukázka je připravená. Spusťte ji v přehrávači.';});

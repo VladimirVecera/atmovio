@@ -118,7 +118,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "6.0.4"
+APP_VERSION = "6.0.5"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -3824,12 +3824,13 @@ TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<a
   </details></div></section>
 <section id="studio-intro" x-show="tab==='intro'" x-cloak x-data="introPicker({{ (values.edit.intro_asset or '')|tojson|forceescape }}, {{ values.intro_url|tojson|forceescape }}, {{ (intro.suffix|lower if intro else '')|tojson|forceescape }})"><h2>Úvod videa</h2><p class="hint">Tady si přehrajete intro a můžete ho vyměnit.</p><input type="hidden" name="intro_asset" :value="asset"><div class="intro-edit-grid"><div class="intro-canvas"><img x-show="url && isImage" class="intro-preview" :src="isImage ? url : null" alt="Náhled intra"><video x-show="url && !isImage" class="intro-preview" controls playsinline preload="metadata" :src="url && !isImage ? url : null"></video><p x-show="!url">Vyberte video nebo obrázek pro začátek videa.</p></div><div><label class="check"><input type="checkbox" name="intro" value="1" x-model="intro" :disabled="!url">Přidat intro na začátek</label><label>Vybrat nebo změnit intro<input type="file" accept=".mp4,.mov,.m4v,.png,.jpg,.jpeg" @change="upload($event)" :disabled="busy"></label><p class="hint" role="status" x-text="message"></p><p class="hint">Video nebo obrázek · do 100 MB. Změna platí pro tento projekt.</p></div></div></section>
 <section id="studio-text" x-show="tab==='text'" x-cloak><h2>Text v obraze</h2><label class="check"><input type="checkbox" name="text_on" value="1" x-model="textOn">Přidat text</label><label x-show="textOn">Váš text<input name="text" value="{{ values.text }}" maxlength="200" placeholder="Například: Ranní mlha nad údolím"></label><label>Poloha<select name="text_pos">{% for key,label in [('bl','Dole vlevo'),('bc','Dole uprostřed'),('br','Dole vpravo'),('tl','Nahoře vlevo'),('tr','Nahoře vpravo')] %}<option value="{{ key }}" {{ 'selected' if values.edit.text_pos==key }}>{{ label }}</option>{% endfor %}</select></label><p class="hint">Napište běžný text. Kamera, datum a čas patří do popisu, pokud je nechcete v obraze.</p></section>
-<section id="studio-effects" x-show="tab==='effects'" x-cloak x-data="effectPreview({{ values.edit.effect|tojson|forceescape }}, {{ values.edit.effect_at }}, {{ values.edit.effect_duration }}, {items:{{ effects|tojson|forceescape }},asset:{{ values.edit.effect_asset|tojson|forceescape }},timing:{{ values.edit.effect_timing|tojson|forceescape }},background:{{ values.edit.effect_background|tojson|forceescape }},size:{{ values.edit.effect_size }},sound:{{ 'true' if values.edit.effect_sound else 'false' }},vid:{{ export.id }}})" @studio-tab.window="stopEffect()"><h2>Animace a výzvy</h2><div class="effect-workspace"><div class="effect-settings"><label>Co vložit<select name="effect" x-model="effect" @change="resetVideoPreview()"><option value="">Bez efektu</option><option value="video">Vlastní videoanimace</option><optgroup label="Jednoduchá textová výzva">{% for key,label in [('subscribe','Odebírejte další videa'),('share','Sdílejte tento okamžik'),('both','Sdílejte a odebírejte')] %}<option value="{{ key }}" {{ 'selected' if values.edit.effect==key }}>{{ label }}</option>{% endfor %}</optgroup></select></label>
+<section id="studio-effects" x-show="tab==='effects'" x-cloak x-data="effectPreview({{ values.edit.effect|tojson|forceescape }}, {{ values.edit.effect_at }}, {{ values.edit.effect_duration }}, {items:{{ effects|tojson|forceescape }},asset:{{ values.edit.effect_asset|tojson|forceescape }},timing:{{ values.edit.effect_timing|tojson|forceescape }},background:{{ values.edit.effect_background|tojson|forceescape }},size:{{ values.edit.effect_size }},x:{{ values.edit.effect_x }},y:{{ values.edit.effect_y }},frameWidth:{{ src.width or 1920 }},frameHeight:{{ src.height or 1080 }},sound:{{ 'true' if values.edit.effect_sound else 'false' }},vid:{{ export.id }}})" @studio-tab.window="stopEffect()"><h2>Animace a výzvy</h2><div class="effect-workspace"><div class="effect-settings"><label>Co vložit<select name="effect" x-model="effect" @change="resetVideoPreview()"><option value="">Bez efektu</option><option value="video">Vlastní videoanimace</option><optgroup label="Jednoduchá textová výzva">{% for key,label in [('subscribe','Odebírejte další videa'),('share','Sdílejte tento okamžik'),('both','Sdílejte a odebírejte')] %}<option value="{{ key }}" {{ 'selected' if values.edit.effect==key }}>{{ label }}</option>{% endfor %}</optgroup></select></label>
 <div x-show="effect==='video'"><label>Uložená animace<select name="effect_asset" x-model="asset" @change="resetVideoPreview()"><option value="">Vyberte animaci</option><template x-for="item in items" :key="item.asset"><option :value="item.asset" x-text="item.name+' · '+item.duration.toFixed(1)+' s'"></option></template></select></label><label class="effect-upload">Nahrát vlastní animaci<input type="file" accept=".mp4,.mov,.m4v,.webm" @change="uploadEffect($event)" :disabled="busy"></label><p class="hint">MP4, MOV nebo WebM · do 30 s a 100 MB.</p>
+<fieldset class="effect-position-controls" x-show="asset"><legend>Poloha v obraze</legend><div class="effect-coordinates"><label>X · vodorovně (%)<input name="effect_x" type="number" min="0" max="100" step="1" x-model.number="posX" @input="positionChanged()"></label><label>Y · svisle (%)<input name="effect_y" type="number" min="0" max="100" step="1" x-model.number="posY" @input="positionChanged()"></label></div><p class="hint">0 % vlevo / nahoře · 100 % vpravo / dole.</p><div class="actions"><button type="button" class="btn small sec" @click="editPosition()">↔ Umístit v náhledu</button><button type="button" class="btn small sec" @click="posX=50;posY=100;positionChanged()">Doprostřed dolů</button></div></fieldset>
 <details class="inline-help"><summary>Vzhled a zvuk animace</summary><label>Pozadí<select name="effect_background" x-model="background" @change="resetVideoPreview()"><option value="auto">Odstranit automaticky</option><option value="green">Odstranit zelené</option><option value="black">Odstranit černé</option><option value="none">Ponechat původní</option></select></label><label>Velikost<select name="effect_size" x-model.number="size" @change="resetVideoPreview()"><option value="0.25">Malá</option><option value="0.4">Střední</option><option value="0.6">Velká</option><option value="0.8">Největší</option></select></label><label class="check"><input type="checkbox" name="effect_sound" value="1" x-model="sound" @change="resetVideoPreview()">Přehrát i zvuk animace</label></details></div>
 <div x-show="effect"><label>Kdy spustit<select name="effect_timing" x-model="timing" @change="stopEffect()"><option value="auto">Vybrat čas automaticky</option><option value="manual">Zadat čas ručně</option></select></label><p class="hint" x-show="timing==='auto'" x-text="'Spustí se v '+effectTime((trimEnd-trimStart)/speed)+' záběru, za případným intrem.'"></p><label x-show="timing==='manual'">Začátek · sekundy hotového záběru<input type="number" min="0" max="21600" name="effect_at" x-model.number="at" @input="stopEffect()"></label><label x-show="effect!=='video'">Délka zobrazení · s<input type="number" min="1" max="30" name="effect_duration" x-model.number="seconds" @input="stopEffect()"></label></div>
 <p class="hint" x-show="effect==='video' && selectedDuration()>(trimEnd-trimStart)/speed">Záběr je kratší než animace. Použije se jen část, která se do videa vejde.</p><div class="effect-preview-actions"><button type="button" class="btn" :disabled="!effect || busy || (effect==='video' && !asset)" @click="playEffect((trimEnd-trimStart)/speed)" x-text="busy ? 'Připravuji ukázku…' : playing ? '↻ Přehrát znovu' : '▶ Přehrát efekt'"></button><span class="hint" role="status" x-text="effectMessage"></span></div></div><div class="effect-demo">
-<div x-show="effect==='video'" class="effect-video-preview"><video x-ref="effectVideo" x-show="previewUrl" :src="previewUrl || null" controls playsinline preload="metadata" @ended="playing=false" @pause="playing=false" @play="playing=true"></video><div x-show="!previewUrl" class="effect-placeholder"><img src="/videos/{{ export.id }}/thumb.jpg" alt="Snímek zdrojového videa"><p>Vyberte animaci a klikněte na Přehrát efekt.</p></div><p class="hint">Skutečná animace přes snímek z vašeho videa. Ukázka začíná rovnou efektem; ve výsledném videu se spustí ve zvoleném čase.</p></div>
+<div x-show="effect==='video'" class="effect-video-preview"><video x-ref="effectVideo" x-show="previewUrl && !positioning" :src="previewUrl || null" controls playsinline preload="metadata" @ended="playing=false" @pause="playing=false" @play="playing=true"></video><div x-show="positioning && asset" class="effect-position-stage" x-ref="positionStage" :style="'aspect-ratio:'+frameWidth+'/'+frameHeight"><img src="/videos/{{ export.id }}/thumb.jpg" alt="Umístění efektu v obraze" draggable="false"><button type="button" class="effect-position-box" :style="positionStyle()" aria-label="Poloha efektu — přetáhněte nebo použijte šipky" @pointerdown.prevent="beginDrag($event)" @pointermove="moveDrag($event)" @pointerup="endDrag($event)" @pointercancel="endDrag($event)" @lostpointercapture="drag=null" @keydown="moveKey($event)"><span>↔ Efekt</span></button></div><p x-show="positioning && asset" class="hint">Přetáhněte rámeček. Šipky posouvají o 1 %, Shift + šipka o 10 %. Potom klikněte na Přehrát efekt.</p><div x-show="!previewUrl && !positioning" class="effect-placeholder"><img src="/videos/{{ export.id }}/thumb.jpg" alt="Snímek zdrojového videa"><p>Vyberte animaci a klikněte na Přehrát efekt.</p></div><p class="hint">Skutečná animace přes snímek z vašeho videa. Ukázka začíná rovnou efektem; ve výsledném videu se spustí ve zvoleném čase.</p></div>
 {% set effect_width = [src.width or 1920,1920]|min %}{% set effect_size = [24,effect_width//45]|max %}
 <div x-show="effect!=='video'"><div class="effect-preview" style="--effect-font:{{ effect_size/effect_width*100 }}cqw;--effect-bottom:{{ 24/effect_width*100 }}cqw;--effect-padding:{{ 10/effect_width*100 }}cqw;--effect-stroke:{{ 2/effect_width*100 }}cqw"><img src="/videos/{{ export.id }}/thumb.jpg" alt="Snímek zdrojového videa"><span class="effect-caption" x-ref="caption" x-show="effect" x-text="caption"></span></div><p class="hint">Ukázka textového efektu na snímku z videa.</p></div></div></div></section>
 <section id="studio-title" x-show="tab==='title'" x-cloak x-data="titleIdeas({vid:{{ export.id }}})"><h2>Název a popis</h2><label>Název<input name="title" value="{{ short_title(values.title,export.camera) }}" maxlength="100" x-ref="title"></label><label>Popis<textarea name="description" rows="6" x-ref="description">{{ values.description }}</textarea></label><button type="button" class="btn sec" @click="askMetadata()" :disabled="busy">Navrhnout texty</button><p class="hint" x-text="metaMsg"></p><div x-show="proposal"><strong x-text="proposal?.title"></strong><p x-text="proposal?.description"></p><button class="btn small" type="button" @click="applyMetadata()">Použít návrh</button></div></section>
@@ -7485,13 +7486,20 @@ def studio_effect_filter(meta, edit, width, height, start=0):
     x, y = int(box[0]*meta['width'])//2*2, int(box[1]*meta['height'])//2*2
     cw = max(2,min(meta['width']-x,int((box[2]-box[0])*meta['width'])//2*2))
     ch = max(2,min(meta['height']-y,int((box[3]-box[1])*meta['height'])//2*2))
-    target = min(width*edit.get('effect_size',.4),(height-32)*cw/ch)
+    target = min(width*edit.get('effect_size',.4),max(2,height-width/60)*cw/ch)
     target = max(2,int(target)//2*2)
     chain = f'crop={cw}:{ch}:{x}:{y},scale={target}:-2,setsar=1,format=rgba'
     if mode in ('green','black'):
         key = meta['color'] if mode == meta['background'] else '00ff00' if mode == 'green' else '000000'
         chain += f',colorkey=0x{key}:{.2 if mode == "green" else .12}:0.08'
     return chain + f',setpts=PTS-STARTPTS+{start:.6f}/TB'
+
+
+def studio_effect_overlay(edit):
+    # Coordinates span the available area, keeping the whole animation inside a small inset.
+    # The inset scales with the frame so the preview and final render agree.
+    x, y = edit.get('effect_x', 50), edit.get('effect_y', 100)
+    return f"overlay=x='W/120+max(0,W-w-W/60)*{x/100:.6f}':y='W/120+max(0,H-h-W/60)*{y/100:.6f}':eof_action=pass:repeatlast=0"
 
 
 @app.post('/studio/effects/upload')
@@ -7521,9 +7529,9 @@ _effect_preview_lock = threading.Lock()
 
 @app.post('/studio/effects/preview')
 def studio_effect_preview(request: Request, asset: str = Form(...), vid: int = Form(...), background: str = Form('auto'),
-                          size: float = Form(.4), sound: str = Form('1')):
+                          size: float = Form(.4), sound: str = Form('1'), x: float = Form(50), y: float = Form(100)):
     meta = studio_effect_meta(asset)
-    if not meta or background not in ('auto','green','black','none') or not math.isfinite(size) or not .2 <= size <= .8:
+    if not meta or background not in ('auto','green','black','none') or not all(math.isfinite(n) for n in (size,x,y)) or not .2 <= size <= .8 or not 0 <= x <= 100 or not 0 <= y <= 100:
         return JSONResponse({'error':'Vyberte dostupnou animaci a její nastavení.'},status_code=400)
     cfg = load_config()
     with db() as con:
@@ -7533,15 +7541,16 @@ def studio_effect_preview(request: Request, asset: str = Form(...), vid: int = F
     poster = export_thumb_path(cfg,dict(rec),frigate_exports(cfg).get(rec['frigate_id']))
     if not poster:
         return JSONResponse({'error':'Náhled zdrojového videa není dostupný.'},status_code=404)
-    token = hashlib.sha256(f'{asset}:{vid}:{poster.stat().st_mtime_ns}:{background}:{size}:{bool(sound)}'.encode()).hexdigest()[:32]
+    token = hashlib.sha256(f'position-v1:{asset}:{vid}:{poster.stat().st_mtime_ns}:{background}:{size}:{bool(sound)}:{x}:{y}'.encode()).hexdigest()[:32]
     folder = studio_effect_dir()/'previews';folder.mkdir(exist_ok=True)
     target = folder/(token+'.mp4')
     with _effect_preview_lock:
         if not target.is_file():
             with Image.open(poster) as im:
                 w,h=640,max(2,round(im.height*640/im.width/2)*2)
-            chain=studio_effect_filter(meta,{'effect_background':background,'effect_size':size},w,h)
-            filters=f'[0:v]scale={w}:{h},setsar=1[bg];[1:v]{chain}[fx];[bg][fx]overlay=(W-w)/2:H-h-16:eof_action=pass:repeatlast=0,format=yuv420p[v]'
+            edit={'effect_background':background,'effect_size':size,'effect_x':x,'effect_y':y}
+            chain=studio_effect_filter(meta,edit,w,h)
+            filters=f'[0:v]scale={w}:{h},setsar=1[bg];[1:v]{chain}[fx];[bg][fx]{studio_effect_overlay(edit)},format=yuv420p[v]'
             temp=folder/(token+'.part.mp4')
             cmd=['ffmpeg','-v','error','-nostdin','-y','-filter_complex_threads','1','-loop','1','-i',str(poster),
                  '-threads','2','-i',str(studio_effect_dir()/asset),'-filter_complex',filters,'-map','[v]']
@@ -7754,7 +7763,8 @@ def normalize_studio_edit(edit, sc):
     result = {}
     for key, default, low, high in [('music_start', 0, 0, 86400), ('music_volume', sc.get('music_volume', .8), 0, 2),
                                   ('fade_in', sc.get('fade_in', 2), 0, 30), ('fade_out', sc.get('fade_out', 4), 0, 30),
-                                  ('effect_at', 5, 0, 21600), ('effect_duration', 4, 1, 30), ('effect_size', .4, .2, .8)]:
+                                  ('effect_at', 5, 0, 21600), ('effect_duration', 4, 1, 30), ('effect_size', .4, .2, .8),
+                                  ('effect_x', 50, 0, 100), ('effect_y', 100, 0, 100)]:
         value = float(edit.get(key, default))
         if not math.isfinite(value) or not low <= value <= high:
             raise ValueError('Neplatné nastavení zvuku nebo efektu.')
@@ -7925,7 +7935,7 @@ def studio_render(cfg, job: dict):
         cmd += ['-threads','2','-t',str(effect_length),'-i',str(studio_effect_dir()/edit['effect_asset'])]
         filters.append(main+'[plain]')
         filters.append(f'[{effect_in}:v]'+studio_effect_filter(effect_meta,edit,w,h,effect_begin)+'[effect]')
-        filters.append(f"[plain][effect]overlay=(W-w)/2:H-h-16:eof_action=pass:repeatlast=0:enable='between(t,{effect_begin:.6f},{effect_begin+effect_length:.6f})'[main]")
+        filters.append(f"[plain][effect]{studio_effect_overlay(edit)}:enable='between(t,{effect_begin:.6f},{effect_begin+effect_length:.6f})'[main]")
     else:
         filters.append(main+'[main]')
     intro_sec = 0.0
@@ -8235,7 +8245,8 @@ def studio_new_post(request: Request, vid: int, speed: int = Form(20), intro: st
                     music_start: float = Form(0), music_volume: float = Form(.8), fade_in: float = Form(2), fade_out: float = Form(4),
                     effect: str = Form(''), effect_at: float = Form(5), effect_duration: float = Form(4), text_pos: str = Form('bl'),
                     intro_asset: str = Form(''), project_id: int = Form(0), effect_asset: str = Form(''), effect_timing: str = Form('manual'),
-                    effect_background: str = Form('auto'), effect_size: float = Form(.4), effect_sound: str = Form('')):
+                    effect_background: str = Form('auto'), effect_size: float = Form(.4), effect_sound: str = Form(''),
+                    effect_x: float = Form(50), effect_y: float = Form(100)):
     cfg = load_config()
     export = _studio_export(cfg, vid)
     if not export:
@@ -8254,7 +8265,7 @@ def studio_new_post(request: Request, vid: int, speed: int = Form(20), intro: st
                              description.strip(), trim_start=trim_start, trim_end=trim_end if trim_start or trim_end < info["duration"] - 0.11 else None,
                              draft=action == 'draft', project_id=project_id, edit=dict(music_start=music_start, music_volume=music_volume, fade_in=fade_in,
                              fade_out=fade_out, effect=effect, effect_at=effect_at, effect_duration=effect_duration, text_pos=text_pos, intro_asset=intro_asset, effect_asset=effect_asset, effect_timing=effect_timing,
-                             effect_background=effect_background, effect_size=effect_size, effect_sound=bool(effect_sound)))
+                             effect_background=effect_background, effect_size=effect_size, effect_sound=bool(effect_sound), effect_x=effect_x, effect_y=effect_y))
     except ValueError as exc:
         flash(request, str(exc), "err")
         return RedirectResponse("/videos", status_code=303)
@@ -12388,6 +12399,9 @@ header.top nav.menu > a.active, header.top nav.menu .dd > button.active { backgr
 .effect-workspace{display:grid;grid-template-columns:minmax(240px,.85fr) minmax(0,1.4fr);gap:28px;align-items:start}.effect-settings>label:first-child{margin-top:0}.effect-workspace .effect-preview{margin:0 0 12px}.effect-workspace .effect-preview-actions{flex-wrap:wrap}.effect-workspace .row{grid-template-columns:1fr}.effect-demo{min-width:0}@media(max-width:900px){.effect-workspace{grid-template-columns:1fr}.effect-workspace .row{grid-template-columns:1fr 1fr}}
 
 .effect-video-preview video{width:100%;max-height:50vh;border-radius:10px;background:#0b1421}.effect-placeholder{position:relative;border-radius:10px;overflow:hidden}.effect-placeholder img{display:block;width:100%;opacity:.65}.effect-placeholder p{position:absolute;inset:0;display:grid;place-items:center;background:rgb(0 0 0 / 30%);color:white;text-align:center;padding:24px;margin:0}.effect-upload input[type=file]{width:100%;font-size:12px}.effect-video-preview .hint{margin:12px 0}.music-card>form{margin-top:14px}.music-trash form,.music-trash .overview-row{margin-bottom:0}.music-trash small{color:var(--at-muted)}
+
+/* Positioning is separate from playback so dragging never steals the media controls. */
+.effect-position-controls{margin:16px 0 0;padding:12px;border:1px solid var(--at-line);border-radius:10px}.effect-position-controls legend{font-weight:650;font-size:14px;padding:0 5px}.effect-coordinates{display:grid;grid-template-columns:1fr 1fr;gap:12px}.effect-coordinates label{margin:0}.effect-position-controls .hint{margin:8px 0}.effect-position-controls .actions{gap:8px;flex-wrap:wrap}.effect-position-stage{position:relative;overflow:hidden;border-radius:10px;background:#0b1421}.effect-position-stage>img{position:absolute;width:100%;height:100%;object-fit:fill;user-select:none;pointer-events:none}.effect-position-stage .effect-position-box{position:absolute;min-width:0;min-height:0;margin:0;padding:0;display:grid;place-items:center;background:rgb(37 99 235 / 25%);border:2px solid #fff;box-shadow:0 0 0 1px #2563eb;border-radius:6px;cursor:grab;touch-action:none;user-select:none}.effect-position-box:active{cursor:grabbing}.effect-position-box span{padding:3px 8px;background:#15315b;color:white;border-radius:5px;font-size:12px;white-space:nowrap}.effect-position-box:focus-visible{outline:3px solid #ffbe55;outline-offset:2px}
 ATMOVIO_CSS_EOF
   cat > "$1/atmovio.js" <<'ATMOVIO_JS_EOF'
 /* Atmovio – interakce (Alpine.js komponenty + pomocné funkce). */
@@ -12452,6 +12466,41 @@ ATMOVIO_CSS_EOF
       return {
         effect, at, seconds, playing:false, effectMessage:'', busy:false, previewUrl:'',
         items:options.items||[],asset:options.asset||'',timing:options.timing||'manual',background:options.background||'auto',size:options.size||.4,sound:options.sound!==false,
+        posX:options.x??50,posY:options.y??100,positioning:false,drag:null,frameWidth:options.frameWidth||1920,frameHeight:options.frameHeight||1080,
+        positionChanged(){
+          this.posX=Math.max(0,Math.min(100,Number(this.posX)||0));this.posY=Math.max(0,Math.min(100,Number(this.posY)||0));
+          this.resetVideoPreview();this.positioning=true;
+        },
+        editPosition(){this.stopEffect();this.positioning=true;this.$nextTick(()=>this.$refs.positionStage.scrollIntoView({block:'nearest',behavior:'smooth'}));},
+        positionBox(){
+          const item=this.items.find(item=>item.asset===this.asset);
+          const W=Math.min(1920,this.frameWidth),H=this.frameHeight*W/this.frameWidth,margin=W/120;
+          const mode=this.background==='auto'?item?.background:this.background;
+          const crop=item&&mode===item.background&&mode!=='none'?(item.crop||[0,0,1,1]):[0,0,1,1];
+          const ratio=item?Math.max(2,Math.floor((crop[2]-crop[0])*item.width/2)*2)/Math.max(2,Math.floor((crop[3]-crop[1])*item.height/2)*2):16/9;
+          const width=Math.max(2,Math.floor(Math.min(W*this.size,(H-2*margin)*ratio)/2)*2),height=Math.round(width/ratio/2)*2;
+          const dx=Math.max(0,W-width-2*margin),dy=Math.max(0,H-height-2*margin);
+          return {W,H,width,height,dx,dy,x:margin+dx*this.posX/100,y:margin+dy*this.posY/100};
+        },
+        positionStyle(){const b=this.positionBox();return `left:${b.x/b.W*100}%;top:${b.y/b.H*100}%;width:${b.width/b.W*100}%;height:${b.height/b.H*100}%`;},
+        beginDrag(event){
+          if(event.button!==0)return;
+          this.stopEffect();this.previewUrl='';this.positioning=true;
+          this.drag={id:event.pointerId,x:event.clientX,y:event.clientY,posX:this.posX,posY:this.posY};
+          event.currentTarget.focus({preventScroll:true});event.currentTarget.setPointerCapture(event.pointerId);
+        },
+        moveDrag(event){
+          if(!this.drag||event.pointerId!==this.drag.id)return;
+          const b=this.positionBox(),rect=this.$refs.positionStage.getBoundingClientRect();
+          if(!rect.width||!rect.height)return;
+          this.posX=b.dx?Math.round(Math.max(0,Math.min(100,this.drag.posX+(event.clientX-this.drag.x)/rect.width*b.W/b.dx*100))):50;
+          this.posY=b.dy?Math.round(Math.max(0,Math.min(100,this.drag.posY+(event.clientY-this.drag.y)/rect.height*b.H/b.dy*100))):50;
+        },
+        endDrag(event){if(this.drag?.id===event.pointerId){this.drag=null;if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);}},
+        moveKey(event){
+          const delta={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[event.key];if(!delta)return;
+          event.preventDefault();const step=event.shiftKey?10:1;this.posX+=delta[0]*step;this.posY+=delta[1]*step;this.positionChanged();
+        },
         selectedDuration(){return this.items.find(item=>item.asset===this.asset)?.duration||0;},
         effectTime(mainDuration){
           const item=this.items.find(item=>item.asset===this.asset),length=this.effect==='video' ? (item?.duration||0) : Number(this.seconds)||4;
@@ -12475,11 +12524,11 @@ ATMOVIO_CSS_EOF
           if(!this.asset||this.busy)return;
           const current=++generation;this.busy=true;this.effectMessage='Připravuji ukázku s vaším záběrem…';
           try{
-            const body=new FormData();Object.entries({asset:this.asset,vid:options.vid,background:this.background,size:this.size,sound:this.sound?'1':'',csrf_token:this.$el.closest('form').querySelector('[name=csrf_token]').value}).forEach(([key,value])=>body.append(key,value));
+            const body=new FormData();Object.entries({asset:this.asset,vid:options.vid,background:this.background,size:this.size,x:this.posX,y:this.posY,sound:this.sound?'1':'',csrf_token:this.$el.closest('form').querySelector('[name=csrf_token]').value}).forEach(([key,value])=>body.append(key,value));
             const response=await fetch('/studio/effects/preview',{method:'POST',body,credentials:'same-origin'}),data=await response.json();
             if(current!==generation)return;
             if(!response.ok)throw Error(data.error||'Ukázku nelze připravit.');
-            this.previewUrl=data.url;this.effectMessage='';await this.$nextTick();
+            this.previewUrl=data.url;this.positioning=false;this.effectMessage='';await this.$nextTick();
             if(current!==generation)return;
             const video=this.$refs.effectVideo;video.currentTime=0;
             await video.play().catch(()=>{this.effectMessage='Ukázka je připravená. Spusťte ji v přehrávači.';});
