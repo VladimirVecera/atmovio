@@ -2,6 +2,11 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 6.0.9 – 2026-10-31 – readable online music search
+
+- Fix search-result cards that squeezed track titles into a column of single letters and pushed controls outside the list.
+- Keep the track name, artist and Use button together, with a full-width audio player below. Preserve readable wrapping and contained controls on small screens.
+
 ## 6.0.8 – 2026-10-28 – one source library, direct video editing
 
 - Merge the duplicate Studio source picker into AI Detections and remove its sidebar entry. Existing `/studio` bookmarks redirect to the shared library.

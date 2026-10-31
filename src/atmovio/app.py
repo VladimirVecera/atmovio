@@ -58,7 +58,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "6.0.8"
+APP_VERSION = "6.0.9"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -3756,9 +3756,9 @@ TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<a
    <button type="button" class="btn small sec" x-show="retryable && !busy" x-cloak @click="search()">Zkusit hledání znovu</button>
    <div class="tracks" x-show="items.length">
     <template x-for="t in items" :key="t.id"><div class="track">
-     <audio controls preload="none" :src="t.url" @play="solo($event.target)"></audio>
      <div class="tx"><b x-text="t.title"></b> <span class="hint" x-text="(t.creator ? t.creator + ' · ' : '') + (t.duration_h ? t.duration_h + ' · ' : '') + t.license + (t.genres ? ' · ' + t.genres : '')"></span></div>
      <button type="button" class="btn small" @click="use(t)" :disabled="busy" x-text="t.name ? '✓ Vybráno' : 'Použít'"></button>
+     <audio controls preload="none" :src="t.url" :aria-label="'Přehrát skladbu '+t.title" @play="solo($event.target)"></audio>
     </div></template>
    </div>
   </details></div></section>

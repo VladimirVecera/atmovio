@@ -1,4 +1,4 @@
-# Atmovio 6.0.8
+# Atmovio 6.0.9
 
 Hlavní nabídka má tři místa: **Kamery, AI detekce a Moje videa**. Záznam vyberete v **AI detekci** a tlačítkem **Vytvořit video** otevřete editor. Rozpracované i hotové výsledky jsou v **Moje videa**. Samostatný výběr ve Studiu je sloučený s AI detekcí; staré odkazy dál fungují. Hudba, nastavení a diagnostika jsou ve spodní části nabídky. Technické podklady AI zůstávají v rozbalitelných detailech.
 
@@ -30,7 +30,7 @@ Hudební knihovna nabízí **Smazat skladbu** i **Smazat vše**. Skladby se pře
 
 ## Aktualizace a diagnostika
 
-Ve starší instalaci otevřete **Nastavení → Systém → Aktualizace**, klikněte na **Zkontrolovat teď** a potom **Nainstalovat verzi 6.0.8**. Aktualizátor stáhne instalační soubor z GitHub Releases a ověří kontrolní součet. Stejnou cestou budou dostupné další vydané opravy.
+Ve starší instalaci otevřete **Nastavení → Systém → Aktualizace**, klikněte na **Zkontrolovat teď** a potom **Nainstalovat verzi 6.0.9**. Aktualizátor stáhne instalační soubor z GitHub Releases a ověří kontrolní součet. Stejnou cestou budou dostupné další vydané opravy.
 
 Aktualizátor stáhne Frigate 0.18.2 a ověří kopii konfigurace za běhu staré verze. Před přepnutím zálohuje konfiguraci i zastavenou databázi. Během restartu vznikne krátká mezera v nahrávání. Nová verze musí potvrdit API a obraz dříve dostupných kamer; při selhání se obnoví původní Frigate i jeho databáze. Záznamy na datovém disku se nepřesouvají.
 

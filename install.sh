@@ -477,7 +477,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "6.0.8"
+APP_VERSION = "6.0.9"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -4175,9 +4175,9 @@ TEMPLATES["studio_new.html"] = """{% extends "base.html" %}{% block actions %}<a
    <button type="button" class="btn small sec" x-show="retryable && !busy" x-cloak @click="search()">Zkusit hledání znovu</button>
    <div class="tracks" x-show="items.length">
     <template x-for="t in items" :key="t.id"><div class="track">
-     <audio controls preload="none" :src="t.url" @play="solo($event.target)"></audio>
      <div class="tx"><b x-text="t.title"></b> <span class="hint" x-text="(t.creator ? t.creator + ' · ' : '') + (t.duration_h ? t.duration_h + ' · ' : '') + t.license + (t.genres ? ' · ' + t.genres : '')"></span></div>
      <button type="button" class="btn small" @click="use(t)" :disabled="busy" x-text="t.name ? '✓ Vybráno' : 'Použít'"></button>
+     <audio controls preload="none" :src="t.url" :aria-label="'Přehrát skladbu '+t.title" @play="solo($event.target)"></audio>
     </div></template>
    </div>
   </details></div></section>
@@ -12867,9 +12867,15 @@ header.top nav.menu > a.active, header.top nav.menu .dd > button.active { backgr
 .studio-layout.studio-layout--focused{display:block}.studio-layout--focused .studio-inspector{width:100%;min-height:0;padding:24px}
 .studio-layout--focused .studio-inspector>section:not(#studio-music):not(#studio-intro):not(#studio-effects){max-width:780px;margin:0 auto}
 .music-workspace{display:grid;grid-template-columns:minmax(260px,.85fr) minmax(340px,1.15fr);gap:28px;align-items:start}.music-selection{min-width:0}.music-selection>label:first-child{margin-top:0}
-.music-workspace .finder{margin:0;padding:20px;border:1px solid var(--at-line);border-radius:10px;background:var(--at-surface-2)}.music-workspace .finder>summary{font-size:16px;font-weight:650}
+.music-workspace .finder{min-width:0;margin:0;padding:20px;border:1px solid var(--at-line);border-radius:10px;background:var(--at-surface-2)}.music-workspace .finder>summary{font-size:16px;font-weight:650}
 .music-workspace .music-search-row{display:grid;grid-template-columns:minmax(0,1fr) 130px auto;gap:10px;align-items:end}.music-workspace .music-search-fields .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.music-workspace .tracks{max-height:440px;overflow:auto}.music-workspace .track{grid-template-columns:minmax(0,1fr) auto}.music-workspace .track audio{grid-column:1/-1;width:100%;margin:4px 0}.music-workspace .inline-help{margin:16px 0}.music-workspace .music-instruments{border:0;padding:0;margin:12px 0}
+/* Each search result owns a full-width player below its title and action. */
+.music-workspace .tracks{max-height:440px;overflow:auto;min-width:0}
+.music-workspace .track{display:grid;grid-template-columns:minmax(0,1fr) auto;min-width:0;gap:8px 12px;padding:12px}
+.music-workspace .track .tx{overflow-wrap:anywhere}.music-workspace .track .tx :is(b,.hint){display:block}
+.music-workspace .track .btn{align-self:start;white-space:nowrap}
+.music-workspace .track audio{display:block;grid-column:1/-1;width:100%;min-width:0;height:44px;margin:0}
+.music-workspace .inline-help{margin:16px 0}.music-workspace .music-instruments{border:0;padding:0;margin:12px 0}
 .studio-inspector .music-selection audio{height:54px;margin:20px 0}.intro-edit-grid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(260px,.7fr);gap:28px;align-items:start}.intro-canvas{border-radius:10px;overflow:hidden;background:#0b1421;color:#fff;min-height:220px;display:grid;align-items:center;text-align:center}.intro-canvas p{padding:24px}.intro-canvas .intro-preview{margin:0;width:100%;max-height:50dvh;object-fit:contain}.intro-edit-grid input[type=file]{width:100%;font-size:12px}
 .studio-project .editor-timeline{margin-top:8px;padding:12px}.studio-project .editor-timeline .trim-rail{margin:10px 0}.studio-project .editor-timeline .hint{margin:6px 0 0}.studio-project .editor-timeline .section-head{margin-bottom:8px}
 /* The generic form rule has intentionally high specificity; these compact date controls override it. */
