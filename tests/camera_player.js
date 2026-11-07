@@ -70,6 +70,9 @@ events['alpine:init']();
   p.from=200;p.to=500;p.selectHandle('from',2000);assert.equal(p.from,2000);assert.ok(p.to>p.from);
   p.selectHandle('from',-100);assert.equal(p.from,1000);
   p.selectHandle('to',100000);assert.equal(p.to,87400);
+  p.period='24h';p.from=1500;p.to=1600;p.start=2000;
+  await p.previewSelection();assert.equal(p.period,'day');assert.match(requests.at(-1),/timeline\?day=/);
+  assert.equal(p.stopAt,1600);assert.equal(seeks.at(-1),1500);
   p.seek=originalSeek;
   p.destroy();
   class FakeHls{static isSupported(){return true;}static Events={ERROR:'error'};loadSource(){}attachMedia(){}on(){}destroy(){destroyed++;}}

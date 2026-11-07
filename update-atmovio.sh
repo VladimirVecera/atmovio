@@ -12993,7 +12993,7 @@ ATMOVIO_CSS_EOF
           return 'Vybráno '+Math.floor((this.to-this.from)/60)+' min '+Math.round((this.to-this.from)%60)+' s';
         },
         async previewSelection() {if(this.validSelection()){
-          if(this.from<this.start||this.from>=this.end){this.day=new Intl.DateTimeFormat('sv-SE',{timeZone:this.tz,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(this.from*1000));await this.loadDay();}
+          if(this.from<this.start||this.from>=this.end){this.period='day';this.day=new Intl.DateTimeFormat('sv-SE',{timeZone:this.tz,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(this.from*1000));await this.loadDay();}
           this.stopAt=this.to;this.seek(this.from,true);
         }}
       };
