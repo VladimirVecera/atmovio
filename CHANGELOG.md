@@ -2,6 +2,13 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 6.0.10 – 2026-11-07 – clear clip actions and reliable range saving
+
+- Open camera playback in a larger view with the timeline and clip controls visible together. The size toggle remembers the chosen layout.
+- Give video actions solid colors, equal spacing and an aligned expandable grid; distinguish deletion in red.
+- Save OD–DO selections across normal sub-second recording seams without adding them into a false outage.
+- Show real missing ranges with a direct action to save available footage, preserving the chosen times and metadata request. Recheck availability before exporting.
+
 ## 6.0.9 – 2026-10-31 – readable online music search
 
 - Fix search-result cards that squeezed track titles into a column of single letters and pushed controls outside the list.

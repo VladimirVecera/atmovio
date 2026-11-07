@@ -28,11 +28,17 @@ events['alpine:init']();
   p.seek(4990);p.nextSegment();assert.equal(p.cursor,8560.1);
   p.playSpans=[[1000,2000],[2500,3000]];assert.equal(p.mediaOffset(2600),1100);assert.equal(p.wallTime(1100),2600);
   p.from=1500;p.to=2600;p.spans=[[1000,2000],[2500,3000]];assert.equal(p.selectionHasGaps(),true);
+  p.from=1000;p.to=2000;p.spans=Array.from({length:100},(_,i)=>[1000+i*10,1000+(i+1)*10-.4]);
+  assert.equal(p.selectionHasGaps(),false); // Normal segment seams do not accumulate into an outage.
+  p.spans=[[1000,1400],[1415,2000]];assert.equal(p.selectionHasGaps(),true);
+  p.to=11000;assert.equal(p.selectionHasGaps(),false); // Server checks the complete multi-day range.
   p.from=1500;p.to=1600;
   assert.equal(p.from,1500);assert.equal(p.to,1600);
   p.from=1000;p.to=22601;assert.equal(p.validSelection(),false);
   p.tz='Europe/Prague';assert.match(p.fullStamp(Date.parse('2026-10-28T05:37:42Z')/1000),/28\.\s?10\.\s?2026.*06:37:42/);
-  const size={};p.$el={getBoundingClientRect:()=>({top:180}),style:{setProperty:(k,v)=>size[k]=v}};
+  let expandedClass=false;
+  const workspace={classList:{toggle:(_name,value)=>expandedClass=value,remove:()=>expandedClass=false}};
+  const size={};p.$el={closest:()=>workspace,getBoundingClientRect:()=>({top:180}),style:{setProperty:(k,v)=>size[k]=v}};
   p.$refs.transport={offsetHeight:200};context.window.innerHeight=720;context.window.scrollY=0;p.fitPlayer();
   assert.equal(size['--player-height'],'322px');
   video.videoWidth=1920;video.videoHeight=1080;p.fitPlayer();assert.equal(Number(size['--player-aspect']),16/9);
@@ -43,7 +49,12 @@ events['alpine:init']();
 
   context.window.innerHeight=600;p.fitPlayer();assert.equal(size['--player-height'],'202px');
   p.$el.getBoundingClientRect=()=>({top:80});context.window.scrollY=100;p.fitPlayer();assert.equal(size['--player-height'],'202px');
+  p.$refs.toolbar={offsetHeight:40};p.fitPlayer();assert.equal(size['--player-height'],'162px');
+  p.applyLayout();assert.equal(expandedClass,true);
+  p.toggleExpanded();assert.equal(p.expanded,false);assert.equal(expandedClass,false);
+  p.toggleExpanded();assert.equal(p.expanded,true);assert.equal(expandedClass,true);
   p.destroy();
+  assert.equal(expandedClass,false);
   class FakeHls{static isSupported(){return true;}static Events={ERROR:'error'};loadSource(){}attachMedia(){}on(){}destroy(){destroyed++;}}
   context.Hls=context.window.Hls=FakeHls;
   const h=components.cameraPlayer('east');h.$refs={video};h.goLive();h.destroy();

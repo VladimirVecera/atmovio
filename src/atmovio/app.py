@@ -58,7 +58,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "6.0.9"
+APP_VERSION = "6.0.10"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -3520,13 +3520,22 @@ TEMPLATES["video_status.html"] = """<section class="video-status" aria-label="St
 
 TEMPLATES["recording_range.html"] = """{% extends "base.html" %}{% block actions %}<a class="btn small sec" href="/camera/{{ camera }}">← Kamera</a>{% endblock %}{% block content %}
 <section class="card recording-editor" x-data="clipRange({{ from_time|tojson|forceescape }}, {{ to_time|tojson|forceescape }}, {{ clip_tz|tojson|forceescape }})">
-<div class="section-head"><h2>Vyber záznam</h2><span class="badge info">OD–DO · nejvýše 2 hodiny</span></div>
+<div class="section-head"><h2>Vyber záznam</h2><span class="badge info">OD–DO · nejvýše 6 hodin</span></div>
 <form method="get" class="clip-range-form"><div class="clip-range-fields"><div><label>Od</label><input type="datetime-local" step="1" name="from_time" x-model="from" value="{{ from_time }}" @change="measure()" required></div><div><label>Do</label><input type="datetime-local" step="1" name="to_time" x-model="to" value="{{ to_time }}" @change="measure()" required></div><div><label>Minut</label><input type="number" min="0.02" max="360" step="any" x-model="minutes" @input="resize()" required></div></div><button class="btn sec">Rychlý náhled</button><span class="hint">Časové pásmo {{ clip_tz }}</span></form>
 {% if preview %}<div class="recording-preview"><video id="clip" controls playsinline preload="metadata" src="/clip/{{ camera }}.mp4?start={{ start }}&end={{ end }}"></video>{% include "recording_speed.html" %}<p class="hint">Průběžný náhled: délka v přehrávači se může teprve načítat. Pro celý soubor použij přípravu níže.</p></div>{% endif %}
 <form method="post" class="recording-create"><input type="hidden" name="from_time" x-model="from" value="{{ from_time }}"><input type="hidden" name="to_time" x-model="to" value="{{ to_time }}">
 <label class="check"><input type="checkbox" name="metadata" value="1" checked> Navrhnout nadpis a popis pomocí AI</label><p class="hint">Po přípravě se 9 snímků ze zvoleného videa odešle nastavenému poskytovateli AI.</p>
 <button class="btn" data-busy="Připravuji záznam">Uložit rozsah do AI videí</button><span class="hint">Video se uloží do AI videí. Tam ho přehraješ, stáhneš a upravíš jeho nadpis i popis.</span></form></section>
 {% endblock %}"""
+
+TEMPLATES["recording_gaps.html"] = """{% extends "base.html" %}{% block content %}
+<section class="card recording-gap-review">
+<span class="badge warn">Část záznamu není dostupná</span><h2>Uložit dostupné části?</h2>
+<p>{{ cam(camera) }} · {{ selection_h }}</p><p>Ve vybraném úseku chybí celkem <strong>{{ missing_h }}</strong>. Můžete uložit zbytek do jednoho klipu; výpadky se přeskočí.</p>
+<details class="inline-help"><summary>Které části chybí</summary><ul>{% for gap in gaps_h %}<li>{{ gap }}</li>{% endfor %}{% if more_gaps %}<li>A dalších {{ more_gaps }} výpadků.</li>{% endif %}</ul></details>
+<form method="post" action="/camera/{{ camera }}/recording"><input type="hidden" name="from_time" value="{{ from_time }}"><input type="hidden" name="to_time" value="{{ to_time }}"><input type="hidden" name="allow_gaps" value="1">{% if metadata %}<input type="hidden" name="metadata" value="1">{% endif %}
+<div class="actions"><button class="btn" data-busy="Ukládám klip">Uložit dostupné části</button><a class="btn sec" href="{{ back_url }}">Upravit výběr OD–DO</a></div></form>
+</section>{% endblock %}"""
 
 TEMPLATES["recording_speed.html"] = """<div class="recording-speeds" aria-label="Rychlost náhledu"><span>Rychlost</span>{% for rate in (1,2,4,8,16) %}<button class="btn small sec" type="button" aria-pressed="{{ 'true' if rate == 1 else 'false' }}" onclick="swRecordingSpeed(this, {{ rate }})">{{ rate }}×</button>{% endfor %}</div>"""
 
@@ -3562,14 +3571,15 @@ TEMPLATES["live.html"] = """{% extends "base.html" %}{% block actions %}<a class
 
 TEMPLATES["camera.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a href="/live" class="btn sec">← Kamery</a><a class="ico-btn" href="/cameras/edit/{{ camera }}" aria-label="Nastavení kamery">{{ icons.cog|safe }}</a></div>{% endblock %}{% block content %}
 <section class="camera-player" x-data='cameraPlayer({{ camera|tojson }})'>
+<div class="player-toolbar" x-ref="toolbar"><strong>{{ cam(camera) }}</strong><div class="actions"><button type="button" class="btn small sec" @click="toggleExpanded()" :aria-pressed="expanded" x-text="expanded ? 'Zmenšit přehrávač' : 'Zvětšit přehrávač'">Zmenšit přehrávač</button><a class="btn small sec" href="/live">Kamery</a></div></div>
 <div class="player-stage"><video x-ref="video" controls autoplay muted playsinline poster="/live/{{ camera }}.jpg?h=1080" @loadedmetadata="fitPlayer()" @resize="fitPlayer()" @timeupdate="tick()" @ended="nextSegment()" @error="mediaError()"></video><div class="player-overlay"><span class="player-mode" x-text="live ? '● ŽIVĚ' : 'ZÁZNAM'">● ŽIVĚ</span><time class="player-clock" x-text="fullStamp(cursor)" :title="live ? 'Aktuální čas · '+tz : 'Čas přehrávaného záznamu · '+tz"></time></div></div>
 <div class="player-transport" x-ref="transport">
 <div class="player-controls"><div class="actions"><button class="btn small sec" type="button" @click="step(-30)">−30 s</button><button class="btn small sec" type="button" @click="step(30)">+30 s</button><button type="button" class="btn small" @click="goLive()" :disabled="live">Živě</button></div><label class="date-pick">Den <input type="date" x-model="day" @change="loadDay()" aria-label="Den záznamu"></label></div>
 <div class="timeline-panel">
 <div class="recording-track" @click="seekAt($event)"><template x-for="(span,i) in spans" :key="i"><span class="recorded-span" :style="spanStyle(span)"></span></template><span class="selected-span" x-show="from!==null && to!==null" :style="spanStyle([from,to])"></span><span class="time-cursor" :style="'left:'+percent(cursor)+'%'"></span><input class="timeline-seek" type="range" :min="start" :max="end-1" step="1" :value="cursor" @click.stop @input="scrub=Number($event.target.value)" @change="seek(Number($event.target.value));scrub=null" aria-label="Přejít na čas v záznamu"></div>
 <div class="timeline-labels"><span x-text="stamp(start)"></span><span x-text="scrub===null ? 'Modře je dostupný záznam' : fullStamp(scrub)"></span><span x-text="stamp(end-1)"></span></div>
-<div class="clip-selection"><div class="clip-marker"><button type="button" class="btn sec" @click="mark('from')">Označit OD <kbd>I</kbd></button><span x-text="from===null ? '—' : fullStamp(from)"></span></div><div class="clip-marker"><button type="button" class="btn sec" @click="mark('to')">Označit DO <kbd>O</kbd></button><span x-text="to===null ? '—' : fullStamp(to)"></span></div><button type="button" class="text-btn" @click="from=null;to=null" x-show="from!==null || to!==null">Zrušit výběr</button></div>
-<form method="post" action="/camera/{{ camera }}/recording" class="clip-save"><input type="hidden" name="from_time" :value="from===null ? '' : new Date(from*1000).toISOString()"><input type="hidden" name="to_time" :value="to===null ? '' : new Date(to*1000).toISOString()"><span class="hint" x-text="selectionLabel()"></span><label class="check" x-show="selectionHasGaps()"><input type="checkbox" name="allow_gaps" value="1">Uložit dostupné části a přeskočit výpadky</label><div class="actions"><button type="button" class="btn sec" :disabled="!validSelection()" @click="previewSelection()">Přehrát výběr</button><button class="btn" :disabled="!validSelection()">Uložit klip</button></div></form>
+<div class="clip-selection"><div class="clip-marker"><button type="button" class="btn sec" @click="mark('from')">Označit OD <kbd>I</kbd></button><span x-text="from===null ? '—' : fullStamp(from)"></span></div><div class="clip-marker"><button type="button" class="btn sec" @click="mark('to')">Označit DO <kbd>O</kbd></button><span x-text="to===null ? '—' : fullStamp(to)"></span></div><button type="button" class="btn small sec" @click="from=null;to=null" x-show="from!==null || to!==null">Zrušit výběr</button></div>
+<form method="post" action="/camera/{{ camera }}/recording" class="clip-save"><input type="hidden" name="from_time" :value="from===null ? '' : new Date(from*1000).toISOString()"><input type="hidden" name="to_time" :value="to===null ? '' : new Date(to*1000).toISOString()"><div class="clip-save-info"><span class="hint" x-text="selectionLabel()"></span><span class="hint" x-show="selectionHasGaps()" x-cloak>Ve výběru je výpadek. Při uložení nabídneme dostupné části.</span></div><div class="actions"><button type="button" class="btn sec" :disabled="!validSelection()" @click="previewSelection()">Přehrát výběr</button><button class="btn" :disabled="!validSelection()">Uložit klip</button></div></form>
 <p class="player-notice" role="status" x-show="message" x-text="message"></p></div></div></section>
 <details class="advanced-panel"><summary>Další možnosti</summary><a href="/camera/{{ camera }}/recording">Zadat přesné datum a čas</a> · <a href="{{ frigate_ui }}" target="_blank" rel="noopener">Otevřít Frigate</a></details>{% endblock %}"""
 
@@ -3592,9 +3602,9 @@ TEMPLATES["youtube.html"] = """{% extends "base.html" %}{% block actions %}<a cl
 <div class="b"><div class="title">{{ short_title(s.title or s.name,s.camera) }}{% if s.auto %} <span class="badge ok">auto</span>{% endif %}</div>
 <p class="video-youtube-state" data-youtube-status="{{ s.yt_live.status }}"><span class="badge {{ 'ok' if s.yt_live.status=='done' else ('err' if s.yt_live.status=='failed' else 'info') }}">{{ s.yt_live.label }}</span></p>
 <dl class="facts"><dt>Kamera</dt><dd>{{ s.camera_label }}</dd><dt>Úpravy</dt><dd>{{ s.speed }}×{% if s.intro %} · intro{% endif %}{% if s.music %} · hudba{% endif %}{% if s.text %} · text{% endif %}</dd><dt>Vytvořeno</dt><dd>{{ s.created|czdt }}</dd></dl>
-<div class="acts"><a class="btn small" href="/studio/v/{{ s.id }}">Otevřít</a>{% if s.yt_live.url %}<a class="btn small sec" href="{{ s.yt_live.url }}" target="_blank" rel="noopener">Otevřít na YouTube ↗</a>{% elif s.ready and s.yt_live.status in ('not_uploaded','failed') %}<a class="btn small sec" href="/studio/v/{{ s.id }}#youtube">{{ 'Zkusit nahrání znovu' if s.yt_live.status=='failed' else 'Nahrát na YouTube' }}</a>{% endif %}{% if s.ready %}<a class="btn small sec" href="/studio/v/{{ s.id }}/download">⬇ Stáhnout</a>{% endif %}
+<div class="acts video-card-actions"><a class="btn small" href="/studio/v/{{ s.id }}">Otevřít</a>{% if s.yt_live.url %}<a class="btn small sec" href="{{ s.yt_live.url }}" target="_blank" rel="noopener">Otevřít na YouTube ↗</a>{% elif s.ready and s.yt_live.status in ('not_uploaded','failed') %}<a class="btn small sec" href="/studio/v/{{ s.id }}#youtube">{{ 'Zkusit nahrání znovu' if s.yt_live.status=='failed' else 'Nahrát na YouTube' }}</a>{% endif %}{% if s.ready %}<a class="btn small sec" href="/studio/v/{{ s.id }}/download">⬇ Stáhnout</a>{% endif %}
 {% if s.status == 'ready' and not s.ready %}<a class="btn small sec" href="/studio/new/{{ s.export_id }}?again={{ s.id }}">Vytvořit znovu</a>{% endif %}
-<details class="more-menu"><summary aria-label="Další možnosti">•••</summary><a href="/studio/new/{{ s.export_id }}?again={{ s.id }}">Znovu upravit</a><form method="post" action="/studio/v/{{ s.id }}/delete" onsubmit="return confirm('Smazat video ze studia?')"><button class="btn small sec">Smazat</button></form></details></div></div></div>{% endfor %}
+<details class="more-menu"><summary>Další akce</summary><div class="more-menu-actions"><a class="btn small sec" href="/studio/new/{{ s.export_id }}?again={{ s.id }}">Znovu upravit</a><form method="post" action="/studio/v/{{ s.id }}/delete" onsubmit="return confirm('Smazat video ze studia?')"><button class="btn small danger">Smazat video</button></form></div></details></div></div></div>{% endfor %}
 </div>
 
 {% endblock %}"""
@@ -3621,7 +3631,7 @@ TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block actions %}<div c
 <nav class="tabs"><a class="active" href="/moments">Uložená videa</a><a href="/moments/discover">Další nálezy AI</a></nav>
 {% include "video_activity.html" %}
 <div class="section-head video-library-head"><div><h2>Záznamy k úpravě <span class="badge ok">{{ videos|length }}</span></h2><p class="hint">Klipy z AI i ručního výběru, od nejnovějšího. Vytvořit video otevře editor; výsledek najdete v Moje videa.</p></div>
-{% if total_exports %}<details class="more-menu"><summary>Další možnosti</summary><a href="/videos/delete-all">{{ 'Průběh mazání' if deleting else 'Smazat uložené klipy' }}</a></details>{% endif %}</div>
+{% if total_exports %}<details class="more-menu library-actions"><summary>Správa klipů</summary><div class="more-menu-actions"><a class="btn small danger" href="/videos/delete-all">{{ 'Průběh mazání' if deleting else 'Smazat uložené klipy' }}</a></div></details>{% endif %}</div>
 {% if not videos %}<div class="card empty-videos"><h3>Zatím žádné hotové video</h3><p>Po dokončení se zde objeví celé video události. Vyberte <a href="/live">kameru a část záznamu</a>, nebo zapněte <a href="/ai#kamery">hlídání oblohy</a>.</p></div>{% endif %}
 <div class="gallery videos">
 {% for v in videos %}<div class="shot video" id="v{{ v.id }}">
@@ -3631,7 +3641,7 @@ TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block actions %}<div c
 {% for link in v.studio_links %}<a class="video-next-state {{ link.tone }}" href="/studio/v/{{ link.id }}">{{ link.label }} →</a>{% endfor %}
 {% if v.metadata_description %}<p class="desc2">{{ v.metadata_description }}</p>{% endif %}
 <dl class="facts"><dt>Kamera</dt><dd>{{ cam(v.camera) }}</dd><dt>Úsek</dt><dd>{{ v.range_h }}</dd></dl>
-<div class="acts"><a class="btn small" href="/studio/new/{{ v.id }}">Vytvořit video</a><details class="more-menu"><summary aria-label="Další možnosti videa">•••</summary><a href="/videos/{{ v.id }}/download">⬇ Stáhnout MP4</a><a class="btn small sec" href="/recording/{{ v.id }}">Detail a text AI</a>{% if v.detection_id %}<a class="btn small sec" href="/detection/{{ v.detection_id }}">Detekce</a>{% endif %}<form method="post" action="/videos/{{ v.id }}/delete" onsubmit="return confirm('Smazat celé AI video včetně jeho pracovních částí?')"><button class="btn small sec">Smazat</button></form></details></div></div></div>{% endfor %}
+<div class="acts video-card-actions"><a class="btn small" href="/studio/new/{{ v.id }}">Vytvořit video</a><details class="more-menu"><summary>Další akce</summary><div class="more-menu-actions"><a class="btn small sec" href="/videos/{{ v.id }}/download">Stáhnout MP4</a><a class="btn small sec" href="/recording/{{ v.id }}">Detail a text AI</a>{% if v.detection_id %}<a class="btn small sec" href="/detection/{{ v.detection_id }}">Detekce</a>{% endif %}<form method="post" action="/videos/{{ v.id }}/delete" onsubmit="return confirm('Smazat celé AI video včetně jeho pracovních částí?')"><button class="btn small danger">Smazat klip</button></form></div></details></div></div></div>{% endfor %}
 </div><p class="hint">Uchovávání klipů a výstupů: {{ keep_days }} dní. <a href="/videos/settings">Změnit nastavení</a></p>
 {% endblock %}"""
 
@@ -4649,6 +4659,21 @@ def camera_recording_spans(cfg, camera, start, end):
         else:
             spans.append([a, b])
     return spans
+
+
+def recording_gaps(spans, start, end):
+    """Ignore sub-second segment seams individually, not by accumulated duration."""
+    gaps, cursor = [], start
+    for a, b in sorted(spans):
+        a, b = max(start, a), min(end, b)
+        if b <= a:
+            continue
+        if a - cursor > 1:
+            gaps.append([cursor, a])
+        cursor = max(cursor, b)
+    if end - cursor > 1:
+        gaps.append([cursor, end])
+    return gaps
 
 
 @app.get('/camera/{camera}/timeline')
@@ -5873,6 +5898,18 @@ def clip_local(cfg, ts):
     return dt.datetime.fromtimestamp(ts, ZoneInfo(cfg["tz"])).strftime("%Y-%m-%dT%H:%M:%S")
 
 
+def clip_range_label(cfg, start, end):
+    tz = ZoneInfo(cfg['tz'])
+    first, last = (dt.datetime.fromtimestamp(t, tz) for t in (start, end))
+    end_format = '%H:%M:%S' if first.date() == last.date() else '%d. %m. %Y %H:%M:%S'
+    return first.strftime('%d. %m. %Y %H:%M:%S') + ' – ' + last.strftime(end_format)
+
+
+def clip_duration_label(seconds):
+    seconds = math.ceil(max(0, seconds))
+    return f'{seconds // 60} min {seconds % 60} s' if seconds >= 60 else f'{seconds} s'
+
+
 def evaluation_clip_bounds(cfg, e, before, after):
     center = eval_epoch(cfg, e["ts"])
     first = last = center
@@ -6235,15 +6272,21 @@ def recording_range_create(request: Request, camera: str, from_time: str = Form(
             raise ValueError("Vyber dokončený záznam; čas DO nesmí být v budoucnosti.")
         if not storage_ready():
             raise ValueError("Disk pro ukládání není dostupný.")
-        state = recording_state(cfg, camera, start, end)
-        if state != "ok":
-            raise ValueError("Frigate neodpovídá." if state == "offline" else "V tomto rozsahu není dostupný záznam.")
-        spans = camera_recording_spans(cfg, camera, start, end)
+        try:
+            spans = camera_recording_spans(cfg, camera, start, end)
+        except Exception:
+            raise ValueError("Záznamy se nepodařilo ověřit. Zkus uložení znovu za chvíli.") from None
         if not spans:
             raise ValueError('Vybraný záznam už není dostupný.')
-        if not allow_gaps and sum(b-a for a,b in spans) < end-start-1:
-            flash(request, 'Ve výběru chybí část záznamu. Zkrať výběr nebo potvrď uložení dostupných částí.', 'warn')
-            return RedirectResponse(f'/camera/{camera}?from={int(start)}&to={int(end)}', status_code=303)
+        gaps = recording_gaps(spans, start, end)
+        if gaps and allow_gaps != '1':
+            return render(request, 'recording_gaps.html', 'Uložit dostupný záznam', camera=camera,
+                          from_time=from_time, to_time=to_time, metadata=bool(metadata),
+                          selection_h=clip_range_label(cfg, start, end),
+                          missing_h=clip_duration_label(sum(b-a for a,b in gaps)),
+                          gaps_h=[clip_range_label(cfg, a, b) for a,b in gaps[:5]],
+                          more_gaps=max(0, len(gaps)-5),
+                          back_url=f'/camera/{camera}?from={start:.3f}&to={end:.3f}')
         name = "Výběr ze záznamu"
         fid = frigate_start_export(cfg, camera, start, end, name, "realtime")
         eid = record_export(cfg, fid, None, camera, name, start, end)

@@ -118,7 +118,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "6.0.9"
+APP_VERSION = "6.0.10"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -3580,13 +3580,22 @@ TEMPLATES["video_status.html"] = """<section class="video-status" aria-label="St
 
 TEMPLATES["recording_range.html"] = """{% extends "base.html" %}{% block actions %}<a class="btn small sec" href="/camera/{{ camera }}">← Kamera</a>{% endblock %}{% block content %}
 <section class="card recording-editor" x-data="clipRange({{ from_time|tojson|forceescape }}, {{ to_time|tojson|forceescape }}, {{ clip_tz|tojson|forceescape }})">
-<div class="section-head"><h2>Vyber záznam</h2><span class="badge info">OD–DO · nejvýše 2 hodiny</span></div>
+<div class="section-head"><h2>Vyber záznam</h2><span class="badge info">OD–DO · nejvýše 6 hodin</span></div>
 <form method="get" class="clip-range-form"><div class="clip-range-fields"><div><label>Od</label><input type="datetime-local" step="1" name="from_time" x-model="from" value="{{ from_time }}" @change="measure()" required></div><div><label>Do</label><input type="datetime-local" step="1" name="to_time" x-model="to" value="{{ to_time }}" @change="measure()" required></div><div><label>Minut</label><input type="number" min="0.02" max="360" step="any" x-model="minutes" @input="resize()" required></div></div><button class="btn sec">Rychlý náhled</button><span class="hint">Časové pásmo {{ clip_tz }}</span></form>
 {% if preview %}<div class="recording-preview"><video id="clip" controls playsinline preload="metadata" src="/clip/{{ camera }}.mp4?start={{ start }}&end={{ end }}"></video>{% include "recording_speed.html" %}<p class="hint">Průběžný náhled: délka v přehrávači se může teprve načítat. Pro celý soubor použij přípravu níže.</p></div>{% endif %}
 <form method="post" class="recording-create"><input type="hidden" name="from_time" x-model="from" value="{{ from_time }}"><input type="hidden" name="to_time" x-model="to" value="{{ to_time }}">
 <label class="check"><input type="checkbox" name="metadata" value="1" checked> Navrhnout nadpis a popis pomocí AI</label><p class="hint">Po přípravě se 9 snímků ze zvoleného videa odešle nastavenému poskytovateli AI.</p>
 <button class="btn" data-busy="Připravuji záznam">Uložit rozsah do AI videí</button><span class="hint">Video se uloží do AI videí. Tam ho přehraješ, stáhneš a upravíš jeho nadpis i popis.</span></form></section>
 {% endblock %}"""
+
+TEMPLATES["recording_gaps.html"] = """{% extends "base.html" %}{% block content %}
+<section class="card recording-gap-review">
+<span class="badge warn">Část záznamu není dostupná</span><h2>Uložit dostupné části?</h2>
+<p>{{ cam(camera) }} · {{ selection_h }}</p><p>Ve vybraném úseku chybí celkem <strong>{{ missing_h }}</strong>. Můžete uložit zbytek do jednoho klipu; výpadky se přeskočí.</p>
+<details class="inline-help"><summary>Které části chybí</summary><ul>{% for gap in gaps_h %}<li>{{ gap }}</li>{% endfor %}{% if more_gaps %}<li>A dalších {{ more_gaps }} výpadků.</li>{% endif %}</ul></details>
+<form method="post" action="/camera/{{ camera }}/recording"><input type="hidden" name="from_time" value="{{ from_time }}"><input type="hidden" name="to_time" value="{{ to_time }}"><input type="hidden" name="allow_gaps" value="1">{% if metadata %}<input type="hidden" name="metadata" value="1">{% endif %}
+<div class="actions"><button class="btn" data-busy="Ukládám klip">Uložit dostupné části</button><a class="btn sec" href="{{ back_url }}">Upravit výběr OD–DO</a></div></form>
+</section>{% endblock %}"""
 
 TEMPLATES["recording_speed.html"] = """<div class="recording-speeds" aria-label="Rychlost náhledu"><span>Rychlost</span>{% for rate in (1,2,4,8,16) %}<button class="btn small sec" type="button" aria-pressed="{{ 'true' if rate == 1 else 'false' }}" onclick="swRecordingSpeed(this, {{ rate }})">{{ rate }}×</button>{% endfor %}</div>"""
 
@@ -3622,14 +3631,15 @@ TEMPLATES["live.html"] = """{% extends "base.html" %}{% block actions %}<a class
 
 TEMPLATES["camera.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a href="/live" class="btn sec">← Kamery</a><a class="ico-btn" href="/cameras/edit/{{ camera }}" aria-label="Nastavení kamery">{{ icons.cog|safe }}</a></div>{% endblock %}{% block content %}
 <section class="camera-player" x-data='cameraPlayer({{ camera|tojson }})'>
+<div class="player-toolbar" x-ref="toolbar"><strong>{{ cam(camera) }}</strong><div class="actions"><button type="button" class="btn small sec" @click="toggleExpanded()" :aria-pressed="expanded" x-text="expanded ? 'Zmenšit přehrávač' : 'Zvětšit přehrávač'">Zmenšit přehrávač</button><a class="btn small sec" href="/live">Kamery</a></div></div>
 <div class="player-stage"><video x-ref="video" controls autoplay muted playsinline poster="/live/{{ camera }}.jpg?h=1080" @loadedmetadata="fitPlayer()" @resize="fitPlayer()" @timeupdate="tick()" @ended="nextSegment()" @error="mediaError()"></video><div class="player-overlay"><span class="player-mode" x-text="live ? '● ŽIVĚ' : 'ZÁZNAM'">● ŽIVĚ</span><time class="player-clock" x-text="fullStamp(cursor)" :title="live ? 'Aktuální čas · '+tz : 'Čas přehrávaného záznamu · '+tz"></time></div></div>
 <div class="player-transport" x-ref="transport">
 <div class="player-controls"><div class="actions"><button class="btn small sec" type="button" @click="step(-30)">−30 s</button><button class="btn small sec" type="button" @click="step(30)">+30 s</button><button type="button" class="btn small" @click="goLive()" :disabled="live">Živě</button></div><label class="date-pick">Den <input type="date" x-model="day" @change="loadDay()" aria-label="Den záznamu"></label></div>
 <div class="timeline-panel">
 <div class="recording-track" @click="seekAt($event)"><template x-for="(span,i) in spans" :key="i"><span class="recorded-span" :style="spanStyle(span)"></span></template><span class="selected-span" x-show="from!==null && to!==null" :style="spanStyle([from,to])"></span><span class="time-cursor" :style="'left:'+percent(cursor)+'%'"></span><input class="timeline-seek" type="range" :min="start" :max="end-1" step="1" :value="cursor" @click.stop @input="scrub=Number($event.target.value)" @change="seek(Number($event.target.value));scrub=null" aria-label="Přejít na čas v záznamu"></div>
 <div class="timeline-labels"><span x-text="stamp(start)"></span><span x-text="scrub===null ? 'Modře je dostupný záznam' : fullStamp(scrub)"></span><span x-text="stamp(end-1)"></span></div>
-<div class="clip-selection"><div class="clip-marker"><button type="button" class="btn sec" @click="mark('from')">Označit OD <kbd>I</kbd></button><span x-text="from===null ? '—' : fullStamp(from)"></span></div><div class="clip-marker"><button type="button" class="btn sec" @click="mark('to')">Označit DO <kbd>O</kbd></button><span x-text="to===null ? '—' : fullStamp(to)"></span></div><button type="button" class="text-btn" @click="from=null;to=null" x-show="from!==null || to!==null">Zrušit výběr</button></div>
-<form method="post" action="/camera/{{ camera }}/recording" class="clip-save"><input type="hidden" name="from_time" :value="from===null ? '' : new Date(from*1000).toISOString()"><input type="hidden" name="to_time" :value="to===null ? '' : new Date(to*1000).toISOString()"><span class="hint" x-text="selectionLabel()"></span><label class="check" x-show="selectionHasGaps()"><input type="checkbox" name="allow_gaps" value="1">Uložit dostupné části a přeskočit výpadky</label><div class="actions"><button type="button" class="btn sec" :disabled="!validSelection()" @click="previewSelection()">Přehrát výběr</button><button class="btn" :disabled="!validSelection()">Uložit klip</button></div></form>
+<div class="clip-selection"><div class="clip-marker"><button type="button" class="btn sec" @click="mark('from')">Označit OD <kbd>I</kbd></button><span x-text="from===null ? '—' : fullStamp(from)"></span></div><div class="clip-marker"><button type="button" class="btn sec" @click="mark('to')">Označit DO <kbd>O</kbd></button><span x-text="to===null ? '—' : fullStamp(to)"></span></div><button type="button" class="btn small sec" @click="from=null;to=null" x-show="from!==null || to!==null">Zrušit výběr</button></div>
+<form method="post" action="/camera/{{ camera }}/recording" class="clip-save"><input type="hidden" name="from_time" :value="from===null ? '' : new Date(from*1000).toISOString()"><input type="hidden" name="to_time" :value="to===null ? '' : new Date(to*1000).toISOString()"><div class="clip-save-info"><span class="hint" x-text="selectionLabel()"></span><span class="hint" x-show="selectionHasGaps()" x-cloak>Ve výběru je výpadek. Při uložení nabídneme dostupné části.</span></div><div class="actions"><button type="button" class="btn sec" :disabled="!validSelection()" @click="previewSelection()">Přehrát výběr</button><button class="btn" :disabled="!validSelection()">Uložit klip</button></div></form>
 <p class="player-notice" role="status" x-show="message" x-text="message"></p></div></div></section>
 <details class="advanced-panel"><summary>Další možnosti</summary><a href="/camera/{{ camera }}/recording">Zadat přesné datum a čas</a> · <a href="{{ frigate_ui }}" target="_blank" rel="noopener">Otevřít Frigate</a></details>{% endblock %}"""
 
@@ -3652,9 +3662,9 @@ TEMPLATES["youtube.html"] = """{% extends "base.html" %}{% block actions %}<a cl
 <div class="b"><div class="title">{{ short_title(s.title or s.name,s.camera) }}{% if s.auto %} <span class="badge ok">auto</span>{% endif %}</div>
 <p class="video-youtube-state" data-youtube-status="{{ s.yt_live.status }}"><span class="badge {{ 'ok' if s.yt_live.status=='done' else ('err' if s.yt_live.status=='failed' else 'info') }}">{{ s.yt_live.label }}</span></p>
 <dl class="facts"><dt>Kamera</dt><dd>{{ s.camera_label }}</dd><dt>Úpravy</dt><dd>{{ s.speed }}×{% if s.intro %} · intro{% endif %}{% if s.music %} · hudba{% endif %}{% if s.text %} · text{% endif %}</dd><dt>Vytvořeno</dt><dd>{{ s.created|czdt }}</dd></dl>
-<div class="acts"><a class="btn small" href="/studio/v/{{ s.id }}">Otevřít</a>{% if s.yt_live.url %}<a class="btn small sec" href="{{ s.yt_live.url }}" target="_blank" rel="noopener">Otevřít na YouTube ↗</a>{% elif s.ready and s.yt_live.status in ('not_uploaded','failed') %}<a class="btn small sec" href="/studio/v/{{ s.id }}#youtube">{{ 'Zkusit nahrání znovu' if s.yt_live.status=='failed' else 'Nahrát na YouTube' }}</a>{% endif %}{% if s.ready %}<a class="btn small sec" href="/studio/v/{{ s.id }}/download">⬇ Stáhnout</a>{% endif %}
+<div class="acts video-card-actions"><a class="btn small" href="/studio/v/{{ s.id }}">Otevřít</a>{% if s.yt_live.url %}<a class="btn small sec" href="{{ s.yt_live.url }}" target="_blank" rel="noopener">Otevřít na YouTube ↗</a>{% elif s.ready and s.yt_live.status in ('not_uploaded','failed') %}<a class="btn small sec" href="/studio/v/{{ s.id }}#youtube">{{ 'Zkusit nahrání znovu' if s.yt_live.status=='failed' else 'Nahrát na YouTube' }}</a>{% endif %}{% if s.ready %}<a class="btn small sec" href="/studio/v/{{ s.id }}/download">⬇ Stáhnout</a>{% endif %}
 {% if s.status == 'ready' and not s.ready %}<a class="btn small sec" href="/studio/new/{{ s.export_id }}?again={{ s.id }}">Vytvořit znovu</a>{% endif %}
-<details class="more-menu"><summary aria-label="Další možnosti">•••</summary><a href="/studio/new/{{ s.export_id }}?again={{ s.id }}">Znovu upravit</a><form method="post" action="/studio/v/{{ s.id }}/delete" onsubmit="return confirm('Smazat video ze studia?')"><button class="btn small sec">Smazat</button></form></details></div></div></div>{% endfor %}
+<details class="more-menu"><summary>Další akce</summary><div class="more-menu-actions"><a class="btn small sec" href="/studio/new/{{ s.export_id }}?again={{ s.id }}">Znovu upravit</a><form method="post" action="/studio/v/{{ s.id }}/delete" onsubmit="return confirm('Smazat video ze studia?')"><button class="btn small danger">Smazat video</button></form></div></details></div></div></div>{% endfor %}
 </div>
 
 {% endblock %}"""
@@ -3681,7 +3691,7 @@ TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block actions %}<div c
 <nav class="tabs"><a class="active" href="/moments">Uložená videa</a><a href="/moments/discover">Další nálezy AI</a></nav>
 {% include "video_activity.html" %}
 <div class="section-head video-library-head"><div><h2>Záznamy k úpravě <span class="badge ok">{{ videos|length }}</span></h2><p class="hint">Klipy z AI i ručního výběru, od nejnovějšího. Vytvořit video otevře editor; výsledek najdete v Moje videa.</p></div>
-{% if total_exports %}<details class="more-menu"><summary>Další možnosti</summary><a href="/videos/delete-all">{{ 'Průběh mazání' if deleting else 'Smazat uložené klipy' }}</a></details>{% endif %}</div>
+{% if total_exports %}<details class="more-menu library-actions"><summary>Správa klipů</summary><div class="more-menu-actions"><a class="btn small danger" href="/videos/delete-all">{{ 'Průběh mazání' if deleting else 'Smazat uložené klipy' }}</a></div></details>{% endif %}</div>
 {% if not videos %}<div class="card empty-videos"><h3>Zatím žádné hotové video</h3><p>Po dokončení se zde objeví celé video události. Vyberte <a href="/live">kameru a část záznamu</a>, nebo zapněte <a href="/ai#kamery">hlídání oblohy</a>.</p></div>{% endif %}
 <div class="gallery videos">
 {% for v in videos %}<div class="shot video" id="v{{ v.id }}">
@@ -3691,7 +3701,7 @@ TEMPLATES["videos.html"] = """{% extends "base.html" %}{% block actions %}<div c
 {% for link in v.studio_links %}<a class="video-next-state {{ link.tone }}" href="/studio/v/{{ link.id }}">{{ link.label }} →</a>{% endfor %}
 {% if v.metadata_description %}<p class="desc2">{{ v.metadata_description }}</p>{% endif %}
 <dl class="facts"><dt>Kamera</dt><dd>{{ cam(v.camera) }}</dd><dt>Úsek</dt><dd>{{ v.range_h }}</dd></dl>
-<div class="acts"><a class="btn small" href="/studio/new/{{ v.id }}">Vytvořit video</a><details class="more-menu"><summary aria-label="Další možnosti videa">•••</summary><a href="/videos/{{ v.id }}/download">⬇ Stáhnout MP4</a><a class="btn small sec" href="/recording/{{ v.id }}">Detail a text AI</a>{% if v.detection_id %}<a class="btn small sec" href="/detection/{{ v.detection_id }}">Detekce</a>{% endif %}<form method="post" action="/videos/{{ v.id }}/delete" onsubmit="return confirm('Smazat celé AI video včetně jeho pracovních částí?')"><button class="btn small sec">Smazat</button></form></details></div></div></div>{% endfor %}
+<div class="acts video-card-actions"><a class="btn small" href="/studio/new/{{ v.id }}">Vytvořit video</a><details class="more-menu"><summary>Další akce</summary><div class="more-menu-actions"><a class="btn small sec" href="/videos/{{ v.id }}/download">Stáhnout MP4</a><a class="btn small sec" href="/recording/{{ v.id }}">Detail a text AI</a>{% if v.detection_id %}<a class="btn small sec" href="/detection/{{ v.detection_id }}">Detekce</a>{% endif %}<form method="post" action="/videos/{{ v.id }}/delete" onsubmit="return confirm('Smazat celé AI video včetně jeho pracovních částí?')"><button class="btn small danger">Smazat klip</button></form></div></details></div></div></div>{% endfor %}
 </div><p class="hint">Uchovávání klipů a výstupů: {{ keep_days }} dní. <a href="/videos/settings">Změnit nastavení</a></p>
 {% endblock %}"""
 
@@ -4709,6 +4719,21 @@ def camera_recording_spans(cfg, camera, start, end):
         else:
             spans.append([a, b])
     return spans
+
+
+def recording_gaps(spans, start, end):
+    """Ignore sub-second segment seams individually, not by accumulated duration."""
+    gaps, cursor = [], start
+    for a, b in sorted(spans):
+        a, b = max(start, a), min(end, b)
+        if b <= a:
+            continue
+        if a - cursor > 1:
+            gaps.append([cursor, a])
+        cursor = max(cursor, b)
+    if end - cursor > 1:
+        gaps.append([cursor, end])
+    return gaps
 
 
 @app.get('/camera/{camera}/timeline')
@@ -5933,6 +5958,18 @@ def clip_local(cfg, ts):
     return dt.datetime.fromtimestamp(ts, ZoneInfo(cfg["tz"])).strftime("%Y-%m-%dT%H:%M:%S")
 
 
+def clip_range_label(cfg, start, end):
+    tz = ZoneInfo(cfg['tz'])
+    first, last = (dt.datetime.fromtimestamp(t, tz) for t in (start, end))
+    end_format = '%H:%M:%S' if first.date() == last.date() else '%d. %m. %Y %H:%M:%S'
+    return first.strftime('%d. %m. %Y %H:%M:%S') + ' – ' + last.strftime(end_format)
+
+
+def clip_duration_label(seconds):
+    seconds = math.ceil(max(0, seconds))
+    return f'{seconds // 60} min {seconds % 60} s' if seconds >= 60 else f'{seconds} s'
+
+
 def evaluation_clip_bounds(cfg, e, before, after):
     center = eval_epoch(cfg, e["ts"])
     first = last = center
@@ -6295,15 +6332,21 @@ def recording_range_create(request: Request, camera: str, from_time: str = Form(
             raise ValueError("Vyber dokončený záznam; čas DO nesmí být v budoucnosti.")
         if not storage_ready():
             raise ValueError("Disk pro ukládání není dostupný.")
-        state = recording_state(cfg, camera, start, end)
-        if state != "ok":
-            raise ValueError("Frigate neodpovídá." if state == "offline" else "V tomto rozsahu není dostupný záznam.")
-        spans = camera_recording_spans(cfg, camera, start, end)
+        try:
+            spans = camera_recording_spans(cfg, camera, start, end)
+        except Exception:
+            raise ValueError("Záznamy se nepodařilo ověřit. Zkus uložení znovu za chvíli.") from None
         if not spans:
             raise ValueError('Vybraný záznam už není dostupný.')
-        if not allow_gaps and sum(b-a for a,b in spans) < end-start-1:
-            flash(request, 'Ve výběru chybí část záznamu. Zkrať výběr nebo potvrď uložení dostupných částí.', 'warn')
-            return RedirectResponse(f'/camera/{camera}?from={int(start)}&to={int(end)}', status_code=303)
+        gaps = recording_gaps(spans, start, end)
+        if gaps and allow_gaps != '1':
+            return render(request, 'recording_gaps.html', 'Uložit dostupný záznam', camera=camera,
+                          from_time=from_time, to_time=to_time, metadata=bool(metadata),
+                          selection_h=clip_range_label(cfg, start, end),
+                          missing_h=clip_duration_label(sum(b-a for a,b in gaps)),
+                          gaps_h=[clip_range_label(cfg, a, b) for a,b in gaps[:5]],
+                          more_gaps=max(0, len(gaps)-5),
+                          back_url=f'/camera/{camera}?from={start:.3f}&to={end:.3f}')
         name = "Výběr ze záznamu"
         fid = frigate_start_export(cfg, camera, start, end, name, "realtime")
         eid = record_export(cfg, fid, None, camera, name, start, end)
@@ -12443,6 +12486,12 @@ header.top nav.menu > a.active, header.top nav.menu .dd > button.active { backgr
 .camera-player{--player-aspect:1.77777778;width:min(100%,max(360px,calc(var(--player-height,clamp(144px,calc(100dvh - 410px),720px))*var(--player-aspect))));margin-inline:auto;border:1px solid var(--at-line);border-radius:14px;background:var(--at-surface);overflow:hidden}
 .player-stage{position:relative;aspect-ratio:var(--player-aspect);background:#0b1421}
 .player-stage video{display:block;width:100%;height:100%;object-fit:contain}
+.player-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px}
+.player-toolbar strong{font-size:14px;min-width:0}.player-toolbar .actions{flex-shrink:0}
+.workspace.camera-expanded{padding-left:0}
+.workspace.camera-expanded header.top,.workspace.camera-expanded .page-head,.workspace.camera-expanded .brand-foot,.workspace.camera-expanded .camera-player+.advanced-panel{display:none}
+.workspace.camera-expanded main.page{padding:12px;max-width:none}
+@media(max-width:620px){.player-toolbar{flex-wrap:wrap;padding:8px 10px;gap:8px}.player-toolbar .actions{margin-left:auto}.player-toolbar strong{font-size:12px}.workspace.camera-expanded main.page{padding:8px}}
 .player-overlay{position:absolute;inset:12px 14px auto;display:flex;align-items:center;justify-content:space-between;gap:12px;pointer-events:none}
 .player-mode,.player-clock{color:#fff;background:#101b2be8;border-radius:5px;padding:6px 10px;text-shadow:0 1px 2px #000}
 .player-mode{font-size:10px;letter-spacing:1px}.player-clock{font-size:14px;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -12472,7 +12521,31 @@ header.top nav.menu > a.active, header.top nav.menu .dd > button.active { backgr
 .video-youtube-state{margin:10px 0}.video-youtube-state .badge{white-space:normal}.video-meta form.card{border:0;margin:16px 0 0;padding:0}
 #youtube{scroll-margin-top:84px}#youtube>p{font-size:13px}.workspace header.top .inner{min-height:66px}
 
-.advanced-panel{padding:16px 20px;border:1px solid var(--at-line);border-radius:10px;margin:20px 0;background:var(--at-surface)}.advanced-panel summary{font-size:13px;color:var(--at-muted)}.advanced-panel[open]>summary{margin-bottom:18px}.advanced-panel pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px}.more-menu{position:relative;margin:0;align-self:center}.more-menu>summary{list-style:none;color:var(--at-muted);font-size:12px;padding:8px}.more-menu[open]{padding:8px;background:var(--at-surface-2);border-radius:7px}.more-menu a{display:block;font-size:12px;margin:6px}.more-menu form{margin:0}
+.advanced-panel{padding:16px 20px;border:1px solid var(--at-line);border-radius:10px;margin:20px 0;background:var(--at-surface)}.advanced-panel summary{font-size:13px;color:var(--at-muted)}.advanced-panel[open]>summary{margin-bottom:18px}.advanced-panel pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px}
+/* Solid, aligned actions; opening a menu never squeezes the primary action. */
+.workspace .video-card-actions .btn.sec,.workspace .camera-player .btn.sec,.workspace .recording-gap-review .btn.sec{background:#475569;border-color:#475569;color:#fff}
+.workspace .video-card-actions .btn.sec:hover,.workspace .camera-player .btn.sec:hover,.workspace .recording-gap-review .btn.sec:hover{background:#334155;border-color:#334155;color:#fff}
+.workspace .more-menu .btn.danger,.workspace .delete-videos-review .btn.danger{background:#b91c1c;border-color:#b91c1c;color:#fff}
+.workspace .more-menu .btn.danger:hover,.workspace .delete-videos-review .btn.danger:hover{background:#991b1b;border-color:#991b1b;color:#fff}
+.workspace .shot.video .video-card-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:stretch}
+.workspace .video-card-actions>.btn:first-child,.workspace .video-card-actions>.more-menu{grid-column:1/-1}
+.workspace .video-card-actions .btn{width:100%;min-width:0;margin:0;white-space:normal;text-align:center;align-self:stretch}
+.workspace details.more-menu{min-width:0;margin:0;padding:0;border:0;background:transparent;box-shadow:none;align-self:start}
+.workspace .more-menu>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:38px;padding:9px 14px;margin:0;border:1px solid #475569;border-radius:8px;list-style:none;background:#475569;color:#fff;font-size:12px;font-weight:600;line-height:1.4}
+.workspace details.more-menu>summary:is(:hover,:focus),.workspace details.more-menu[open]>summary{color:#fff}
+.workspace .more-menu>summary:hover{background:#334155;border-color:#334155}
+.workspace .more-menu>summary::after{content:"";display:block;float:none;flex:none;width:7px;height:7px;margin:0 2px 3px 0;border:0;border-right:2px solid currentColor;border-bottom:2px solid currentColor;background:none;transform:rotate(45deg)}
+.workspace .more-menu[open]>summary::after{transform:rotate(225deg);margin-top:4px}
+.workspace .more-menu>summary::-webkit-details-marker{display:none}
+.more-menu-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding-top:8px}
+.workspace .more-menu-actions form{margin:0;min-width:0;display:flex}
+.workspace .more-menu-actions .btn{margin:0;width:100%;min-height:38px;white-space:normal;text-align:center}
+.workspace .library-actions{flex:0 0 210px;max-width:100%}.library-actions .more-menu-actions{grid-template-columns:1fr}
+.workspace .camera-player .actions{display:flex;flex-wrap:wrap;gap:8px}
+.workspace .camera-player .btn:disabled{opacity:1;background:#e2e8f0;border-color:#e2e8f0;color:#64748b;cursor:not-allowed}
+.clip-save-info{display:grid;gap:4px;min-width:0}.clip-save .actions{flex-shrink:0}.clip-save .hint{line-height:1.5}
+.recording-gap-review{max-width:780px;margin:0 auto}.recording-gap-review h2{margin-top:18px}.recording-gap-review .actions{display:flex;flex-wrap:wrap;gap:10px}.recording-gap-review .actions .btn{margin:0}
+@media(max-width:650px){.workspace .library-actions{flex-basis:auto;width:100%}}
 .workspace .gallery.videos{grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}.workspace .shot.video{border-radius:12px;overflow:hidden;box-shadow:none}.workspace .shot.video .title{font-size:15px;line-height:1.45}.workspace .shot.video .b{padding:16px}.workspace .shot.video .facts{font-size:11px;margin:12px 0}.workspace .shot.video .acts{margin-top:14px}.workspace .shot.video .thumb .play{height:42px;width:42px;font-size:14px}.workspace .shot.video .dur{font-size:10px}
 .workspace .video-work{margin:12px 0 20px}.workspace .work-panel{border:1px solid var(--at-line);padding:12px 16px;border-radius:9px;box-shadow:none}.workspace .work-panel>summary{font-size:12px;font-weight:600}.workspace .work-panel>summary .hint{margin-left:15px}.workspace .work-item{padding:12px;margin-top:10px}.workspace .work-symbol{width:24px;height:24px;font-size:14px}.workspace .work-item progress{height:4px}.workspace .work-detail{font-size:11px}.workspace .work-name{font-size:12px}
 .editor-tools{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:18px;padding:5px;background:var(--at-surface);border:1px solid var(--at-line);border-radius:10px}.editor-tools button,.tabs button{background:transparent;border:0;color:var(--at-muted);width:auto;padding:10px 15px;margin:0;font-size:12px;box-shadow:none;border-radius:7px}.editor-tools button.active,.tabs button.active{color:var(--pico-primary);background:var(--pico-primary-focus)}.studio-layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:20px;align-items:start}.studio-canvas{min-width:0;position:sticky;top:85px}.editor-preview{border-radius:12px;overflow:hidden;background:#0b1421}.editor-preview video{display:block;width:100%;aspect-ratio:16/9;max-height:60vh}.editor-timeline{background:var(--at-surface);border:1px solid var(--at-line);border-radius:12px;padding:18px;margin-top:16px}.editor-timeline .section-head{font-size:12px}.editor-timeline .trim-rail{margin:18px 0 8px}.studio-inspector{padding:22px;background:var(--at-surface);border:1px solid var(--at-line);border-radius:12px;min-width:0;min-height:360px}.studio-inspector h2{font-size:17px;margin-bottom:12px}.studio-inspector label{font-size:12px;margin:15px 0 6px}.studio-inspector :is(input,select,textarea){font-size:12px;margin-bottom:0}.studio-inspector .row{gap:12px;display:grid;grid-template-columns:1fr 1fr}.studio-inspector audio{width:100%;height:38px;margin:16px 0}.studio-inspector .music-search-row,.studio-inspector .music-search-fields .row{display:block}.studio-inspector .chips{gap:4px}.studio-inspector .chip{font-size:10px;padding:5px}.studio-inspector .hint{font-size:11px}.editor-footer{display:flex;align-items:center;justify-content:space-between;padding:18px 0;gap:16px;font-size:12px;color:var(--at-muted)}.intro-preview{width:100%;border-radius:8px;margin:12px 0}.effect-preview{padding:25px 10px;text-align:center;color:white;background:#142033;border-radius:8px;margin:20px 0;font-size:14px;font-weight:700}.studio-inspector .finder{margin-top:20px}.studio-inspector .finder summary{font-size:12px}
@@ -12779,15 +12852,17 @@ ATMOVIO_CSS_EOF
     Alpine.data('cameraPlayer', function (camera) {
       let player=null, layoutObserver=null; // Keep media and DOM observers outside Alpine's reactive proxy.
       return {
-        live:true, cursor:Date.now()/1000, day:'', start:0, end:1, spans:[], tz:'UTC',
+        live:true, expanded:true, cursor:Date.now()/1000, day:'', start:0, end:1, spans:[], tz:'UTC',
         from:null, to:null, message:'', anchor:0, stopAt:null, windowEnd:0, playSpans:[],
          controller:null, timer:null, keyHandler:null, resizeHandler:null, loading:false, scrub:null,
         async init() {
+          try{this.expanded=localStorage.getItem('atmovio-camera-expanded')!=='0';}catch(e){}
+          this.applyLayout();
           this.resizeHandler=()=>this.fitPlayer();
           window.addEventListener('resize',this.resizeHandler);
-          if(this.$el && window.ResizeObserver){layoutObserver=new window.ResizeObserver(this.resizeHandler);layoutObserver.observe(this.$refs.transport);const heading=this.$el.closest('main')?.querySelector('.page-head');if(heading)layoutObserver.observe(heading);}
+          if(this.$el && window.ResizeObserver){layoutObserver=new window.ResizeObserver(this.resizeHandler);layoutObserver.observe(this.$refs.transport);if(this.$refs.toolbar)layoutObserver.observe(this.$refs.toolbar);const heading=this.$el.closest('main')?.querySelector('.page-head');if(heading)layoutObserver.observe(heading);}
           if(this.$nextTick)this.$nextTick(this.resizeHandler);
-          this.keyHandler=e=>{if(e.ctrlKey||e.metaKey||e.altKey||e.target.closest('input,textarea,select,[contenteditable]'))return;
+          this.keyHandler=e=>{if(e.key==='Escape'&&this.expanded){this.toggleExpanded();return;}if(e.ctrlKey||e.metaKey||e.altKey||e.target.closest('input,textarea,select,[contenteditable]'))return;
             if(e.key.toLowerCase()==='i')this.mark('from');if(e.key.toLowerCase()==='o')this.mark('to');};
           window.addEventListener('keydown',this.keyHandler);
           await this.loadDay();
@@ -12797,12 +12872,16 @@ ATMOVIO_CSS_EOF
           }else this.goLive();
           this.timer=setInterval(()=>{if(this.live)this.cursor=Date.now()/1000;},1000);
         },
-        destroy() {clearInterval(this.timer);window.removeEventListener('keydown',this.keyHandler);window.removeEventListener('resize',this.resizeHandler);if(layoutObserver)layoutObserver.disconnect();if(this.controller)this.controller.abort();this.unload();},
+        destroy() {this.$el?.closest('.workspace')?.classList.remove('camera-expanded');clearInterval(this.timer);window.removeEventListener('keydown',this.keyHandler);window.removeEventListener('resize',this.resizeHandler);if(layoutObserver)layoutObserver.disconnect();if(this.controller)this.controller.abort();this.unload();},
+        applyLayout(){this.$el?.closest('.workspace')?.classList.toggle('camera-expanded',this.expanded);},
+        toggleExpanded(){this.expanded=!this.expanded;this.applyLayout();
+          try{localStorage.setItem('atmovio-camera-expanded',this.expanded?'1':'0');}catch(e){}
+          window.scrollTo?.({top:0,behavior:'instant'});if(this.$nextTick)this.$nextTick(()=>this.fitPlayer());else this.fitPlayer();},
         fitPlayer() {if(!this.$el||!this.$refs.transport)return;
           const video=this.$refs.video,ratio=video.videoWidth/video.videoHeight;
           if(Number.isFinite(ratio)&&ratio>0)this.$el.style.setProperty('--player-aspect',String(ratio));
           const top=this.$el.getBoundingClientRect().top+window.scrollY;
-          const height=Math.max(144,Math.floor(window.innerHeight-top-this.$refs.transport.offsetHeight-18));
+          const height=Math.max(144,Math.floor(window.innerHeight-top-this.$refs.transport.offsetHeight-(this.$refs.toolbar?.offsetHeight||0)-18));
           this.$el.style.setProperty('--player-height',height+'px');},
         unload() {if(player){player.destroy();player=null;}const v=this.$refs.video;v.pause();v.removeAttribute('src');v.load();},
         stamp(t) {return new Date(t*1000).toLocaleTimeString('cs-CZ',{timeZone:this.tz,hour:'2-digit',minute:'2-digit',second:'2-digit'});},
@@ -12852,7 +12931,15 @@ ATMOVIO_CSS_EOF
         mediaError() {if(!this.$refs.video.getAttribute('src')||!this.$refs.video.error)return;this.loading=false;this.message=this.live?'Živý přenos nelze načíst. Ověřte kameru a podporu H.264; záznamy jsou dostupné na časové ose.':'Náhled tohoto úseku není dostupný.';},
         mark(which) {if(this.live){this.message='Nejdřív vyberte uložený záznam na časové ose.';return;}this[which]=Math.floor(this.cursor);},
         validSelection() {return this.from!==null&&this.to!==null&&this.to>this.from&&this.to-this.from<=21600;},
-        selectionHasGaps(){if(!this.validSelection())return false;const covered=this.spans.reduce((n,s)=>n+Math.max(0,Math.min(this.to,s[1])-Math.max(this.from,s[0])),0);return this.to-this.from-covered>1;},
+        selectionHasGaps(){
+          // A day view cannot decide coverage for a selection spanning other days.
+          // The server rechecks the complete range before saving it.
+          if(!this.validSelection()||this.from<this.start||this.to>this.end)return false;
+          let cursor=this.from;
+          for(const span of this.spans){const a=Math.max(this.from,span[0]),b=Math.min(this.to,span[1]);
+            if(b<=a)continue;if(a-cursor>1)return true;cursor=Math.max(cursor,b);}
+          return this.to-cursor>1;
+        },
         selectionLabel() {if(this.from===null||this.to===null)return 'Označte začátek a konec klipu.';
           if(!this.validSelection())return 'DO musí být za OD. Nejdelší klip je 6 hodin.';
           return 'Vybráno '+Math.floor((this.to-this.from)/60)+' min '+Math.round((this.to-this.from)%60)+' s';

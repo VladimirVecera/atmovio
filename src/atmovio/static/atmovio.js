@@ -214,15 +214,17 @@
     Alpine.data('cameraPlayer', function (camera) {
       let player=null, layoutObserver=null; // Keep media and DOM observers outside Alpine's reactive proxy.
       return {
-        live:true, cursor:Date.now()/1000, day:'', start:0, end:1, spans:[], tz:'UTC',
+        live:true, expanded:true, cursor:Date.now()/1000, day:'', start:0, end:1, spans:[], tz:'UTC',
         from:null, to:null, message:'', anchor:0, stopAt:null, windowEnd:0, playSpans:[],
          controller:null, timer:null, keyHandler:null, resizeHandler:null, loading:false, scrub:null,
         async init() {
+          try{this.expanded=localStorage.getItem('atmovio-camera-expanded')!=='0';}catch(e){}
+          this.applyLayout();
           this.resizeHandler=()=>this.fitPlayer();
           window.addEventListener('resize',this.resizeHandler);
-          if(this.$el && window.ResizeObserver){layoutObserver=new window.ResizeObserver(this.resizeHandler);layoutObserver.observe(this.$refs.transport);const heading=this.$el.closest('main')?.querySelector('.page-head');if(heading)layoutObserver.observe(heading);}
+          if(this.$el && window.ResizeObserver){layoutObserver=new window.ResizeObserver(this.resizeHandler);layoutObserver.observe(this.$refs.transport);if(this.$refs.toolbar)layoutObserver.observe(this.$refs.toolbar);const heading=this.$el.closest('main')?.querySelector('.page-head');if(heading)layoutObserver.observe(heading);}
           if(this.$nextTick)this.$nextTick(this.resizeHandler);
-          this.keyHandler=e=>{if(e.ctrlKey||e.metaKey||e.altKey||e.target.closest('input,textarea,select,[contenteditable]'))return;
+          this.keyHandler=e=>{if(e.key==='Escape'&&this.expanded){this.toggleExpanded();return;}if(e.ctrlKey||e.metaKey||e.altKey||e.target.closest('input,textarea,select,[contenteditable]'))return;
             if(e.key.toLowerCase()==='i')this.mark('from');if(e.key.toLowerCase()==='o')this.mark('to');};
           window.addEventListener('keydown',this.keyHandler);
           await this.loadDay();
@@ -232,12 +234,16 @@
           }else this.goLive();
           this.timer=setInterval(()=>{if(this.live)this.cursor=Date.now()/1000;},1000);
         },
-        destroy() {clearInterval(this.timer);window.removeEventListener('keydown',this.keyHandler);window.removeEventListener('resize',this.resizeHandler);if(layoutObserver)layoutObserver.disconnect();if(this.controller)this.controller.abort();this.unload();},
+        destroy() {this.$el?.closest('.workspace')?.classList.remove('camera-expanded');clearInterval(this.timer);window.removeEventListener('keydown',this.keyHandler);window.removeEventListener('resize',this.resizeHandler);if(layoutObserver)layoutObserver.disconnect();if(this.controller)this.controller.abort();this.unload();},
+        applyLayout(){this.$el?.closest('.workspace')?.classList.toggle('camera-expanded',this.expanded);},
+        toggleExpanded(){this.expanded=!this.expanded;this.applyLayout();
+          try{localStorage.setItem('atmovio-camera-expanded',this.expanded?'1':'0');}catch(e){}
+          window.scrollTo?.({top:0,behavior:'instant'});if(this.$nextTick)this.$nextTick(()=>this.fitPlayer());else this.fitPlayer();},
         fitPlayer() {if(!this.$el||!this.$refs.transport)return;
           const video=this.$refs.video,ratio=video.videoWidth/video.videoHeight;
           if(Number.isFinite(ratio)&&ratio>0)this.$el.style.setProperty('--player-aspect',String(ratio));
           const top=this.$el.getBoundingClientRect().top+window.scrollY;
-          const height=Math.max(144,Math.floor(window.innerHeight-top-this.$refs.transport.offsetHeight-18));
+          const height=Math.max(144,Math.floor(window.innerHeight-top-this.$refs.transport.offsetHeight-(this.$refs.toolbar?.offsetHeight||0)-18));
           this.$el.style.setProperty('--player-height',height+'px');},
         unload() {if(player){player.destroy();player=null;}const v=this.$refs.video;v.pause();v.removeAttribute('src');v.load();},
         stamp(t) {return new Date(t*1000).toLocaleTimeString('cs-CZ',{timeZone:this.tz,hour:'2-digit',minute:'2-digit',second:'2-digit'});},
@@ -287,7 +293,15 @@
         mediaError() {if(!this.$refs.video.getAttribute('src')||!this.$refs.video.error)return;this.loading=false;this.message=this.live?'Živý přenos nelze načíst. Ověřte kameru a podporu H.264; záznamy jsou dostupné na časové ose.':'Náhled tohoto úseku není dostupný.';},
         mark(which) {if(this.live){this.message='Nejdřív vyberte uložený záznam na časové ose.';return;}this[which]=Math.floor(this.cursor);},
         validSelection() {return this.from!==null&&this.to!==null&&this.to>this.from&&this.to-this.from<=21600;},
-        selectionHasGaps(){if(!this.validSelection())return false;const covered=this.spans.reduce((n,s)=>n+Math.max(0,Math.min(this.to,s[1])-Math.max(this.from,s[0])),0);return this.to-this.from-covered>1;},
+        selectionHasGaps(){
+          // A day view cannot decide coverage for a selection spanning other days.
+          // The server rechecks the complete range before saving it.
+          if(!this.validSelection()||this.from<this.start||this.to>this.end)return false;
+          let cursor=this.from;
+          for(const span of this.spans){const a=Math.max(this.from,span[0]),b=Math.min(this.to,span[1]);
+            if(b<=a)continue;if(a-cursor>1)return true;cursor=Math.max(cursor,b);}
+          return this.to-cursor>1;
+        },
         selectionLabel() {if(this.from===null||this.to===null)return 'Označte začátek a konec klipu.';
           if(!this.validSelection())return 'DO musí být za OD. Nejdelší klip je 6 hodin.';
           return 'Vybráno '+Math.floor((this.to-this.from)/60)+' min '+Math.round((this.to-this.from)%60)+' s';
