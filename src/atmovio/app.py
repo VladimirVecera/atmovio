@@ -58,7 +58,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "6.0.10"
+APP_VERSION = "6.0.11"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -2907,7 +2907,7 @@ TEMPLATES["base.html"] = """<!doctype html>
 <script defer src="/static/atmovio.js?v={{ asset_version }}"></script>
 <script defer src="{{ alpine_js }}"></script>
 </head><body>
-<div class="app workspace" x-data='shell({flashes: {{ flashes|tojson }}})' @keydown.escape.window="menu=false;dd=''">
+<div class="app workspace {% block workspace_class %}{% endblock %}" x-data='shell({flashes: {{ flashes|tojson }}})' @keydown.escape.window="menu=false;dd=''">
 <header class="top"><div class="inner">
  <button type="button" class="ico-btn menu-btn" @click="menu=!menu" :aria-expanded="menu" aria-controls="main-navigation" aria-label="Menu">""" + ICONS["menu"] + """</button>
  <a class="brand" href="/">""" + LOGO_SVG + """<span>Atmovio<small>Každý okamžik má příběh</small></span></a>
@@ -3569,15 +3569,15 @@ TEMPLATES["live.html"] = """{% extends "base.html" %}{% block actions %}<a class
 {% if mode == 'all' %}<div class="camera-grid">{% for c in cameras %}<article class="camera-card"><video x-data='livePreview({{ c|tojson }})' controls autoplay muted playsinline poster="/live/{{ c }}.jpg?h=720"></video><div class="camera-caption"><h2><a href="/camera/{{ c }}">{{ cam(c) }}</a></h2></div></article>{% endfor %}</div>{% else %}{% include "camera_cards.html" %}{% endif %}
 <div class="quiet-links"><a href="/live/all">Všechny kamery živě</a><a href="/moments">Prohlédnout AI detekce →</a></div>{% endblock %}"""
 
-TEMPLATES["camera.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a href="/live" class="btn sec">← Kamery</a><a class="ico-btn" href="/cameras/edit/{{ camera }}" aria-label="Nastavení kamery">{{ icons.cog|safe }}</a></div>{% endblock %}{% block content %}
+TEMPLATES["camera.html"] = """{% extends "base.html" %}{% block workspace_class %}camera-workspace{% endblock %}{% block head %}<div class="page-head"><h1>{{ cam(camera) }}</h1><div class="actions"><a href="/live" class="btn sec">← Kamery</a><a class="ico-btn" href="/cameras/edit/{{ camera }}" aria-label="Nastavení kamery">{{ icons.cog|safe }}</a></div></div>{% endblock %}{% block content %}
 <section class="camera-player" x-data='cameraPlayer({{ camera|tojson }})'>
-<div class="player-toolbar" x-ref="toolbar"><strong>{{ cam(camera) }}</strong><div class="actions"><button type="button" class="btn small sec" @click="toggleExpanded()" :aria-pressed="expanded" x-text="expanded ? 'Zmenšit přehrávač' : 'Zvětšit přehrávač'">Zmenšit přehrávač</button><a class="btn small sec" href="/live">Kamery</a></div></div>
 <div class="player-stage"><video x-ref="video" controls autoplay muted playsinline poster="/live/{{ camera }}.jpg?h=1080" @loadedmetadata="fitPlayer()" @resize="fitPlayer()" @timeupdate="tick()" @ended="nextSegment()" @error="mediaError()"></video><div class="player-overlay"><span class="player-mode" x-text="live ? '● ŽIVĚ' : 'ZÁZNAM'">● ŽIVĚ</span><time class="player-clock" x-text="fullStamp(cursor)" :title="live ? 'Aktuální čas · '+tz : 'Čas přehrávaného záznamu · '+tz"></time></div></div>
 <div class="player-transport" x-ref="transport">
-<div class="player-controls"><div class="actions"><button class="btn small sec" type="button" @click="step(-30)">−30 s</button><button class="btn small sec" type="button" @click="step(30)">+30 s</button><button type="button" class="btn small" @click="goLive()" :disabled="live">Živě</button></div><label class="date-pick">Den <input type="date" x-model="day" @change="loadDay()" aria-label="Den záznamu"></label></div>
+<div class="player-controls"><div class="actions"><button class="btn small sec" type="button" @click="step(-30)">−30 s</button><button class="btn small sec" type="button" @click="step(30)">+30 s</button><button type="button" class="btn small" @click="goLive()" :disabled="live && !message">Živě</button></div><div class="timeline-period"><button type="button" class="btn small sec" :class="{'period-active':period==='24h'}" :aria-pressed="period==='24h'" @click="showLast24Hours()">Posledních 24 hodin</button><label class="date-pick">Den <input type="date" x-model="day" @change="period='day';loadDay()" aria-label="Den záznamu"></label></div></div>
 <div class="timeline-panel">
-<div class="recording-track" @click="seekAt($event)"><template x-for="(span,i) in spans" :key="i"><span class="recorded-span" :style="spanStyle(span)"></span></template><span class="selected-span" x-show="from!==null && to!==null" :style="spanStyle([from,to])"></span><span class="time-cursor" :style="'left:'+percent(cursor)+'%'"></span><input class="timeline-seek" type="range" :min="start" :max="end-1" step="1" :value="cursor" @click.stop @input="scrub=Number($event.target.value)" @change="seek(Number($event.target.value));scrub=null" aria-label="Přejít na čas v záznamu"></div>
-<div class="timeline-labels"><span x-text="stamp(start)"></span><span x-text="scrub===null ? 'Modře je dostupný záznam' : fullStamp(scrub)"></span><span x-text="stamp(end-1)"></span></div>
+<div class="recording-track" x-ref="track"><template x-for="(span,i) in spans" :key="i"><span class="recorded-span" :style="spanStyle(span)"></span></template><span class="selected-span" x-show="from!==null && to!==null" :style="spanStyle([from,to])"></span><span class="time-cursor" :style="'left:'+percent(cursor)+'%'"></span><input class="timeline-seek" type="range" :min="start" :max="end-1" step="1" :value="cursor" @input="scrub=Number($event.target.value)" @change="seek(Number($event.target.value));scrub=null" aria-label="Přejít na čas v záznamu">
+{% for which,label in [('from','OD'),('to','DO')] %}<button type="button" class="range-handle range-handle-{{ which }}" role="slider" aria-label="{{ 'Začátek výběru OD' if which=='from' else 'Konec výběru DO' }}" :aria-valuemin="handleMin('{{ which }}')" :aria-valuemax="handleMax('{{ which }}')" :aria-valuenow="handleTime('{{ which }}')" :aria-valuetext="fullStamp(handleTime('{{ which }}'))" :title="'{{ label }} · '+fullStamp(handleTime('{{ which }}'))" :style="'left:'+percent(handleTime('{{ which }}'))+'%'" @click.stop @pointerdown.prevent.stop="beginHandle('{{ which }}',$event)" @pointermove="moveHandle($event)" @pointerup="endHandle($event)" @pointercancel="endHandle($event,true)" @keydown="keyHandle('{{ which }}',$event)">{{ label }}</button>{% endfor %}</div>
+<div class="timeline-labels"><span x-text="timelineStamp(start)"></span><span x-text="scrub===null ? 'Modře záznam · přetáhněte OD a DO' : fullStamp(scrub)"></span><span x-text="timelineStamp(end-1)"></span></div>
 <div class="clip-selection"><div class="clip-marker"><button type="button" class="btn sec" @click="mark('from')">Označit OD <kbd>I</kbd></button><span x-text="from===null ? '—' : fullStamp(from)"></span></div><div class="clip-marker"><button type="button" class="btn sec" @click="mark('to')">Označit DO <kbd>O</kbd></button><span x-text="to===null ? '—' : fullStamp(to)"></span></div><button type="button" class="btn small sec" @click="from=null;to=null" x-show="from!==null || to!==null">Zrušit výběr</button></div>
 <form method="post" action="/camera/{{ camera }}/recording" class="clip-save"><input type="hidden" name="from_time" :value="from===null ? '' : new Date(from*1000).toISOString()"><input type="hidden" name="to_time" :value="to===null ? '' : new Date(to*1000).toISOString()"><div class="clip-save-info"><span class="hint" x-text="selectionLabel()"></span><span class="hint" x-show="selectionHasGaps()" x-cloak>Ve výběru je výpadek. Při uložení nabídneme dostupné části.</span></div><div class="actions"><button type="button" class="btn sec" :disabled="!validSelection()" @click="previewSelection()">Přehrát výběr</button><button class="btn" :disabled="!validSelection()">Uložit klip</button></div></form>
 <p class="player-notice" role="status" x-show="message" x-text="message"></p></div></div></section>
@@ -4677,15 +4677,22 @@ def recording_gaps(spans, start, end):
 
 
 @app.get('/camera/{camera}/timeline')
-def camera_timeline(camera: str, day: str = ''):
+def camera_timeline(camera: str, day: str = '', window: str = ''):
     cfg = load_config()
     if camera not in frigate_cameras(cfg):
         return JSONResponse({'error': 'Kamera neexistuje.'}, status_code=404)
     try:
         tz = ZoneInfo(cfg['tz'])
-        date = dt.date.fromisoformat(day) if day else dt.datetime.now(tz).date()
-        start = dt.datetime.combine(date, dt.time(), tz).timestamp()
-        end = dt.datetime.combine(date + dt.timedelta(days=1), dt.time(), tz).timestamp()
+        if window not in ('', '24h'):
+            raise ValueError('invalid window')
+        if window == '24h':
+            end = math.floor(time.time())
+            start = end - 86400
+            date = dt.datetime.fromtimestamp(end, tz).date()
+        else:
+            date = dt.date.fromisoformat(day) if day else dt.datetime.now(tz).date()
+            start = dt.datetime.combine(date, dt.time(), tz).timestamp()
+            end = dt.datetime.combine(date + dt.timedelta(days=1), dt.time(), tz).timestamp()
     except ValueError:
         return JSONResponse({'error': 'Neplatné datum.'}, status_code=400)
     try:

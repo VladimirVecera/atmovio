@@ -33,6 +33,13 @@ try:
         autumn = client.get('/camera/east/timeline?day=2026-10-25').json()
         assert spring['end']-spring['start'] == 23*3600
         assert autumn['end']-autumn['start'] == 25*3600
+        for now in (spring['end']-1, autumn['end']-1):
+            with patch.object(a.time, 'time', return_value=now):
+                # Keep session expiry independent from the simulated DST clock.
+                rolling = json.loads(a.camera_timeline('east', window='24h').body)
+            assert rolling['end'] == now and rolling['start'] == now-86400
+            assert spans.call_args.args[2:] == (now-86400,now-15)
+        assert client.get('/camera/east/timeline?window=unlimited').status_code == 400
         assert client.get('/camera/missing/timeline').status_code == 404
         assert client.get('/camera/east/timeline?day=bad').status_code == 400
     response = Mock(ok=True, status_code=200)

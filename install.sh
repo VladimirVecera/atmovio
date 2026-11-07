@@ -477,7 +477,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "atmovio.db"
 LOG_FILE = APP_DIR / "atmovio.log"
 FRIGATE_CONTAINER = "frigate"
-APP_VERSION = "6.0.10"
+APP_VERSION = "6.0.11"
 GITHUB_REPO = "VladimirVecera/atmovio"          # odkud se berou nové verze (GitHub Releases)
 UPDATE_STATE_FILE = APP_DIR / "update-state.json"
 UPDATE_LOG_FILE = APP_DIR / "update.log"
@@ -3326,7 +3326,7 @@ TEMPLATES["base.html"] = """<!doctype html>
 <script defer src="/static/atmovio.js?v={{ asset_version }}"></script>
 <script defer src="{{ alpine_js }}"></script>
 </head><body>
-<div class="app workspace" x-data='shell({flashes: {{ flashes|tojson }}})' @keydown.escape.window="menu=false;dd=''">
+<div class="app workspace {% block workspace_class %}{% endblock %}" x-data='shell({flashes: {{ flashes|tojson }}})' @keydown.escape.window="menu=false;dd=''">
 <header class="top"><div class="inner">
  <button type="button" class="ico-btn menu-btn" @click="menu=!menu" :aria-expanded="menu" aria-controls="main-navigation" aria-label="Menu">""" + ICONS["menu"] + """</button>
  <a class="brand" href="/">""" + LOGO_SVG + """<span>Atmovio<small>Každý okamžik má příběh</small></span></a>
@@ -3988,15 +3988,15 @@ TEMPLATES["live.html"] = """{% extends "base.html" %}{% block actions %}<a class
 {% if mode == 'all' %}<div class="camera-grid">{% for c in cameras %}<article class="camera-card"><video x-data='livePreview({{ c|tojson }})' controls autoplay muted playsinline poster="/live/{{ c }}.jpg?h=720"></video><div class="camera-caption"><h2><a href="/camera/{{ c }}">{{ cam(c) }}</a></h2></div></article>{% endfor %}</div>{% else %}{% include "camera_cards.html" %}{% endif %}
 <div class="quiet-links"><a href="/live/all">Všechny kamery živě</a><a href="/moments">Prohlédnout AI detekce →</a></div>{% endblock %}"""
 
-TEMPLATES["camera.html"] = """{% extends "base.html" %}{% block actions %}<div class="actions"><a href="/live" class="btn sec">← Kamery</a><a class="ico-btn" href="/cameras/edit/{{ camera }}" aria-label="Nastavení kamery">{{ icons.cog|safe }}</a></div>{% endblock %}{% block content %}
+TEMPLATES["camera.html"] = """{% extends "base.html" %}{% block workspace_class %}camera-workspace{% endblock %}{% block head %}<div class="page-head"><h1>{{ cam(camera) }}</h1><div class="actions"><a href="/live" class="btn sec">← Kamery</a><a class="ico-btn" href="/cameras/edit/{{ camera }}" aria-label="Nastavení kamery">{{ icons.cog|safe }}</a></div></div>{% endblock %}{% block content %}
 <section class="camera-player" x-data='cameraPlayer({{ camera|tojson }})'>
-<div class="player-toolbar" x-ref="toolbar"><strong>{{ cam(camera) }}</strong><div class="actions"><button type="button" class="btn small sec" @click="toggleExpanded()" :aria-pressed="expanded" x-text="expanded ? 'Zmenšit přehrávač' : 'Zvětšit přehrávač'">Zmenšit přehrávač</button><a class="btn small sec" href="/live">Kamery</a></div></div>
 <div class="player-stage"><video x-ref="video" controls autoplay muted playsinline poster="/live/{{ camera }}.jpg?h=1080" @loadedmetadata="fitPlayer()" @resize="fitPlayer()" @timeupdate="tick()" @ended="nextSegment()" @error="mediaError()"></video><div class="player-overlay"><span class="player-mode" x-text="live ? '● ŽIVĚ' : 'ZÁZNAM'">● ŽIVĚ</span><time class="player-clock" x-text="fullStamp(cursor)" :title="live ? 'Aktuální čas · '+tz : 'Čas přehrávaného záznamu · '+tz"></time></div></div>
 <div class="player-transport" x-ref="transport">
-<div class="player-controls"><div class="actions"><button class="btn small sec" type="button" @click="step(-30)">−30 s</button><button class="btn small sec" type="button" @click="step(30)">+30 s</button><button type="button" class="btn small" @click="goLive()" :disabled="live">Živě</button></div><label class="date-pick">Den <input type="date" x-model="day" @change="loadDay()" aria-label="Den záznamu"></label></div>
+<div class="player-controls"><div class="actions"><button class="btn small sec" type="button" @click="step(-30)">−30 s</button><button class="btn small sec" type="button" @click="step(30)">+30 s</button><button type="button" class="btn small" @click="goLive()" :disabled="live && !message">Živě</button></div><div class="timeline-period"><button type="button" class="btn small sec" :class="{'period-active':period==='24h'}" :aria-pressed="period==='24h'" @click="showLast24Hours()">Posledních 24 hodin</button><label class="date-pick">Den <input type="date" x-model="day" @change="period='day';loadDay()" aria-label="Den záznamu"></label></div></div>
 <div class="timeline-panel">
-<div class="recording-track" @click="seekAt($event)"><template x-for="(span,i) in spans" :key="i"><span class="recorded-span" :style="spanStyle(span)"></span></template><span class="selected-span" x-show="from!==null && to!==null" :style="spanStyle([from,to])"></span><span class="time-cursor" :style="'left:'+percent(cursor)+'%'"></span><input class="timeline-seek" type="range" :min="start" :max="end-1" step="1" :value="cursor" @click.stop @input="scrub=Number($event.target.value)" @change="seek(Number($event.target.value));scrub=null" aria-label="Přejít na čas v záznamu"></div>
-<div class="timeline-labels"><span x-text="stamp(start)"></span><span x-text="scrub===null ? 'Modře je dostupný záznam' : fullStamp(scrub)"></span><span x-text="stamp(end-1)"></span></div>
+<div class="recording-track" x-ref="track"><template x-for="(span,i) in spans" :key="i"><span class="recorded-span" :style="spanStyle(span)"></span></template><span class="selected-span" x-show="from!==null && to!==null" :style="spanStyle([from,to])"></span><span class="time-cursor" :style="'left:'+percent(cursor)+'%'"></span><input class="timeline-seek" type="range" :min="start" :max="end-1" step="1" :value="cursor" @input="scrub=Number($event.target.value)" @change="seek(Number($event.target.value));scrub=null" aria-label="Přejít na čas v záznamu">
+{% for which,label in [('from','OD'),('to','DO')] %}<button type="button" class="range-handle range-handle-{{ which }}" role="slider" aria-label="{{ 'Začátek výběru OD' if which=='from' else 'Konec výběru DO' }}" :aria-valuemin="handleMin('{{ which }}')" :aria-valuemax="handleMax('{{ which }}')" :aria-valuenow="handleTime('{{ which }}')" :aria-valuetext="fullStamp(handleTime('{{ which }}'))" :title="'{{ label }} · '+fullStamp(handleTime('{{ which }}'))" :style="'left:'+percent(handleTime('{{ which }}'))+'%'" @click.stop @pointerdown.prevent.stop="beginHandle('{{ which }}',$event)" @pointermove="moveHandle($event)" @pointerup="endHandle($event)" @pointercancel="endHandle($event,true)" @keydown="keyHandle('{{ which }}',$event)">{{ label }}</button>{% endfor %}</div>
+<div class="timeline-labels"><span x-text="timelineStamp(start)"></span><span x-text="scrub===null ? 'Modře záznam · přetáhněte OD a DO' : fullStamp(scrub)"></span><span x-text="timelineStamp(end-1)"></span></div>
 <div class="clip-selection"><div class="clip-marker"><button type="button" class="btn sec" @click="mark('from')">Označit OD <kbd>I</kbd></button><span x-text="from===null ? '—' : fullStamp(from)"></span></div><div class="clip-marker"><button type="button" class="btn sec" @click="mark('to')">Označit DO <kbd>O</kbd></button><span x-text="to===null ? '—' : fullStamp(to)"></span></div><button type="button" class="btn small sec" @click="from=null;to=null" x-show="from!==null || to!==null">Zrušit výběr</button></div>
 <form method="post" action="/camera/{{ camera }}/recording" class="clip-save"><input type="hidden" name="from_time" :value="from===null ? '' : new Date(from*1000).toISOString()"><input type="hidden" name="to_time" :value="to===null ? '' : new Date(to*1000).toISOString()"><div class="clip-save-info"><span class="hint" x-text="selectionLabel()"></span><span class="hint" x-show="selectionHasGaps()" x-cloak>Ve výběru je výpadek. Při uložení nabídneme dostupné části.</span></div><div class="actions"><button type="button" class="btn sec" :disabled="!validSelection()" @click="previewSelection()">Přehrát výběr</button><button class="btn" :disabled="!validSelection()">Uložit klip</button></div></form>
 <p class="player-notice" role="status" x-show="message" x-text="message"></p></div></div></section>
@@ -5096,15 +5096,22 @@ def recording_gaps(spans, start, end):
 
 
 @app.get('/camera/{camera}/timeline')
-def camera_timeline(camera: str, day: str = ''):
+def camera_timeline(camera: str, day: str = '', window: str = ''):
     cfg = load_config()
     if camera not in frigate_cameras(cfg):
         return JSONResponse({'error': 'Kamera neexistuje.'}, status_code=404)
     try:
         tz = ZoneInfo(cfg['tz'])
-        date = dt.date.fromisoformat(day) if day else dt.datetime.now(tz).date()
-        start = dt.datetime.combine(date, dt.time(), tz).timestamp()
-        end = dt.datetime.combine(date + dt.timedelta(days=1), dt.time(), tz).timestamp()
+        if window not in ('', '24h'):
+            raise ValueError('invalid window')
+        if window == '24h':
+            end = math.floor(time.time())
+            start = end - 86400
+            date = dt.datetime.fromtimestamp(end, tz).date()
+        else:
+            date = dt.date.fromisoformat(day) if day else dt.datetime.now(tz).date()
+            start = dt.datetime.combine(date, dt.time(), tz).timestamp()
+            end = dt.datetime.combine(date + dt.timedelta(days=1), dt.time(), tz).timestamp()
     except ValueError:
         return JSONResponse({'error': 'Neplatné datum.'}, status_code=400)
     try:
@@ -12846,23 +12853,30 @@ header.top nav.menu > a.active, header.top nav.menu .dd > button.active { backgr
 .camera-player{--player-aspect:1.77777778;width:min(100%,max(360px,calc(var(--player-height,clamp(144px,calc(100dvh - 410px),720px))*var(--player-aspect))));margin-inline:auto;border:1px solid var(--at-line);border-radius:14px;background:var(--at-surface);overflow:hidden}
 .player-stage{position:relative;aspect-ratio:var(--player-aspect);background:#0b1421}
 .player-stage video{display:block;width:100%;height:100%;object-fit:contain}
-.player-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px}
-.player-toolbar strong{font-size:14px;min-width:0}.player-toolbar .actions{flex-shrink:0}
-.workspace.camera-expanded{padding-left:0}
-.workspace.camera-expanded header.top,.workspace.camera-expanded .page-head,.workspace.camera-expanded .brand-foot,.workspace.camera-expanded .camera-player+.advanced-panel{display:none}
-.workspace.camera-expanded main.page{padding:12px;max-width:none}
-@media(max-width:620px){.player-toolbar{flex-wrap:wrap;padding:8px 10px;gap:8px}.player-toolbar .actions{margin-left:auto}.player-toolbar strong{font-size:12px}.workspace.camera-expanded main.page{padding:8px}}
+/* Camera playback stays in the shared administration shell at every size. */
+.workspace.camera-workspace main.page{padding:16px 24px 28px;max-width:none}
+.workspace.camera-workspace .page-head{gap:12px;margin:0 0 12px;align-items:center}
+.workspace.camera-workspace .page-head h1{font-size:22px;margin:0;letter-spacing:-.4px}
+.workspace.camera-workspace .page-head .actions{display:flex;gap:8px;flex-shrink:0}
+.timeline-period{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.workspace .camera-player .btn.sec.period-active{background:#2563e6;border-color:#2563e6;color:#fff}
+.workspace .camera-player .btn.sec.period-active:hover{background:#1d4ed8;border-color:#1d4ed8}
 .player-overlay{position:absolute;inset:12px 14px auto;display:flex;align-items:center;justify-content:space-between;gap:12px;pointer-events:none}
 .player-mode,.player-clock{color:#fff;background:#101b2be8;border-radius:5px;padding:6px 10px;text-shadow:0 1px 2px #000}
 .player-mode{font-size:10px;letter-spacing:1px}.player-clock{font-size:14px;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
-.player-controls{padding:8px 16px;display:flex;justify-content:space-between;gap:10px;align-items:center}
+.player-controls{padding:8px 16px;display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}
 .player-controls .actions{gap:6px}.player-controls .btn{min-height:32px;padding:5px 10px}
 .workspace .camera-player .date-pick{display:flex;align-items:center;gap:8px;font-size:12px;margin:0}.workspace .camera-player .date-pick input{width:150px;height:32px;margin:0;padding:4px 8px;font-size:12px}
-.timeline-panel{padding:0 16px 10px}.recording-track{height:30px;background:var(--at-surface-2);border-radius:6px;position:relative;cursor:crosshair;overflow:hidden}
-.recorded-span{position:absolute;top:8px;height:14px;background:#94b6f6;border-radius:2px;pointer-events:none}
-.selected-span{position:absolute;top:2px;height:26px;background:#2563e63b;border:2px solid #2563e6;border-radius:4px;pointer-events:none}
-.time-cursor{position:absolute;top:0;bottom:0;width:2px;background:#e16c45;pointer-events:none}
-.camera-player input.timeline-seek{position:absolute;inset:0;width:100%;height:30px!important;margin:0!important;padding:0;background:transparent;cursor:ew-resize;appearance:none;-webkit-appearance:none}
+.timeline-panel{padding:0 16px 10px}.recording-track{height:70px;margin-inline:16px;position:relative;isolation:isolate;background:linear-gradient(transparent 25px,var(--at-surface-2) 25px,var(--at-surface-2) 45px,transparent 45px)}
+.recorded-span{position:absolute;top:28px;height:14px;background:#94b6f6;border-radius:2px;pointer-events:none}
+.selected-span{position:absolute;top:25px;height:20px;background:#2563e640;border-block:2px solid #2563e6;pointer-events:none}
+.time-cursor{position:absolute;top:25px;height:20px;width:2px;background:#e16c45;pointer-events:none}
+.camera-player input.timeline-seek{position:absolute;inset:25px 0 auto;width:100%;height:20px!important;margin:0!important;padding:0;background:transparent;cursor:ew-resize;appearance:none;-webkit-appearance:none}
+.workspace .camera-player .range-handle{position:absolute;z-index:2;width:34px;min-height:24px;height:24px;padding:0;margin:0;border:0;border-radius:5px;background:#2563e6;color:#fff;font-size:10px;font-weight:750;line-height:24px;transform:translateX(-50%);touch-action:none;cursor:ew-resize;user-select:none;box-shadow:0 1px 4px #0002}
+.range-handle-from{top:0}.range-handle-to{bottom:0}
+.range-handle::after{content:"";position:absolute;left:calc(50% - 1px);width:2px;height:21px;background:#2563e6;pointer-events:none}
+.range-handle-from::after{top:100%}.range-handle-to::after{bottom:100%}
+.workspace .camera-player .range-handle:hover{background:#1d4ed8}.workspace .camera-player .range-handle:focus-visible{outline:3px solid #f59e0b;outline-offset:2px}
 .camera-player input.timeline-seek::-webkit-slider-runnable-track{height:2px;background:transparent;border:0}
 .camera-player input.timeline-seek::-moz-range-track{height:2px;background:transparent;border:0}
 .camera-player input.timeline-seek::-moz-range-progress{background:transparent}
@@ -12924,7 +12938,8 @@ header.top nav.menu > a.active, header.top nav.menu .dd > button.active { backgr
 
 @media(max-width:620px){
  .player-overlay{inset:8px 8px auto;gap:6px}.player-clock{font-size:11px;padding:5px 7px}.player-mode{font-size:9px;padding:5px 7px}
- .player-controls{padding:8px 10px;flex-wrap:nowrap}.workspace .camera-player .date-pick{gap:4px}.workspace .camera-player .date-pick input{width:127px}.workspace .camera-player .date-pick{font-size:0}
+ .player-controls{padding:8px 10px;flex-wrap:wrap}.workspace .camera-player .date-pick{gap:4px}.workspace .camera-player .date-pick input{width:127px}.workspace .camera-player .date-pick{font-size:0}
+ .workspace.camera-workspace main.page{padding:14px 12px}.workspace.camera-workspace .page-head{flex-wrap:wrap}.workspace.camera-workspace .page-head h1{font-size:20px}.timeline-period{width:100%;justify-content:space-between;gap:6px}
  .timeline-panel{padding:0 10px 10px}.clip-selection{gap:6px}.clip-marker{gap:4px;flex:1;flex-direction:column;align-items:flex-start}.clip-marker>span{font-size:10px}
  .clip-selection kbd{display:none}.clip-save{gap:6px}.clip-save .actions{width:100%;justify-content:flex-end}
  .publication-summary{flex-wrap:wrap}.publication-summary>div{flex-basis:100%;justify-content:space-between}
@@ -13210,51 +13225,84 @@ ATMOVIO_CSS_EOF
       },destroy(){if(player)player.destroy();this.$el.removeAttribute('src');this.$el.load();}};
     });
     Alpine.data('cameraPlayer', function (camera) {
-      let player=null, layoutObserver=null; // Keep media and DOM observers outside Alpine's reactive proxy.
+      let player=null, layoutObserver=null, handleDrag=null; // Keep media and DOM handles outside Alpine's reactive proxy.
       return {
-        live:true, expanded:true, cursor:Date.now()/1000, day:'', start:0, end:1, spans:[], tz:'UTC',
+        live:true, period:'24h', cursor:Date.now()/1000, day:'', start:0, end:1, spans:[], tz:'UTC',
         from:null, to:null, message:'', anchor:0, stopAt:null, windowEnd:0, playSpans:[],
-         controller:null, timer:null, keyHandler:null, resizeHandler:null, loading:false, scrub:null,
+         controller:null, timer:null, keyHandler:null, resizeHandler:null, loading:false, scrub:null, dragging:false, refreshedAt:0,
         async init() {
-          try{this.expanded=localStorage.getItem('atmovio-camera-expanded')!=='0';}catch(e){}
-          this.applyLayout();
           this.resizeHandler=()=>this.fitPlayer();
           window.addEventListener('resize',this.resizeHandler);
-          if(this.$el && window.ResizeObserver){layoutObserver=new window.ResizeObserver(this.resizeHandler);layoutObserver.observe(this.$refs.transport);if(this.$refs.toolbar)layoutObserver.observe(this.$refs.toolbar);const heading=this.$el.closest('main')?.querySelector('.page-head');if(heading)layoutObserver.observe(heading);}
+          if(this.$el && window.ResizeObserver){layoutObserver=new window.ResizeObserver(this.resizeHandler);layoutObserver.observe(this.$refs.transport);const heading=this.$el.closest('main')?.querySelector('.page-head');if(heading)layoutObserver.observe(heading);}
           if(this.$nextTick)this.$nextTick(this.resizeHandler);
-          this.keyHandler=e=>{if(e.key==='Escape'&&this.expanded){this.toggleExpanded();return;}if(e.ctrlKey||e.metaKey||e.altKey||e.target.closest('input,textarea,select,[contenteditable]'))return;
+          this.keyHandler=e=>{if(e.ctrlKey||e.metaKey||e.altKey||e.target.closest('input,textarea,select,[contenteditable],[role="slider"]'))return;
             if(e.key.toLowerCase()==='i')this.mark('from');if(e.key.toLowerCase()==='o')this.mark('to');};
           window.addEventListener('keydown',this.keyHandler);
           await this.loadDay();
           const params=new URLSearchParams(location.search), from=Number(params.get('from')),to=Number(params.get('to'));
           if(params.has('from')&&Number.isFinite(from)&&from>0&&to>from&&to-from<=21600){
-            this.from=from;this.to=to;this.day=new Intl.DateTimeFormat('sv-SE',{timeZone:this.tz,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(from*1000));await this.loadDay();this.seek(from);
+            this.from=from;this.to=to;
+            if(from<this.start||to>this.end){this.period='day';this.day=new Intl.DateTimeFormat('sv-SE',{timeZone:this.tz,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(from*1000));await this.loadDay();}
+            this.seek(from);
           }else this.goLive();
-          this.timer=setInterval(()=>{if(this.live)this.cursor=Date.now()/1000;},1000);
+          this.timer=setInterval(()=>{if(this.live){this.cursor=Date.now()/1000;if(this.period==='24h'&&!this.dragging&&Date.now()-this.refreshedAt>60000)this.loadDay();}},1000);
         },
-        destroy() {this.$el?.closest('.workspace')?.classList.remove('camera-expanded');clearInterval(this.timer);window.removeEventListener('keydown',this.keyHandler);window.removeEventListener('resize',this.resizeHandler);if(layoutObserver)layoutObserver.disconnect();if(this.controller)this.controller.abort();this.unload();},
-        applyLayout(){this.$el?.closest('.workspace')?.classList.toggle('camera-expanded',this.expanded);},
-        toggleExpanded(){this.expanded=!this.expanded;this.applyLayout();
-          try{localStorage.setItem('atmovio-camera-expanded',this.expanded?'1':'0');}catch(e){}
-          window.scrollTo?.({top:0,behavior:'instant'});if(this.$nextTick)this.$nextTick(()=>this.fitPlayer());else this.fitPlayer();},
+        destroy() {handleDrag=null;clearInterval(this.timer);window.removeEventListener('keydown',this.keyHandler);window.removeEventListener('resize',this.resizeHandler);if(layoutObserver)layoutObserver.disconnect();if(this.controller)this.controller.abort();this.unload();},
         fitPlayer() {if(!this.$el||!this.$refs.transport)return;
           const video=this.$refs.video,ratio=video.videoWidth/video.videoHeight;
           if(Number.isFinite(ratio)&&ratio>0)this.$el.style.setProperty('--player-aspect',String(ratio));
           const top=this.$el.getBoundingClientRect().top+window.scrollY;
-          const height=Math.max(144,Math.floor(window.innerHeight-top-this.$refs.transport.offsetHeight-(this.$refs.toolbar?.offsetHeight||0)-18));
+          const height=Math.max(144,Math.floor(window.innerHeight-top-this.$refs.transport.offsetHeight-18));
           this.$el.style.setProperty('--player-height',height+'px');},
         unload() {if(player){player.destroy();player=null;}const v=this.$refs.video;v.pause();v.removeAttribute('src');v.load();},
         stamp(t) {return new Date(t*1000).toLocaleTimeString('cs-CZ',{timeZone:this.tz,hour:'2-digit',minute:'2-digit',second:'2-digit'});},
         fullStamp(t) {return new Date(t*1000).toLocaleString('cs-CZ',{timeZone:this.tz,day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});},
+        timelineStamp(t) {return this.period==='24h'?new Date(t*1000).toLocaleString('cs-CZ',{timeZone:this.tz,day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):this.stamp(t);},
         percent(t) {return Math.max(0,Math.min(100,(t-this.start)/(this.end-this.start)*100));},
         spanStyle(s) {return 'left:'+this.percent(s[0])+'%;width:'+Math.max(0,this.percent(s[1])-this.percent(s[0]))+'%';},
         async loadDay() {
+          this.refreshedAt=Date.now();
           if(this.controller)this.controller.abort();const controller=new AbortController();this.controller=controller;
-          try {const r=await fetch('/camera/'+camera+'/timeline?day='+encodeURIComponent(this.day),{signal:controller.signal,cache:'no-store'});
+          try {const query=this.period==='24h'?'window=24h':'day='+encodeURIComponent(this.day);
+            const r=await fetch('/camera/'+camera+'/timeline?'+query,{signal:controller.signal,cache:'no-store'});
             const d=await r.json();if(!r.ok)throw Error(d.error);if(controller!==this.controller)return;
             Object.assign(this,{day:d.day,start:d.start,end:d.end,spans:d.spans,tz:d.tz});
-            this.message=d.spans.length?'':'Pro tento den není uložený záznam.';
+            this.message=d.spans.length?'':'Pro toto období není uložený záznam.';
           } catch(e){if(e.name!=='AbortError')this.message=e.message||'Záznamy nelze načíst.';}
+        },
+        async showLast24Hours(){this.period='24h';await this.loadDay();},
+        handleTime(which){
+          if(this[which]!==null)return this[which];
+          const latest=Math.floor(Math.min(this.end-1,this.spans.length?this.spans[this.spans.length-1][1]:this.end-1));
+          const end=Math.max(this.start+1,Math.min(latest,this.live?latest:this.cursor+1800));
+          return which==='from'?Math.max(this.start,end-3600):end;
+        },
+        handleMin(which){return which==='from'?this.start:Math.max(this.start+1,this.handleTime('from')+1);},
+        handleMax(which){return which==='to'?this.end:Math.min(this.end-1,this.handleTime('to')-1);},
+        selectHandle(which,time){
+          if(this.handleTime('to')<=this.start||this.handleTime('from')>=this.end){this.from=null;this.to=null;}
+          const from=this.handleTime('from'),to=this.handleTime('to');this.from=from;this.to=to;
+          this[which]=Math.round(Math.max(this.handleMin(which),Math.min(this.handleMax(which),time)));
+          this.scrub=this[which];
+        },
+        beginHandle(which,e){if(e.button!==0||handleDrag)return;
+          handleDrag={which,id:e.pointerId,target:e.currentTarget};this.dragging=true;
+          e.currentTarget.setPointerCapture(e.pointerId);this.moveHandle(e);
+        },
+        moveHandle(e){if(!handleDrag||e.pointerId!==handleDrag.id)return;
+          const rect=this.$refs.track.getBoundingClientRect();if(!rect.width)return;
+          this.selectHandle(handleDrag.which,this.start+(e.clientX-rect.left)/rect.width*(this.end-this.start));
+        },
+        endHandle(e,cancel=false){if(!handleDrag||e.pointerId!==handleDrag.id)return;
+          const {which,id,target}=handleDrag;handleDrag=null;this.dragging=false;this.scrub=null;
+          if(target.hasPointerCapture(id))target.releasePointerCapture(id);
+          if(!cancel)this.seek(this[which]-(which==='to'?1:0));
+        },
+        keyHandle(which,e){const steps={ArrowLeft:-1,ArrowDown:-1,ArrowRight:1,ArrowUp:1,PageDown:-60,PageUp:60};
+          if(!(e.key in steps)&&e.key!=='Home'&&e.key!=='End')return;
+          e.preventDefault();e.stopPropagation();
+          const time=e.key==='Home'?this.handleMin(which):e.key==='End'?this.handleMax(which):this.handleTime(which)+steps[e.key]*(e.shiftKey?60:1);
+          this.selectHandle(which,time);this.scrub=null;this.seek(this[which]-(which==='to'?1:0));
         },
         goLive() {this.unload();this.live=true;this.cursor=Date.now()/1000;this.scrub=null;this.stopAt=null;this.loading=false;this.message='';const v=this.$refs.video,url='/stream/'+camera+'/hls/master.m3u8';v.onloadedmetadata=()=>{this.message='';v.play().catch(()=>{this.message='Přehrávání spustíte tlačítkem ▶.';});};
           if((!window.Hls||!Hls.isSupported())&&v.canPlayType('application/vnd.apple.mpegurl'))v.src=url;

@@ -212,51 +212,84 @@
       },destroy(){if(player)player.destroy();this.$el.removeAttribute('src');this.$el.load();}};
     });
     Alpine.data('cameraPlayer', function (camera) {
-      let player=null, layoutObserver=null; // Keep media and DOM observers outside Alpine's reactive proxy.
+      let player=null, layoutObserver=null, handleDrag=null; // Keep media and DOM handles outside Alpine's reactive proxy.
       return {
-        live:true, expanded:true, cursor:Date.now()/1000, day:'', start:0, end:1, spans:[], tz:'UTC',
+        live:true, period:'24h', cursor:Date.now()/1000, day:'', start:0, end:1, spans:[], tz:'UTC',
         from:null, to:null, message:'', anchor:0, stopAt:null, windowEnd:0, playSpans:[],
-         controller:null, timer:null, keyHandler:null, resizeHandler:null, loading:false, scrub:null,
+         controller:null, timer:null, keyHandler:null, resizeHandler:null, loading:false, scrub:null, dragging:false, refreshedAt:0,
         async init() {
-          try{this.expanded=localStorage.getItem('atmovio-camera-expanded')!=='0';}catch(e){}
-          this.applyLayout();
           this.resizeHandler=()=>this.fitPlayer();
           window.addEventListener('resize',this.resizeHandler);
-          if(this.$el && window.ResizeObserver){layoutObserver=new window.ResizeObserver(this.resizeHandler);layoutObserver.observe(this.$refs.transport);if(this.$refs.toolbar)layoutObserver.observe(this.$refs.toolbar);const heading=this.$el.closest('main')?.querySelector('.page-head');if(heading)layoutObserver.observe(heading);}
+          if(this.$el && window.ResizeObserver){layoutObserver=new window.ResizeObserver(this.resizeHandler);layoutObserver.observe(this.$refs.transport);const heading=this.$el.closest('main')?.querySelector('.page-head');if(heading)layoutObserver.observe(heading);}
           if(this.$nextTick)this.$nextTick(this.resizeHandler);
-          this.keyHandler=e=>{if(e.key==='Escape'&&this.expanded){this.toggleExpanded();return;}if(e.ctrlKey||e.metaKey||e.altKey||e.target.closest('input,textarea,select,[contenteditable]'))return;
+          this.keyHandler=e=>{if(e.ctrlKey||e.metaKey||e.altKey||e.target.closest('input,textarea,select,[contenteditable],[role="slider"]'))return;
             if(e.key.toLowerCase()==='i')this.mark('from');if(e.key.toLowerCase()==='o')this.mark('to');};
           window.addEventListener('keydown',this.keyHandler);
           await this.loadDay();
           const params=new URLSearchParams(location.search), from=Number(params.get('from')),to=Number(params.get('to'));
           if(params.has('from')&&Number.isFinite(from)&&from>0&&to>from&&to-from<=21600){
-            this.from=from;this.to=to;this.day=new Intl.DateTimeFormat('sv-SE',{timeZone:this.tz,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(from*1000));await this.loadDay();this.seek(from);
+            this.from=from;this.to=to;
+            if(from<this.start||to>this.end){this.period='day';this.day=new Intl.DateTimeFormat('sv-SE',{timeZone:this.tz,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(from*1000));await this.loadDay();}
+            this.seek(from);
           }else this.goLive();
-          this.timer=setInterval(()=>{if(this.live)this.cursor=Date.now()/1000;},1000);
+          this.timer=setInterval(()=>{if(this.live){this.cursor=Date.now()/1000;if(this.period==='24h'&&!this.dragging&&Date.now()-this.refreshedAt>60000)this.loadDay();}},1000);
         },
-        destroy() {this.$el?.closest('.workspace')?.classList.remove('camera-expanded');clearInterval(this.timer);window.removeEventListener('keydown',this.keyHandler);window.removeEventListener('resize',this.resizeHandler);if(layoutObserver)layoutObserver.disconnect();if(this.controller)this.controller.abort();this.unload();},
-        applyLayout(){this.$el?.closest('.workspace')?.classList.toggle('camera-expanded',this.expanded);},
-        toggleExpanded(){this.expanded=!this.expanded;this.applyLayout();
-          try{localStorage.setItem('atmovio-camera-expanded',this.expanded?'1':'0');}catch(e){}
-          window.scrollTo?.({top:0,behavior:'instant'});if(this.$nextTick)this.$nextTick(()=>this.fitPlayer());else this.fitPlayer();},
+        destroy() {handleDrag=null;clearInterval(this.timer);window.removeEventListener('keydown',this.keyHandler);window.removeEventListener('resize',this.resizeHandler);if(layoutObserver)layoutObserver.disconnect();if(this.controller)this.controller.abort();this.unload();},
         fitPlayer() {if(!this.$el||!this.$refs.transport)return;
           const video=this.$refs.video,ratio=video.videoWidth/video.videoHeight;
           if(Number.isFinite(ratio)&&ratio>0)this.$el.style.setProperty('--player-aspect',String(ratio));
           const top=this.$el.getBoundingClientRect().top+window.scrollY;
-          const height=Math.max(144,Math.floor(window.innerHeight-top-this.$refs.transport.offsetHeight-(this.$refs.toolbar?.offsetHeight||0)-18));
+          const height=Math.max(144,Math.floor(window.innerHeight-top-this.$refs.transport.offsetHeight-18));
           this.$el.style.setProperty('--player-height',height+'px');},
         unload() {if(player){player.destroy();player=null;}const v=this.$refs.video;v.pause();v.removeAttribute('src');v.load();},
         stamp(t) {return new Date(t*1000).toLocaleTimeString('cs-CZ',{timeZone:this.tz,hour:'2-digit',minute:'2-digit',second:'2-digit'});},
         fullStamp(t) {return new Date(t*1000).toLocaleString('cs-CZ',{timeZone:this.tz,day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});},
+        timelineStamp(t) {return this.period==='24h'?new Date(t*1000).toLocaleString('cs-CZ',{timeZone:this.tz,day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):this.stamp(t);},
         percent(t) {return Math.max(0,Math.min(100,(t-this.start)/(this.end-this.start)*100));},
         spanStyle(s) {return 'left:'+this.percent(s[0])+'%;width:'+Math.max(0,this.percent(s[1])-this.percent(s[0]))+'%';},
         async loadDay() {
+          this.refreshedAt=Date.now();
           if(this.controller)this.controller.abort();const controller=new AbortController();this.controller=controller;
-          try {const r=await fetch('/camera/'+camera+'/timeline?day='+encodeURIComponent(this.day),{signal:controller.signal,cache:'no-store'});
+          try {const query=this.period==='24h'?'window=24h':'day='+encodeURIComponent(this.day);
+            const r=await fetch('/camera/'+camera+'/timeline?'+query,{signal:controller.signal,cache:'no-store'});
             const d=await r.json();if(!r.ok)throw Error(d.error);if(controller!==this.controller)return;
             Object.assign(this,{day:d.day,start:d.start,end:d.end,spans:d.spans,tz:d.tz});
-            this.message=d.spans.length?'':'Pro tento den není uložený záznam.';
+            this.message=d.spans.length?'':'Pro toto období není uložený záznam.';
           } catch(e){if(e.name!=='AbortError')this.message=e.message||'Záznamy nelze načíst.';}
+        },
+        async showLast24Hours(){this.period='24h';await this.loadDay();},
+        handleTime(which){
+          if(this[which]!==null)return this[which];
+          const latest=Math.floor(Math.min(this.end-1,this.spans.length?this.spans[this.spans.length-1][1]:this.end-1));
+          const end=Math.max(this.start+1,Math.min(latest,this.live?latest:this.cursor+1800));
+          return which==='from'?Math.max(this.start,end-3600):end;
+        },
+        handleMin(which){return which==='from'?this.start:Math.max(this.start+1,this.handleTime('from')+1);},
+        handleMax(which){return which==='to'?this.end:Math.min(this.end-1,this.handleTime('to')-1);},
+        selectHandle(which,time){
+          if(this.handleTime('to')<=this.start||this.handleTime('from')>=this.end){this.from=null;this.to=null;}
+          const from=this.handleTime('from'),to=this.handleTime('to');this.from=from;this.to=to;
+          this[which]=Math.round(Math.max(this.handleMin(which),Math.min(this.handleMax(which),time)));
+          this.scrub=this[which];
+        },
+        beginHandle(which,e){if(e.button!==0||handleDrag)return;
+          handleDrag={which,id:e.pointerId,target:e.currentTarget};this.dragging=true;
+          e.currentTarget.setPointerCapture(e.pointerId);this.moveHandle(e);
+        },
+        moveHandle(e){if(!handleDrag||e.pointerId!==handleDrag.id)return;
+          const rect=this.$refs.track.getBoundingClientRect();if(!rect.width)return;
+          this.selectHandle(handleDrag.which,this.start+(e.clientX-rect.left)/rect.width*(this.end-this.start));
+        },
+        endHandle(e,cancel=false){if(!handleDrag||e.pointerId!==handleDrag.id)return;
+          const {which,id,target}=handleDrag;handleDrag=null;this.dragging=false;this.scrub=null;
+          if(target.hasPointerCapture(id))target.releasePointerCapture(id);
+          if(!cancel)this.seek(this[which]-(which==='to'?1:0));
+        },
+        keyHandle(which,e){const steps={ArrowLeft:-1,ArrowDown:-1,ArrowRight:1,ArrowUp:1,PageDown:-60,PageUp:60};
+          if(!(e.key in steps)&&e.key!=='Home'&&e.key!=='End')return;
+          e.preventDefault();e.stopPropagation();
+          const time=e.key==='Home'?this.handleMin(which):e.key==='End'?this.handleMax(which):this.handleTime(which)+steps[e.key]*(e.shiftKey?60:1);
+          this.selectHandle(which,time);this.scrub=null;this.seek(this[which]-(which==='to'?1:0));
         },
         goLive() {this.unload();this.live=true;this.cursor=Date.now()/1000;this.scrub=null;this.stopAt=null;this.loading=false;this.message='';const v=this.$refs.video,url='/stream/'+camera+'/hls/master.m3u8';v.onloadedmetadata=()=>{this.message='';v.play().catch(()=>{this.message='Přehrávání spustíte tlačítkem ▶.';});};
           if((!window.Hls||!Hls.isSupported())&&v.canPlayType('application/vnd.apple.mpegurl'))v.src=url;

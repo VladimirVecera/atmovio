@@ -1,4 +1,4 @@
-# Atmovio 6.0.10
+# Atmovio 6.0.11
 
 Hlavní nabídka má tři místa: **Kamery, AI detekce a Moje videa**. Záznam vyberete v **AI detekci** a tlačítkem **Vytvořit video** otevřete editor. Rozpracované i hotové výsledky jsou v **Moje videa**. Samostatný výběr ve Studiu je sloučený s AI detekcí; staré odkazy dál fungují. Hudba, nastavení a diagnostika jsou ve spodní části nabídky. Technické podklady AI zůstávají v rozbalitelných detailech.
 
@@ -6,7 +6,7 @@ Hlavní nabídka má tři místa: **Kamery, AI detekce a Moje videa**. Záznam v
 
 ## Kamera a záznam
 
-Kliknutím na náhled otevřete živý přenos. Pod přehrávačem vyberte den a modrý úsek časové osy. Označte **OD**, přejděte na konec a označte **DO**. Výběr lze přehrát a uložit. Klávesy I a O označují hranice; datum a čas používají časové pásmo zařízení.
+Kliknutím na náhled otevřete živý přenos v administraci. Časová osa nabízí **Posledních 24 hodin** včetně včerejška, nebo výběr konkrétního dne. Přetáhněte zarážky **OD** a **DO**, přehrajte výběr a uložte klip. Šipky posouvají zarážku o sekundu, se Shiftem o minutu. Tlačítka Označit OD/DO a klávesy I/O označí právě přehrávaný čas. Jeden klip může mít nejvýše šest hodin; dostupné záznamy jsou modré. Datum a čas používají časové pásmo zařízení.
 
 Jeden výběr může mít nejvýše šest hodin. Mezery na ose znamenají chybějící záznam. U výběru s mezerou lze zkrátit rozsah nebo výslovně potvrdit uložení dostupných částí. Časová osa při přehrávání zohledňuje přeskočené výpadky. Dostupná minulost závisí na uchovávání záznamů a volném místě.
 
@@ -30,7 +30,7 @@ Hudební knihovna nabízí **Smazat skladbu** i **Smazat vše**. Skladby se pře
 
 ## Aktualizace a diagnostika
 
-Ve starší instalaci otevřete **Nastavení → Systém → Aktualizace**, klikněte na **Zkontrolovat teď** a potom **Nainstalovat verzi 6.0.10**. Aktualizátor stáhne instalační soubor z GitHub Releases a ověří kontrolní součet. Stejnou cestou budou dostupné další vydané opravy.
+Ve starší instalaci otevřete **Nastavení → Systém → Aktualizace**, klikněte na **Zkontrolovat teď** a potom **Nainstalovat verzi 6.0.11**. Aktualizátor stáhne instalační soubor z GitHub Releases a ověří kontrolní součet. Stejnou cestou budou dostupné další vydané opravy.
 
 Aktualizátor stáhne Frigate 0.18.2 a ověří kopii konfigurace za běhu staré verze. Před přepnutím zálohuje konfiguraci i zastavenou databázi. Během restartu vznikne krátká mezera v nahrávání. Nová verze musí potvrdit API a obraz dříve dostupných kamer; při selhání se obnoví původní Frigate i jeho databáze. Záznamy na datovém disku se nepřesouvají.
 

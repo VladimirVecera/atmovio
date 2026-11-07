@@ -2,6 +2,13 @@
 
 All notable changes to Atmovio (versions ≤ 3.4 were released under the name SkyWatch). Versions correspond to `APP_VERSION` in `src/atmovio/app.py`.
 
+## 6.0.11 – 2026-11-07 – camera timeline inside the administration
+
+- Keep camera playback inside the administration, with the sidebar, header and mobile menu available. Use a compact camera heading to leave more space for the image and nearby controls.
+- Drag separate OD and DO handles on the recording timeline, including touch and keyboard control. Keep the playback cursor independent and preserve the chosen bounds when saving.
+- Browse the last 24 hours across midnight, or select a calendar day. Show dates at both ends of the rolling timeline and refresh its available footage while watching live.
+- Allow restarting live playback directly when it reports an error.
+
 ## 6.0.10 – 2026-11-07 – clear clip actions and reliable range saving
 
 - Open camera playback in a larger view with the timeline and clip controls visible together. The size toggle remembers the chosen layout.

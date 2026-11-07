@@ -1299,23 +1299,30 @@ header.top nav.menu > a.active, header.top nav.menu .dd > button.active { backgr
 .camera-player{--player-aspect:1.77777778;width:min(100%,max(360px,calc(var(--player-height,clamp(144px,calc(100dvh - 410px),720px))*var(--player-aspect))));margin-inline:auto;border:1px solid var(--at-line);border-radius:14px;background:var(--at-surface);overflow:hidden}
 .player-stage{position:relative;aspect-ratio:var(--player-aspect);background:#0b1421}
 .player-stage video{display:block;width:100%;height:100%;object-fit:contain}
-.player-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px}
-.player-toolbar strong{font-size:14px;min-width:0}.player-toolbar .actions{flex-shrink:0}
-.workspace.camera-expanded{padding-left:0}
-.workspace.camera-expanded header.top,.workspace.camera-expanded .page-head,.workspace.camera-expanded .brand-foot,.workspace.camera-expanded .camera-player+.advanced-panel{display:none}
-.workspace.camera-expanded main.page{padding:12px;max-width:none}
-@media(max-width:620px){.player-toolbar{flex-wrap:wrap;padding:8px 10px;gap:8px}.player-toolbar .actions{margin-left:auto}.player-toolbar strong{font-size:12px}.workspace.camera-expanded main.page{padding:8px}}
+/* Camera playback stays in the shared administration shell at every size. */
+.workspace.camera-workspace main.page{padding:16px 24px 28px;max-width:none}
+.workspace.camera-workspace .page-head{gap:12px;margin:0 0 12px;align-items:center}
+.workspace.camera-workspace .page-head h1{font-size:22px;margin:0;letter-spacing:-.4px}
+.workspace.camera-workspace .page-head .actions{display:flex;gap:8px;flex-shrink:0}
+.timeline-period{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.workspace .camera-player .btn.sec.period-active{background:#2563e6;border-color:#2563e6;color:#fff}
+.workspace .camera-player .btn.sec.period-active:hover{background:#1d4ed8;border-color:#1d4ed8}
 .player-overlay{position:absolute;inset:12px 14px auto;display:flex;align-items:center;justify-content:space-between;gap:12px;pointer-events:none}
 .player-mode,.player-clock{color:#fff;background:#101b2be8;border-radius:5px;padding:6px 10px;text-shadow:0 1px 2px #000}
 .player-mode{font-size:10px;letter-spacing:1px}.player-clock{font-size:14px;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
-.player-controls{padding:8px 16px;display:flex;justify-content:space-between;gap:10px;align-items:center}
+.player-controls{padding:8px 16px;display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}
 .player-controls .actions{gap:6px}.player-controls .btn{min-height:32px;padding:5px 10px}
 .workspace .camera-player .date-pick{display:flex;align-items:center;gap:8px;font-size:12px;margin:0}.workspace .camera-player .date-pick input{width:150px;height:32px;margin:0;padding:4px 8px;font-size:12px}
-.timeline-panel{padding:0 16px 10px}.recording-track{height:30px;background:var(--at-surface-2);border-radius:6px;position:relative;cursor:crosshair;overflow:hidden}
-.recorded-span{position:absolute;top:8px;height:14px;background:#94b6f6;border-radius:2px;pointer-events:none}
-.selected-span{position:absolute;top:2px;height:26px;background:#2563e63b;border:2px solid #2563e6;border-radius:4px;pointer-events:none}
-.time-cursor{position:absolute;top:0;bottom:0;width:2px;background:#e16c45;pointer-events:none}
-.camera-player input.timeline-seek{position:absolute;inset:0;width:100%;height:30px!important;margin:0!important;padding:0;background:transparent;cursor:ew-resize;appearance:none;-webkit-appearance:none}
+.timeline-panel{padding:0 16px 10px}.recording-track{height:70px;margin-inline:16px;position:relative;isolation:isolate;background:linear-gradient(transparent 25px,var(--at-surface-2) 25px,var(--at-surface-2) 45px,transparent 45px)}
+.recorded-span{position:absolute;top:28px;height:14px;background:#94b6f6;border-radius:2px;pointer-events:none}
+.selected-span{position:absolute;top:25px;height:20px;background:#2563e640;border-block:2px solid #2563e6;pointer-events:none}
+.time-cursor{position:absolute;top:25px;height:20px;width:2px;background:#e16c45;pointer-events:none}
+.camera-player input.timeline-seek{position:absolute;inset:25px 0 auto;width:100%;height:20px!important;margin:0!important;padding:0;background:transparent;cursor:ew-resize;appearance:none;-webkit-appearance:none}
+.workspace .camera-player .range-handle{position:absolute;z-index:2;width:34px;min-height:24px;height:24px;padding:0;margin:0;border:0;border-radius:5px;background:#2563e6;color:#fff;font-size:10px;font-weight:750;line-height:24px;transform:translateX(-50%);touch-action:none;cursor:ew-resize;user-select:none;box-shadow:0 1px 4px #0002}
+.range-handle-from{top:0}.range-handle-to{bottom:0}
+.range-handle::after{content:"";position:absolute;left:calc(50% - 1px);width:2px;height:21px;background:#2563e6;pointer-events:none}
+.range-handle-from::after{top:100%}.range-handle-to::after{bottom:100%}
+.workspace .camera-player .range-handle:hover{background:#1d4ed8}.workspace .camera-player .range-handle:focus-visible{outline:3px solid #f59e0b;outline-offset:2px}
 .camera-player input.timeline-seek::-webkit-slider-runnable-track{height:2px;background:transparent;border:0}
 .camera-player input.timeline-seek::-moz-range-track{height:2px;background:transparent;border:0}
 .camera-player input.timeline-seek::-moz-range-progress{background:transparent}
@@ -1377,7 +1384,8 @@ header.top nav.menu > a.active, header.top nav.menu .dd > button.active { backgr
 
 @media(max-width:620px){
  .player-overlay{inset:8px 8px auto;gap:6px}.player-clock{font-size:11px;padding:5px 7px}.player-mode{font-size:9px;padding:5px 7px}
- .player-controls{padding:8px 10px;flex-wrap:nowrap}.workspace .camera-player .date-pick{gap:4px}.workspace .camera-player .date-pick input{width:127px}.workspace .camera-player .date-pick{font-size:0}
+ .player-controls{padding:8px 10px;flex-wrap:wrap}.workspace .camera-player .date-pick{gap:4px}.workspace .camera-player .date-pick input{width:127px}.workspace .camera-player .date-pick{font-size:0}
+ .workspace.camera-workspace main.page{padding:14px 12px}.workspace.camera-workspace .page-head{flex-wrap:wrap}.workspace.camera-workspace .page-head h1{font-size:20px}.timeline-period{width:100%;justify-content:space-between;gap:6px}
  .timeline-panel{padding:0 10px 10px}.clip-selection{gap:6px}.clip-marker{gap:4px;flex:1;flex-direction:column;align-items:flex-start}.clip-marker>span{font-size:10px}
  .clip-selection kbd{display:none}.clip-save{gap:6px}.clip-save .actions{width:100%;justify-content:flex-end}
  .publication-summary{flex-wrap:wrap}.publication-summary>div{flex-basis:100%;justify-content:space-between}

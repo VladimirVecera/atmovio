@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
-const events = {}, components = {}, listeners = new Map();
+const events = {}, components = {}, listeners = new Map(), requests=[];
 let paused = 0, destroyed = 0;
 const video = {currentTime:0, src:'', pause(){paused++;}, play(){return Promise.resolve();},
   removeAttribute(){this.src='';}, getAttribute(){return this.src;}, load(){}, canPlayType(){return 'probably';}};
@@ -11,12 +11,16 @@ const context = {document:{readyState:'loading',addEventListener:(name,fn)=>even
   window:{addEventListener:(name,fn)=>listeners.set(name,fn),removeEventListener:name=>listeners.delete(name)},
   Alpine:{data:(name,fn)=>components[name]=fn}, URLSearchParams, AbortController, Date, Intl,
   location:{search:''}, setInterval:()=>1,clearInterval(){},setTimeout,clearTimeout,
-  fetch:async()=>({ok:true,json:async()=>({day:'2026-10-28',start:1000,end:10000,tz:'Europe/Prague',spans:[[1000,5000],[5500,9000]]})})};
+  fetch:async url=>{requests.push(url);return {ok:true,json:async()=>({day:'2026-10-28',start:1000,end:10000,tz:'Europe/Prague',spans:[[1000,5000],[5500,9000]]})};}};
 vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../src/atmovio/static/atmovio.js'),'utf8'),context);
 events['alpine:init']();
 (async()=>{
   const p=components.cameraPlayer('east');p.$refs={video};await p.init();
   assert.equal(video.src,'/stream/east/hls/master.m3u8');assert.equal(p.live,true);
+  assert.match(requests.at(-1),/window=24h$/);
+  p.period='day';await p.loadDay();assert.match(requests.at(-1),/day=2026-10-28$/);
+  await p.showLast24Hours();assert.equal(p.period,'24h');assert.match(requests.at(-1),/window=24h$/);
+  assert.notEqual(p.timelineStamp(p.start),p.stamp(p.start));
   p.mark('from');assert.equal(p.from,null);
   p.seek(1500);video.onloadedmetadata();assert.equal(video.currentTime,30);assert.equal(p.live,false);
   assert.match(video.src,/1470\/5070\/master.m3u8$/);
@@ -36,9 +40,7 @@ events['alpine:init']();
   assert.equal(p.from,1500);assert.equal(p.to,1600);
   p.from=1000;p.to=22601;assert.equal(p.validSelection(),false);
   p.tz='Europe/Prague';assert.match(p.fullStamp(Date.parse('2026-10-28T05:37:42Z')/1000),/28\.\s?10\.\s?2026.*06:37:42/);
-  let expandedClass=false;
-  const workspace={classList:{toggle:(_name,value)=>expandedClass=value,remove:()=>expandedClass=false}};
-  const size={};p.$el={closest:()=>workspace,getBoundingClientRect:()=>({top:180}),style:{setProperty:(k,v)=>size[k]=v}};
+  const size={};p.$el={getBoundingClientRect:()=>({top:180}),style:{setProperty:(k,v)=>size[k]=v}};
   p.$refs.transport={offsetHeight:200};context.window.innerHeight=720;context.window.scrollY=0;p.fitPlayer();
   assert.equal(size['--player-height'],'322px');
   video.videoWidth=1920;video.videoHeight=1080;p.fitPlayer();assert.equal(Number(size['--player-aspect']),16/9);
@@ -49,12 +51,27 @@ events['alpine:init']();
 
   context.window.innerHeight=600;p.fitPlayer();assert.equal(size['--player-height'],'202px');
   p.$el.getBoundingClientRect=()=>({top:80});context.window.scrollY=100;p.fitPlayer();assert.equal(size['--player-height'],'202px');
-  p.$refs.toolbar={offsetHeight:40};p.fitPlayer();assert.equal(size['--player-height'],'162px');
-  p.applyLayout();assert.equal(expandedClass,true);
-  p.toggleExpanded();assert.equal(p.expanded,false);assert.equal(expandedClass,false);
-  p.toggleExpanded();assert.equal(p.expanded,true);assert.equal(expandedClass,true);
+  // Both handles work with pointer capture, preserve order and seek only on release.
+  let seeks=[],captured=null;const originalSeek=p.seek;p.seek=t=>seeks.push(t);
+  p.start=1000;p.end=87400;p.spans=[[1000,87380]];p.live=true;p.from=null;p.to=null;
+  p.$refs.track={getBoundingClientRect:()=>({left:100,width:864})};
+  const target={setPointerCapture:id=>captured=id,hasPointerCapture:id=>captured===id,releasePointerCapture:()=>captured=null};
+  const event=x=>({pointerId:7,button:0,clientX:x,currentTarget:target});
+  p.beginHandle('from',event(400));p.moveHandle(event(450));
+  assert.equal(p.from,36000);assert.equal(p.to,87380);assert.equal(seeks.length,0);
+  assert.equal(p.validSelection(),false); // A 24-hour browser does not bypass the six-hour clip limit.
+  p.endHandle(event(450));assert.equal(captured,null);assert.deepEqual(seeks,[36000]);
+  p.beginHandle('to',event(500));p.endHandle(event(500));assert.equal(p.to,41000);assert.equal(seeks.at(-1),40999);
+  p.beginHandle('from',event(800));assert.equal(p.from,p.to-1);p.endHandle(event(800),true);
+  assert.equal(seeks.length,2);assert.equal(p.dragging,false);assert.equal(p.scrub,null);
+  let prevented=false;
+  p.keyHandle('from',{key:'ArrowLeft',shiftKey:true,preventDefault(){prevented=true;},stopPropagation(){}});
+  assert.equal(prevented,true);assert.equal(p.from,40939);
+  p.from=200;p.to=500;p.selectHandle('from',2000);assert.equal(p.from,2000);assert.ok(p.to>p.from);
+  p.selectHandle('from',-100);assert.equal(p.from,1000);
+  p.selectHandle('to',100000);assert.equal(p.to,87400);
+  p.seek=originalSeek;
   p.destroy();
-  assert.equal(expandedClass,false);
   class FakeHls{static isSupported(){return true;}static Events={ERROR:'error'};loadSource(){}attachMedia(){}on(){}destroy(){destroyed++;}}
   context.Hls=context.window.Hls=FakeHls;
   const h=components.cameraPlayer('east');h.$refs={video};h.goLive();h.destroy();
@@ -63,5 +80,5 @@ events['alpine:init']();
   editor.$refs={trimVideo:video};editor.$watch=()=>{};editor.init();editor.previewTrim();
   assert.equal(video.currentTime,10);assert.equal(video.playbackRate,1);
   video.currentTime=41;editor.boundPreview();editor.destroy();
-  console.log('PASS: live/archive switch, wall-clock seeking, gaps, persistent OD/DO, bounded preview, HLS cleanup and request cancellation');
+  console.log('PASS: live/archive switch, 24-hour and day browsing, pointer/keyboard OD–DO handles, gaps, bounded preview, aspect ratio, HLS cleanup and request cancellation');
 })().catch(error=>{console.error(error);process.exitCode=1;});
